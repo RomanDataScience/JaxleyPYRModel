@@ -24,6 +24,10 @@ solver_gate.save_exp = _save_exp_compatible
 FLOAT_RE = re.compile(rb"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?")
 MODEL_DIR = Path(__file__).resolve().parent
 SEGMENTED_TRACES_DIR = MODEL_DIR.parent / "Experimental_currentClamp_Analysis" / "Segmented_Traces"
+SEGMENT_ALIASES = {
+    "depolarizing_pulse": "depolarizing_step",
+    "hyperpolarizing_step": "hyperpolarizing_pulse",
+}
 
 from jaxley_models.l5pc.channels import (
     SKE2,
@@ -212,6 +216,7 @@ def segmented_current_path(
     segment_name="depolarizing_step",
     segmented_dir=SEGMENTED_TRACES_DIR,
 ):
+    segment_name = SEGMENT_ALIASES.get(segment_name, segment_name)
     metadata_path = Path(segmented_dir) / "segment_metadata.csv"
     if metadata_path.exists():
         with metadata_path.open(newline="", encoding="utf-8") as handle:
