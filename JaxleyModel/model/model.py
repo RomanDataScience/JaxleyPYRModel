@@ -2,11 +2,28 @@
 # Jaxley-Models is licensed under the Apache License Version 2.0, see <https://www.apache.org/licenses/>
 
 import os
+from pathlib import Path
+import re
+import csv
 
+import jax.numpy as jnp
 import jaxley as jx
+import jaxley.solver_gate as solver_gate
 import numpy as np
 from jaxley.channels import Leak
 from jaxley.morphology import distance_direct
+
+
+def _save_exp_compatible(x, max_value: float = 20.0):
+    """Compatibility for Jaxley 0.13 with JAX versions whose clip uses max=."""
+    return jnp.exp(jnp.clip(x, max=max_value))
+
+
+solver_gate.save_exp = _save_exp_compatible
+
+FLOAT_RE = re.compile(rb"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?")
+MODEL_DIR = Path(__file__).resolve().parent
+SEGMENTED_TRACES_DIR = MODEL_DIR.parent / "Experimental_currentClamp_Analysis" / "Segmented_Traces"
 
 from jaxley_models.l5pc.channels import (
     SKE2,
@@ -97,10 +114,11 @@ def L5PC():
     cell = jx.read_swc(
         os.path.join(base_path, "CELL.SWC"),
         ncomp=1,
-        assign_groups=True,
+        assign_groups=True
     )
 
-    cell = update_number_compartments(cell) 
+    cell = update_number_compartments(cell)
+    cell.initialize()
     ########## APICAL ##########
     cell.apical.set("capacitance", 2.0)
     cell.apical.insert(NaTs2T().change_name("apical_NaTs2T"))
@@ -112,7 +130,7 @@ def L5PC():
     cell.compute_compartment_centers()
     direct_dists = distance_direct(cell.soma.branch(0).comp(0), cell)
     cell.nodes["dist_from_soma"] = direct_dists
-    gH_conductance = (-0.8696 + 2.087 * np.exp(cell.basal.nodes["dist_from_soma"] * 0.0031)) * 8e-5
+    gH_conductance = (-0.8696 + 2.087 * np.exp(cell.apical.nodes["dist_from_soma"] * 0.0031)) * 8e-5
     cell.apical.set("apical_H_gH", gH_conductance)
 
     ########## SOMA ##########
@@ -162,3 +180,117 @@ def L5PC():
             cell.select(cell.nodes[cell.nodes[group]].index).set(key, value)
 
     return cell
+
+def add_test_stimuli(cell, dt = 0.025, t_max = 100.0):
+    time_vec = jnp.arange(0, t_max+2*dt, dt)
+
+    cell.delete_stimuli()
+    cell.delete_recordings()
+
+    i_delay = 5.0  # ms
+    i_dur = 90.0  # ms
+    i_amp = 1.8  # nA
+    current = jx.step_current(i_delay, i_dur, i_amp, dt, t_max)
+    cell.soma.branch(0).loc(0.5).stimulate(current)
+    cell.soma.branch(0).loc(0.5).record()
+
+    cell.set("v", -72.0)
+    cell.init_states()
+    
+    return cell, time_vec
+
+def _load_numeric_trace(path):
+    values = [float(match) for match in FLOAT_RE.findall(Path(path).read_bytes())]
+    if not values:
+        raise ValueError(f"No numeric samples found in {path}")
+    return np.asarray(values, dtype=float)
+
+def segmented_current_path(
+    *,
+    cell_name,
+    trace_name,
+    segment_name="depolarizing_step",
+    segmented_dir=SEGMENTED_TRACES_DIR,
+):
+    metadata_path = Path(segmented_dir) / "segment_metadata.csv"
+    if metadata_path.exists():
+        with metadata_path.open(newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                if (
+                    row["cell"] == cell_name
+                    and row["trace"] == trace_name
+                    and row["segment"] == segment_name
+                ):
+                    current_path = Path(row["current_output"])
+                    if current_path.exists():
+                        return current_path
+                    break
+
+    current_path = (
+        Path(segmented_dir)
+        / str(cell_name)
+        / str(segment_name)
+        / f"{trace_name}_{segment_name}_i.txt"
+    )
+    if not current_path.exists():
+        raise FileNotFoundError(
+            f"No segmented current trace found for {cell_name}/{trace_name}/{segment_name}: "
+            f"{current_path}"
+        )
+    return current_path
+
+def add_segmented_stimuli(
+    cell,
+    *,
+    cell_name,
+    trace_name,
+    segment_name="depolarizing_step",
+    segmented_dir=SEGMENTED_TRACES_DIR,
+    experimental_dt=0.05,
+    delta_t=0.025,
+    current_scale_to_nA=1e-3,
+    v_init=-72.0,
+):
+    """Attach a segmented experimental current trace as the soma stimulus.
+
+    The segmented current file is resolved from `Segmented_Traces/segment_metadata.csv`
+    using `cell_name`, `trace_name`, and `segment_name`.
+
+    ⚠️ IMPORTANT!
+    If you change `jx.integrate(..., delta_t=0.025)`, pass the same `delta_t`
+    here. The n-th entry of the stimulus is applied at the n-th simulation step,
+    regardless of dt.
+    """
+    if experimental_dt <= 0.0:
+        raise ValueError("experimental_dt must be positive")
+    if delta_t <= 0.0:
+        raise ValueError("delta_t must be positive")
+
+    current_path = segmented_current_path(
+        cell_name=cell_name,
+        trace_name=trace_name,
+        segment_name=segment_name,
+        segmented_dir=segmented_dir,
+    )
+    stimulus = jnp.asarray(_load_numeric_trace(current_path), dtype=jnp.float64)
+    stimulus = stimulus * float(current_scale_to_nA)
+
+    target_steps = max(1, int(round(stimulus.size * float(experimental_dt) / float(delta_t))))
+    if target_steps != stimulus.size:
+        source_indices = jnp.floor(
+            jnp.arange(target_steps, dtype=jnp.float64) * float(delta_t) / float(experimental_dt)
+        ).astype(jnp.int32)
+        source_indices = jnp.minimum(source_indices, stimulus.size - 1)
+        stimulus = stimulus[source_indices]
+
+    time_vec = jnp.arange(stimulus.size + 1, dtype=jnp.float64) * float(delta_t)
+
+    cell.delete_stimuli()
+    cell.delete_recordings()
+    cell.soma.branch(0).loc(0.5).stimulate(stimulus)
+    cell.soma.branch(0).loc(0.5).record()
+
+    cell.set("v", v_init)
+    cell.init_states()
+
+    return cell, time_vec, stimulus
