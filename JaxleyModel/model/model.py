@@ -6,6 +6,7 @@ import os
 import jaxley as jx
 import numpy as np
 from jaxley.channels import Leak
+from jaxley.morphology import distance_direct
 
 from jaxley_models.l5pc.channels import (
     SKE2,
@@ -70,31 +71,49 @@ bounds = {
     "axonal_CaPump_decay": [20, 1_000],
 }
 
+def update_number_compartments(cell):
+    # Reasonable default values for most models.
+    frequency = 100.0
+    d_lambda = 0.1  # Larger -> more coarse-grained.
 
-def L5PC(ncomp=4, max_branch_len=300.0):
+    for branch in cell.branches:
+        diameter = 2 * branch.nodes["radius"].to_numpy()[0]
+        c_m = branch.nodes["capacitance"].to_numpy()[0]
+        r_a = branch.nodes["axial_resistivity"].to_numpy()[0]
+        l = branch.nodes["length"].to_numpy()[0]
+
+        lambda_f = 1e5 * np.sqrt(diameter / (4 * np.pi * frequency * c_m * r_a))
+        ncomp = int((l / (d_lambda * lambda_f) + 0.9) / 2) * 2 + 1
+        branch.set_ncomp(ncomp, initialize=False)
+    
+    # After the loop, you have to run `cell.initialize()` because we passed
+    # `set_ncomp(..., initialize=False)` for speeding up the loop over branches.
+    return cell
+
+
+
+def L5PC():
     base_path = os.path.dirname(__file__)
     cell = jx.read_swc(
-        os.path.join(base_path, "morph_l5pc_with_axon.swc"),
-        ncomp=ncomp,
-        max_branch_len=max_branch_len,
+        os.path.join(base_path, "CELL.SWC"),
+        ncomp=1,
         assign_groups=True,
     )
 
+    cell = update_number_compartments(cell) 
     ########## APICAL ##########
-    # cell.apical.set("capacitance", 2.0)
+    cell.apical.set("capacitance", 2.0)
     cell.apical.insert(NaTs2T().change_name("apical_NaTs2T"))
     cell.apical.insert(SKv3_1().change_name("apical_SKv3_1"))
     cell.apical.insert(M().change_name("apical_M"))
     cell.apical.insert(H().change_name("apical_H"))
 
-    apical_inds = apical_inds = cell.nodes.loc[
-        cell.nodes["apical"]
-    ].global_branch_index.unique()
-    for b in apical_inds:
-        for comp in cell.branch(b).comps:
-            distance = comp.distance(cell.branch(0).loc(0.0))
-            cond = (-0.8696 + 2.087 * np.exp(distance * 0.0031)) * 8e-5
-            comp.set("apical_H_gH", cond)
+    # The H-conductance depends on the distance from the soma.
+    cell.compute_compartment_centers()
+    direct_dists = distance_direct(cell.soma.branch(0).comp(0), cell)
+    cell.nodes["dist_from_soma"] = direct_dists
+    gH_conductance = (-0.8696 + 2.087 * np.exp(cell.basal.nodes["dist_from_soma"] * 0.0031)) * 8e-5
+    cell.apical.set("apical_H_gH", gH_conductance)
 
     ########## SOMA ##########
     cell.soma.insert(NaTs2T().change_name("somatic_NaTs2T"))
