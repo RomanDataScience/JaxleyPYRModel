@@ -27,7 +27,7 @@ cell, time_vec, stimulus = add_segmented_stimuli(
     cell,
     cell_name="m20240527cd",
     trace_name="v75ctrl",
-    segment_name="hyperpolarizing_step",
+    segment_name="hyperpolarizing_pulse",
     experimental_dt=0.05,
     delta_t=delta_t,
 )
@@ -37,7 +37,7 @@ x_o = jx.integrate(cell, delta_t=delta_t)[0]  # [0] gets rid of the batch-dimens
 
 fig, ax = plt.subplots(2, 1, figsize=(5.0, 2.0))
 _ = ax[0].plot(time_vec, x_o, c="k")
-_ = ax[0].set_ylim([-90, 60])
+# _ = ax[0].set_ylim([-90, 60])
 _ = ax[0].set_xlabel("Time (ms)")
 _ = ax[0].set_ylabel("Voltage (mV)")
 
