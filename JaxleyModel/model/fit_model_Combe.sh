@@ -6,7 +6,7 @@ PYTHON_BIN="${PYTHON_BIN:-python}"
 
 CELL_NAME="${CELL_NAME:-m20240527cd}"
 TRACE_NAME="${TRACE_NAME:-v75ctrl}"
-SEGMENT_NAME="${SEGMENT_NAME:-depolarizing_step}"
+SEGMENT_NAME="${SEGMENT_NAME:-hyperpolarizing_step}"
 EPOCHS="${EPOCHS:-50}"
 DELTA_T="${DELTA_T:-0.05}"
 D_LAMBDA="${D_LAMBDA:-0.3}"

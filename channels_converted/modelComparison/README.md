@@ -4,7 +4,10 @@ This folder compares:
 
 - `Combe2023/cell_setup_pc2b_CCh_driven.hoc` loaded directly in NEURON.
 - The one-to-one Jaxley Combe channel-placement port from
-  `JaxleyModel/model/model_Combe.py`, using `JaxleyModel/model/CELL.SWC`.
+  `JaxleyModel/model/model_Combe.py`, using the HOC section tree by default.
+
+See `HOC_IMPORT_NOTES.md` for the import issues found during alignment and the
+checklist for reusing the same channel dynamics on different morphologies.
 
 Default protocol:
 
