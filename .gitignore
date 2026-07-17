@@ -6,3 +6,6 @@ Upchurch2022/
 jaxley-models
 __pycache__
 *.png
+mod/
+*.npz
+*.csv

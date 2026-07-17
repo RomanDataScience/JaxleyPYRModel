@@ -49,11 +49,11 @@ params["apical"] = {
     "apical_NaTs2T_gNaTs2T": 0.026145,
     "apical_SKv3_1_gSKv3_1": 0.004226,
     "apical_M_gM": 0.000143,
-    "apical_H_scale": 1.0
 }
-
-params["basal"] = {
-    "basal_H_scale": 1.0
+params["h_current"] = {
+    # Multipliers preserve the original spatial gH profiles.
+    "apical_H_scale": 1.0,
+    "basal_H_scale": 1.0,
 }
 
 params["soma"] = {
@@ -134,6 +134,7 @@ bounds = {
 BASE_APICAL_GH = 8e-5
 BASE_BASAL_GH = 8e-5
 H_SCALE_KEYS = ("apical_H_scale", "basal_H_scale")
+
 PASSIVE_PROFILE_DISTANCE_CAP = 394.0
 PASSIVE_PROFILE_KEYS = tuple(params["passive_profile"].keys())
 FIT_PARAMETER_ALIASES = {
@@ -183,6 +184,7 @@ def passive_profile_values(distances, passive_params=None):
 
 
 def apical_h_conductance(cell, scale=1.0):
+    """Return the distance-dependent apical H conductance scaled by `scale`."""
     distances = jnp.asarray(
         cell.apical.nodes["dist_from_soma"].to_numpy(dtype=float)
     )
@@ -193,6 +195,7 @@ def apical_h_conductance(cell, scale=1.0):
 
 
 def set_h_conductance(cell, apical_scale=1.0, basal_scale=1.0, state=None):
+    """Set apical and basal H conductances while preserving their profiles."""
     state = cell.apical.data_set(
         "apical_H_gH",
         apical_h_conductance(cell, apical_scale),
@@ -218,6 +221,7 @@ def set_passive_profile(cell, passive_params=None):
 
 def set_fitted_parameters(cell, keys, values, state=None):
     values_by_key = {key: values[i] for i, key in enumerate(keys)}
+
     fitted_passive = {
         key: values_by_key[key]
         for key in PASSIVE_PROFILE_KEYS
@@ -231,6 +235,8 @@ def set_fitted_parameters(cell, keys, values, state=None):
         state = cell.data_set("Leak_gLeak", leak_g, state)
         state = cell.data_set("axial_resistivity", axial_resistivity, state)
 
+    # H-scale parameters are optimizer-only variables, not Jaxley field names.
+    # Convert them into the actual compartment-wise H conductances.
     if "apical_H_scale" in values_by_key:
         state = cell.apical.data_set(
             "apical_H_gH",
@@ -345,8 +351,6 @@ def L5PC(d_lambda=0.1):
     for group in ["apical", "soma", "axon"]:
         group_params = params[group]
         for key, value in group_params.items():
-            if key in H_SCALE_KEYS:
-                continue
             cell.select(cell.nodes[cell.nodes[group]].index).set(key, value)
 
     return cell
