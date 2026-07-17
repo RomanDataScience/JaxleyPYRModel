@@ -15,23 +15,33 @@ LR_SCALE="${LR_SCALE:-0.03}"
 LOSS_PRE_MS="${LOSS_PRE_MS:-100}"
 LOSS_POST_MS="${LOSS_POST_MS:-400}"
 
-EXTRA_ARGS=()
-if [[ -n "${STIM_THRESHOLD_NA:-}" ]]; then
-  EXTRA_ARGS+=(--stim-threshold-nA "${STIM_THRESHOLD_NA}")
-fi
-
 cd "${SCRIPT_DIR}"
 
-"${PYTHON_BIN}" -u fit_model_Combe.py \
-  --cell-name "${CELL_NAME}" \
-  --trace-name "${TRACE_NAME}" \
-  --segment-name "${SEGMENT_NAME}" \
-  --epochs "${EPOCHS}" \
-  --delta-t "${DELTA_T}" \
-  --d-lambda "${D_LAMBDA}" \
-  --plot-every "${PLOT_EVERY}" \
-  --lr-scale "${LR_SCALE}" \
-  --loss-pre-ms "${LOSS_PRE_MS}" \
-  --loss-post-ms "${LOSS_POST_MS}" \
-  "${EXTRA_ARGS[@]}" \
-  "$@"
+if [[ -n "${STIM_THRESHOLD_NA:-}" ]]; then
+  "${PYTHON_BIN}" -u fit_model_Combe.py \
+    --cell-name "${CELL_NAME}" \
+    --trace-name "${TRACE_NAME}" \
+    --segment-name "${SEGMENT_NAME}" \
+    --epochs "${EPOCHS}" \
+    --delta-t "${DELTA_T}" \
+    --d-lambda "${D_LAMBDA}" \
+    --plot-every "${PLOT_EVERY}" \
+    --lr-scale "${LR_SCALE}" \
+    --loss-pre-ms "${LOSS_PRE_MS}" \
+    --loss-post-ms "${LOSS_POST_MS}" \
+    --stim-threshold-nA "${STIM_THRESHOLD_NA}" \
+    "$@"
+else
+  "${PYTHON_BIN}" -u fit_model_Combe.py \
+    --cell-name "${CELL_NAME}" \
+    --trace-name "${TRACE_NAME}" \
+    --segment-name "${SEGMENT_NAME}" \
+    --epochs "${EPOCHS}" \
+    --delta-t "${DELTA_T}" \
+    --d-lambda "${D_LAMBDA}" \
+    --plot-every "${PLOT_EVERY}" \
+    --lr-scale "${LR_SCALE}" \
+    --loss-pre-ms "${LOSS_PRE_MS}" \
+    --loss-post-ms "${LOSS_POST_MS}" \
+    "$@"
+fi

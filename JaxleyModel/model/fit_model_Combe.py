@@ -75,7 +75,7 @@ def parse_args():
     )
     parser.add_argument(
         "--loss-post-ms",
-        default=400.0,
+        default=800.0,
         type=float,
         help="Milliseconds after detected current offset to include in the loss.",
     )
@@ -239,10 +239,30 @@ def parameter_bounds(keys):
     )
 
 
-def save_fit_plot(path, time, observed, simulated, current, title, loss_window=None):
+def experimental_v_final(observed, *, offset_index: int, delta_t: float, window_ms: float = 5.0):
+    values = np.asarray(observed, dtype=float)
+    if values.size == 0:
+        return None
+
+    stop = min(values.size, max(0, offset_index) + 1)
+    window_steps = max(1, int(round(window_ms / delta_t)))
+    start = max(0, stop - window_steps)
+    return float(np.mean(values[start:stop]))
+
+
+def save_fit_plot(path, time, observed, simulated, current, title, loss_window=None, v_final=None):
     fig, axes = plt.subplots(2, 1, figsize=(8, 4.6), sharex=True, constrained_layout=True)
     axes[0].plot(time, observed, color="black", lw=0.9, label="experimental")
     axes[0].plot(time, simulated, color="#2b8cbe", lw=0.9, label="simulated")
+    if v_final is not None:
+        axes[0].axhline(
+            v_final,
+            color="black",
+            lw=0.9,
+            ls=(0, (4, 3)),
+            alpha=0.8,
+            label="experimental v_final",
+        )
     axes[0].set_ylabel("Voltage (mV)")
     axes[0].set_title(title)
     axes[0].legend(frameon=False)
@@ -326,6 +346,14 @@ def main():
         f"stimulus onset={loss_window['onset_index'] * args.delta_t:.3f} ms, "
         f"offset={loss_window['offset_index'] * args.delta_t:.3f} ms"
     )
+    v_final = None
+    if args.segment_name == "depolarizing_step":
+        v_final = experimental_v_final(
+            observed,
+            offset_index=loss_window["offset_index"],
+            delta_t=args.delta_t,
+        )
+        print(f"experimental v_final={v_final:.3f} mV")
 
     cell = Combe2023(
         d_lambda=args.d_lambda,
@@ -399,6 +427,7 @@ def main():
                 np.asarray(stimulus),
                 f"Current epoch {epoch}, RMSE={rmse_float:.3f} mV",
                 loss_window_ms,
+                v_final,
             )
             save_fit_plot(
                 best_plot_dir / f"{label}_best_epoch_{epoch:03d}.png",
@@ -408,6 +437,7 @@ def main():
                 np.asarray(stimulus),
                 f"Best fit through epoch {epoch}, RMSE={np.sqrt(best_mse):.3f} mV",
                 loss_window_ms,
+                v_final,
             )
 
         opt_params = opt_params - args.lr_scale * grad / (grad_norm**args.beta + 1e-12)
@@ -464,9 +494,10 @@ def main():
             "onset_ms",
             "offset_ms",
             "baseline_nA",
-            "threshold_nA",
-            "loss_samples",
-            "total_samples",
+        "threshold_nA",
+        "loss_samples",
+        "total_samples",
+        "experimental_v_final_mV",
         ]
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
@@ -484,6 +515,7 @@ def main():
                 "threshold_nA": loss_window["threshold_nA"],
                 "loss_samples": int(loss_indices_np.size),
                 "total_samples": int(n_samples),
+                "experimental_v_final_mV": v_final,
             }
         )
 
@@ -495,6 +527,7 @@ def main():
         np.asarray(stimulus),
         f"Best Combe fit, RMSE={np.sqrt(best_mse):.3f} mV",
         loss_window_ms,
+        v_final,
     )
 
     print(history_path)
