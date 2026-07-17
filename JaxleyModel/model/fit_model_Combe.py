@@ -494,10 +494,10 @@ def main():
             "onset_ms",
             "offset_ms",
             "baseline_nA",
-        "threshold_nA",
-        "loss_samples",
-        "total_samples",
-        "experimental_v_final_mV",
+            "threshold_nA",
+            "loss_samples",
+            "total_samples",
+            "experimental_v_final_mV",
         ]
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
