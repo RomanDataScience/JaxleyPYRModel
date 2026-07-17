@@ -12,6 +12,13 @@ DELTA_T="${DELTA_T:-0.05}"
 D_LAMBDA="${D_LAMBDA:-0.3}"
 PLOT_EVERY="${PLOT_EVERY:-1}"
 LR_SCALE="${LR_SCALE:-0.03}"
+LOSS_PRE_MS="${LOSS_PRE_MS:-100}"
+LOSS_POST_MS="${LOSS_POST_MS:-400}"
+
+EXTRA_ARGS=()
+if [[ -n "${STIM_THRESHOLD_NA:-}" ]]; then
+  EXTRA_ARGS+=(--stim-threshold-nA "${STIM_THRESHOLD_NA}")
+fi
 
 cd "${SCRIPT_DIR}"
 
@@ -24,4 +31,7 @@ cd "${SCRIPT_DIR}"
   --d-lambda "${D_LAMBDA}" \
   --plot-every "${PLOT_EVERY}" \
   --lr-scale "${LR_SCALE}" \
+  --loss-pre-ms "${LOSS_PRE_MS}" \
+  --loss-post-ms "${LOSS_POST_MS}" \
+  "${EXTRA_ARGS[@]}" \
   "$@"

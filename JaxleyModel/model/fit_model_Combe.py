@@ -67,6 +67,24 @@ def parse_args():
     parser.add_argument("--max-steps", default=None, type=int)
     parser.add_argument("--d-lambda", default=0.3, type=float)
     parser.add_argument("--plot-every", default=1, type=int)
+    parser.add_argument(
+        "--loss-pre-ms",
+        default=100.0,
+        type=float,
+        help="Milliseconds before detected current onset to include in the loss.",
+    )
+    parser.add_argument(
+        "--loss-post-ms",
+        default=400.0,
+        type=float,
+        help="Milliseconds after detected current offset to include in the loss.",
+    )
+    parser.add_argument(
+        "--stim-threshold-nA",
+        default=None,
+        type=float,
+        help="Current deviation threshold for stimulus detection. Default: infer from trace.",
+    )
     parser.add_argument("--disable-calcium-diffusion", action="store_true")
     parser.add_argument(
         "--fit-group",
@@ -119,6 +137,62 @@ def load_segment(path: Path, *, source_dt: float, target_dt: float, scale: float
     return data[jnp.minimum(indices, data.size - 1)]
 
 
+def loss_window_from_stimulus(
+    stimulus,
+    *,
+    delta_t: float,
+    pre_ms: float,
+    post_ms: float,
+    threshold_nA: float | None = None,
+):
+    current = np.asarray(stimulus, dtype=float)
+    n_samples = current.size
+    if n_samples == 0:
+        raise ValueError("Cannot build a loss window from an empty stimulus.")
+
+    baseline_count = max(1, min(n_samples, int(round(pre_ms / delta_t))))
+    baseline = float(np.median(current[:baseline_count]))
+    deviation = np.abs(current - baseline)
+    max_deviation = float(np.max(deviation))
+
+    if threshold_nA is None:
+        noise = float(np.median(np.abs(current[:baseline_count] - baseline)))
+        threshold_nA = max(1e-9, 10.0 * noise, 0.01 * max_deviation)
+
+    active = deviation > threshold_nA
+    if not np.any(active):
+        warnings.warn(
+            "Could not detect a current step in the stimulus; using the full trace for the loss.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return np.arange(n_samples, dtype=np.int32), {
+            "baseline_nA": baseline,
+            "threshold_nA": float(threshold_nA),
+            "onset_index": 0,
+            "offset_index": n_samples - 1,
+            "start_index": 0,
+            "stop_index": n_samples,
+        }
+
+    active_indices = np.flatnonzero(active)
+    onset = int(active_indices[0])
+    offset = int(active_indices[-1])
+    pre_steps = int(round(pre_ms / delta_t))
+    post_steps = int(round(post_ms / delta_t))
+    start = max(0, onset - pre_steps)
+    stop = min(n_samples, offset + 1 + post_steps)
+
+    return np.arange(start, stop, dtype=np.int32), {
+        "baseline_nA": baseline,
+        "threshold_nA": float(threshold_nA),
+        "onset_index": onset,
+        "offset_index": offset,
+        "start_index": start,
+        "stop_index": stop,
+    }
+
+
 def all_values():
     values = {}
     for group in params.values():
@@ -165,7 +239,7 @@ def parameter_bounds(keys):
     )
 
 
-def save_fit_plot(path, time, observed, simulated, current, title):
+def save_fit_plot(path, time, observed, simulated, current, title, loss_window=None):
     fig, axes = plt.subplots(2, 1, figsize=(8, 4.6), sharex=True, constrained_layout=True)
     axes[0].plot(time, observed, color="black", lw=0.9, label="experimental")
     axes[0].plot(time, simulated, color="#2b8cbe", lw=0.9, label="simulated")
@@ -176,6 +250,9 @@ def save_fit_plot(path, time, observed, simulated, current, title):
     axes[1].plot(time[: current.size], current, color="#636363", lw=0.9)
     axes[1].set_xlabel("Time (ms)")
     axes[1].set_ylabel("Current (nA)")
+    if loss_window is not None:
+        for ax in axes:
+            ax.axvspan(loss_window[0], loss_window[1], color="#f0b44c", alpha=0.16, lw=0)
 
     fig.savefig(path, dpi=200)
     plt.close(fig)
@@ -202,6 +279,10 @@ def main():
         raise ValueError("--epochs must be positive")
     if args.plot_every < 0:
         raise ValueError("--plot-every must be non-negative")
+    if args.loss_pre_ms < 0.0 or args.loss_post_ms < 0.0:
+        raise ValueError("--loss-pre-ms and --loss-post-ms must be non-negative")
+    if args.stim_threshold_nA is not None and args.stim_threshold_nA <= 0.0:
+        raise ValueError("--stim-threshold-nA must be positive when provided")
 
     args.segment_name = segment_name(args.segment_name)
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -226,6 +307,25 @@ def main():
     observed = observed[:n_samples]
     time = np.arange(n_samples) * args.delta_t
     label = f"{args.cell_name}_{args.trace_name}_{args.segment_name}_combe"
+    loss_indices_np, loss_window = loss_window_from_stimulus(
+        stimulus,
+        delta_t=args.delta_t,
+        pre_ms=args.loss_pre_ms,
+        post_ms=args.loss_post_ms,
+        threshold_nA=args.stim_threshold_nA,
+    )
+    loss_indices = jnp.asarray(loss_indices_np, dtype=jnp.int32)
+    loss_window_ms = (
+        loss_window["start_index"] * args.delta_t,
+        (loss_window["stop_index"] - 1) * args.delta_t,
+    )
+    print(
+        "loss window: "
+        f"{loss_window_ms[0]:.3f}-{loss_window_ms[1]:.3f} ms "
+        f"({loss_indices_np.size}/{n_samples} samples), "
+        f"stimulus onset={loss_window['onset_index'] * args.delta_t:.3f} ms, "
+        f"offset={loss_window['offset_index'] * args.delta_t:.3f} ms"
+    )
 
     cell = Combe2023(
         d_lambda=args.d_lambda,
@@ -259,7 +359,8 @@ def main():
     def loss(opt_values):
         fit_params = transform.forward(opt_values)
         predicted = simulate(fit_params)
-        return jnp.mean((predicted - observed) ** 2), predicted
+        residual = predicted[loss_indices] - observed[loss_indices]
+        return jnp.mean(residual**2), predicted
 
     value_and_grad = jax.jit(jax.value_and_grad(loss, has_aux=True))
     simulate = jax.jit(simulate)
@@ -297,6 +398,7 @@ def main():
                 predicted_np,
                 np.asarray(stimulus),
                 f"Current epoch {epoch}, RMSE={rmse_float:.3f} mV",
+                loss_window_ms,
             )
             save_fit_plot(
                 best_plot_dir / f"{label}_best_epoch_{epoch:03d}.png",
@@ -305,6 +407,7 @@ def main():
                 best_voltage,
                 np.asarray(stimulus),
                 f"Best fit through epoch {epoch}, RMSE={np.sqrt(best_mse):.3f} mV",
+                loss_window_ms,
             )
 
         opt_params = opt_params - args.lr_scale * grad / (grad_norm**args.beta + 1e-12)
@@ -327,6 +430,7 @@ def main():
     history_path = args.output_dir / f"{label}_history.csv"
     params_path = args.output_dir / f"{label}_params.csv"
     figure_path = args.output_dir / f"{label}_fit.png"
+    loss_window_path = args.output_dir / f"{label}_loss_window.csv"
 
     with history_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=["epoch", "mse", "rmse_mV", "grad_norm"])
@@ -349,6 +453,40 @@ def main():
                 }
             )
 
+    with loss_window_path.open("w", newline="", encoding="utf-8") as handle:
+        fieldnames = [
+            "start_index",
+            "stop_index",
+            "onset_index",
+            "offset_index",
+            "start_ms",
+            "stop_ms",
+            "onset_ms",
+            "offset_ms",
+            "baseline_nA",
+            "threshold_nA",
+            "loss_samples",
+            "total_samples",
+        ]
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "start_index": loss_window["start_index"],
+                "stop_index": loss_window["stop_index"],
+                "onset_index": loss_window["onset_index"],
+                "offset_index": loss_window["offset_index"],
+                "start_ms": loss_window["start_index"] * args.delta_t,
+                "stop_ms": (loss_window["stop_index"] - 1) * args.delta_t,
+                "onset_ms": loss_window["onset_index"] * args.delta_t,
+                "offset_ms": loss_window["offset_index"] * args.delta_t,
+                "baseline_nA": loss_window["baseline_nA"],
+                "threshold_nA": loss_window["threshold_nA"],
+                "loss_samples": int(loss_indices_np.size),
+                "total_samples": int(n_samples),
+            }
+        )
+
     save_fit_plot(
         figure_path,
         time,
@@ -356,10 +494,12 @@ def main():
         np.asarray(fitted_voltage),
         np.asarray(stimulus),
         f"Best Combe fit, RMSE={np.sqrt(best_mse):.3f} mV",
+        loss_window_ms,
     )
 
     print(history_path)
     print(params_path)
+    print(loss_window_path)
     print(figure_path)
     if write_epoch_plots:
         print(current_plot_dir)
