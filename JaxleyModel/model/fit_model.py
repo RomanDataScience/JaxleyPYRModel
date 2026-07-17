@@ -191,18 +191,28 @@ def main():
     best_mse = np.inf
     best_params = None
     best_voltage = None
-    epoch_plot_dir = args.output_dir / f"{label}_best_by_epoch"
-    epoch_plot_dir.mkdir(parents=True, exist_ok=True)
+    best_plot_dir = args.output_dir / f"{label}_best_by_epoch"
+    current_plot_dir = args.output_dir / f"{label}_current_by_epoch"
+    best_plot_dir.mkdir(parents=True, exist_ok=True)
+    current_plot_dir.mkdir(parents=True, exist_ok=True)
     step_scale = args.lr_scale * l2_norm(jnp.ones(len(opt_params)))
     for epoch in range(args.epochs):
         (value, predicted), grad = value_and_grad(opt_params)
         grad_norm = l2_norm(grad)
+        predicted = np.asarray(predicted)
+        save_fit_plot(
+            current_plot_dir / f"{label}_current_epoch_{epoch:03d}.png",
+            time,
+            np.asarray(observed),
+            predicted,
+            f"Current epoch {epoch}, RMSE={float(jnp.sqrt(value)):.3f} mV",
+        )
         if float(value) < best_mse:
             best_mse = float(value)
             best_params = np.asarray(transform.forward(opt_params))
-            best_voltage = np.asarray(predicted)
+            best_voltage = predicted
         save_fit_plot(
-            epoch_plot_dir / f"{label}_best_epoch_{epoch:03d}.png",
+            best_plot_dir / f"{label}_best_epoch_{epoch:03d}.png",
             time,
             np.asarray(observed),
             best_voltage,
@@ -241,7 +251,8 @@ def main():
     print(history_path)
     print(params_path)
     print(figure_path)
-    print(epoch_plot_dir)
+    print(current_plot_dir)
+    print(best_plot_dir)
 
 
 if __name__ == "__main__":
