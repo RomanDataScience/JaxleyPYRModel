@@ -148,6 +148,49 @@ PIDS=()
 PID_CELLS=()
 FAILED=0
 
+terminate_children() {
+  local pid
+  for pid in "${PIDS[@]}"; do
+    if kill -0 "${pid}" 2>/dev/null; then
+      kill -TERM "${pid}" 2>/dev/null || true
+    fi
+  done
+  for pid in "${PIDS[@]}"; do
+    wait "${pid}" 2>/dev/null || true
+  done
+  PIDS=()
+  PID_CELLS=()
+}
+
+handle_interrupt() {
+  local signal_name=$1
+  trap - EXIT INT TERM HUP
+  echo "Received ${signal_name}; stopping active fitting processes..." >&2
+  terminate_children
+  case "${signal_name}" in
+    INT) exit 130 ;;
+    TERM) exit 143 ;;
+    HUP) exit 129 ;;
+  esac
+}
+
+handle_exit() {
+  local status=$?
+  trap - EXIT INT TERM HUP
+  if ((${#PIDS[@]})); then
+    terminate_children
+  fi
+  exit "${status}"
+}
+
+# A background fit must not survive Ctrl-C, terminal closure, or termination of
+# this launcher. This prevents old runs from printing into a later terminal and
+# from continuing after their run directory has been cleaned up.
+trap 'handle_exit' EXIT
+trap 'handle_interrupt INT' INT
+trap 'handle_interrupt TERM' TERM
+trap 'handle_interrupt HUP' HUP
+
 wait_for_oldest() {
   local pid=${PIDS[0]}
   local cell=${PID_CELLS[0]}
@@ -184,14 +227,13 @@ launch_cell() {
   fi
 
   echo "Launching ${cell} as ${run_name}"
-  (
-    set -o pipefail
-    {
-      echo "Command: ${command[*]}"
-      echo "Trace batching: natural-shape jit(vmap) buckets sharing one parameter vector"
-      "${command[@]}"
-    } 2>&1 | tee "${LOG_DIR}/${cell}.log"
-  ) &
+  {
+    echo "Command: ${command[*]}"
+    echo "Trace batching: natural-shape jit(vmap) buckets sharing one parameter vector"
+  } | tee "${LOG_DIR}/${cell}.log"
+  # Process substitution keeps $! bound to the Python process. The launcher can
+  # therefore terminate the actual fit cleanly instead of only killing `tee`.
+  "${command[@]}" > >(tee -a "${LOG_DIR}/${cell}.log") 2>&1 &
   PIDS+=("$!")
   PID_CELLS+=("${cell}")
 }

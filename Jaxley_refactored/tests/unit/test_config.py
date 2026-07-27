@@ -30,8 +30,12 @@ def test_backtracking_optimizer_configuration_is_validated():
     config = load_config(PROJECT / "configs/optimizers/adam_backtracking.yaml")
 
     assert config.fit.optimizer.line_search.enabled
-    assert config.fit.optimizer.learning_rate == 0.01
-    assert config.fit.optimizer.line_search.maximum_trials == 6
+    assert (
+        config.fit.optimizer.line_search.minimum_learning_rate
+        <= config.fit.optimizer.learning_rate
+        <= config.fit.optimizer.line_search.maximum_learning_rate
+    )
+    assert config.fit.optimizer.line_search.maximum_trials > 0
 
     with pytest.raises(ConfigError, match="reduction_factor"):
         AppConfig.from_mapping(

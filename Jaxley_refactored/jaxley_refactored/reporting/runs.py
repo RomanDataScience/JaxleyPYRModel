@@ -23,16 +23,27 @@ class RunDirectory:
             pass
         (self.path / "checkpoints").mkdir(exist_ok=True)
 
+    def _require_directory(self) -> None:
+        if not self.path.is_dir():
+            raise RuntimeError(
+                f"Run directory disappeared while fitting: {self.path}. "
+                "It may have been removed while an older background fit was "
+                "still running. Stop active fits before cleaning runs/."
+            )
+
     def write_yaml(self, name: str, value: Any) -> None:
+        self._require_directory()
         with (self.path / name).open("w", encoding="utf-8") as handle:
             yaml.safe_dump(value, handle, sort_keys=False)
 
     def write_json(self, name: str, value: Any) -> None:
+        self._require_directory()
         with (self.path / name).open("w", encoding="utf-8") as handle:
             json.dump(value, handle, indent=2, sort_keys=True)
             handle.write("\n")
 
     def append_metrics(self, value: Any) -> None:
+        self._require_directory()
         with (self.path / "metrics.jsonl").open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(value, sort_keys=True) + "\n")
 
@@ -42,6 +53,7 @@ class RunDirectory:
         specifications: Iterable,
         values,
     ) -> None:
+        self._require_directory()
         with (self.path / name).open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(
                 handle,
@@ -58,4 +70,3 @@ class RunDirectory:
                         "units": spec.units,
                     }
                 )
-
