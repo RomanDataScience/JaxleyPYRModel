@@ -20,6 +20,7 @@ class TraceBucket:
     currents_nA: np.ndarray
     observed_mV: np.ndarray
     score_masks: np.ndarray
+    window_masks: Mapping[str, np.ndarray]
     weights: np.ndarray
     initial_voltage_mV: np.ndarray
 
@@ -91,6 +92,28 @@ def bucket_records(
             missing = n_steps - len(values)
             return np.pad(values, (0, missing), constant_values=fill)
 
+        def record_windows(record: TraceRecord) -> dict[str, np.ndarray]:
+            time = record.time_ms
+            start = float(record.metadata.get("epoch_start_ms", time[0]))
+            stop = float(record.metadata.get("epoch_stop_ms", time[-1]))
+            end_start = max(start, stop - 5.0)
+            return {
+                "score": record.score_mask,
+                "full_trace": np.ones(len(time), dtype=bool),
+                "baseline": time < start,
+                "stimulus": (time >= start) & (time <= stop),
+                "recovery": time > stop,
+                "stimulus_end": (time >= end_start) & (time <= stop),
+            }
+
+        windows_by_record = [record_windows(record) for record in records_in_bucket]
+        window_masks = {
+            name: np.stack(
+                [padded(windows[name], fill=False) for windows in windows_by_record]
+            )
+            for name in windows_by_record[0]
+        }
+
         buckets.append(
             TraceBucket(
                 key=key,
@@ -113,6 +136,7 @@ def bucket_records(
                         for record in records_in_bucket
                     ]
                 ),
+                window_masks=window_masks,
                 weights=np.asarray(
                     [record.weight for record in records_in_bucket], dtype=float
                 ),

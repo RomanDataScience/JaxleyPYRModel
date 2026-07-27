@@ -460,10 +460,84 @@ class OptimizerSpec:
         )
 
 
+_LOSS_KINDS = {
+    "masked_voltage_mse",
+    "voltage_mse",
+    "voltage_mae",
+    "pseudo_huber",
+    "normalized_voltage_mse",
+    "derivative_mse",
+    "correlation_loss",
+    "resting_voltage_error",
+    "steady_state_error",
+}
+_LOSS_WINDOWS = {"score", "full_trace", "baseline", "stimulus", "recovery", "stimulus_end"}
+
+
+@dataclass(frozen=True)
+class LossComponentSpec:
+    """One statically configured, differentiable objective component."""
+
+    kind: str
+    weight: float = 1.0
+    window: str = "score"
+    protocols: tuple[str, ...] = ()
+    scale: float = 1.0
+    delta: float = 1.0
+    label: str = ""
+
+    @classmethod
+    def from_mapping(cls, value: Any, index: int) -> "LossComponentSpec":
+        where = f"fit.objective.components[{index}]"
+        data = _mapping(value, where)
+        _strict(
+            data,
+            {
+                "kind",
+                "weight",
+                "window",
+                "protocols",
+                "scale",
+                "scale_mV",
+                "scale_mV_per_ms",
+                "delta",
+                "label",
+            },
+            where,
+        )
+        kind = str(data.get("kind", "masked_voltage_mse"))
+        if kind not in _LOSS_KINDS:
+            raise ConfigError(f"Unsupported loss component kind: {kind}")
+        window = str(data.get("window", "score"))
+        if window not in _LOSS_WINDOWS:
+            raise ConfigError(f"Unsupported loss window: {window}")
+        scale_keys = [
+            key
+            for key in ("scale", "scale_mV", "scale_mV_per_ms")
+            if key in data
+        ]
+        if len(scale_keys) > 1:
+            raise ConfigError(f"{where} defines multiple scale fields.")
+        scale = data.get(scale_keys[0], 1.0) if scale_keys else 1.0
+        weight = float(data.get("weight", 1.0))
+        if weight < 0.0:
+            raise ConfigError(f"{where}.weight cannot be negative.")
+        return cls(
+            kind=kind,
+            weight=weight,
+            window=window,
+            protocols=_strings(data.get("protocols"), f"{where}.protocols"),
+            scale=_positive(scale, f"{where}.scale"),
+            delta=_positive(data.get("delta", 1.0), f"{where}.delta"),
+            label=str(data.get("label", kind)),
+        )
+
+
 @dataclass(frozen=True)
 class FitSpec:
     aggregation: str
     protocol_weights: Mapping[str, float]
+    components: tuple[LossComponentSpec, ...]
     optimizer: OptimizerSpec
     batching_strategy: str = "vmap"
     pad_to_longest: bool = False
@@ -484,6 +558,25 @@ class FitSpec:
             "fit",
         )
         objective = _mapping(data.get("objective"), "fit.objective")
+        _strict(
+            objective,
+            {"components", "aggregation", "protocol_weights", "report_metrics"},
+            "fit.objective",
+        )
+        raw_components = objective.get("components") or [
+            {"kind": "masked_voltage_mse", "weight": 1.0}
+        ]
+        if not isinstance(raw_components, Sequence) or isinstance(raw_components, str):
+            raise ConfigError("fit.objective.components must be a list.")
+        components = tuple(
+            LossComponentSpec.from_mapping(component, index)
+            for index, component in enumerate(raw_components)
+        )
+        if not components or sum(component.weight for component in components) <= 0:
+            raise ConfigError("At least one loss component must have positive weight.")
+        labels = [component.label for component in components]
+        if len(labels) != len(set(labels)):
+            raise ConfigError("Loss component labels must be unique.")
         aggregation = str(objective.get("aggregation", "protocol_mean"))
         if aggregation not in {"protocol_mean", "trace_mean", "sample_mean"}:
             raise ConfigError(f"Unsupported objective aggregation: {aggregation}")
@@ -511,6 +604,7 @@ class FitSpec:
         return cls(
             aggregation=aggregation,
             protocol_weights=weights,
+            components=components,
             optimizer=OptimizerSpec.from_mapping(data.get("optimizer")),
             batching_strategy=strategy,
             pad_to_longest=bool(batching.get("pad_to_longest", False)),

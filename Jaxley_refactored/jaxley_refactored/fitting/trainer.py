@@ -17,7 +17,12 @@ from jaxley_refactored.parameters import ProjectedBoxSpace
 from jaxley_refactored.simulation import InitialStateFactory, SimulationKernel
 
 from .checkpoints import CheckpointManager
-from .losses import weighted_bucket_loss
+from .losses import (
+    BucketObjective,
+    component_denominators,
+    default_loss_registry,
+    weighted_bucket_loss,
+)
 from .optimizer import Adam
 
 
@@ -57,14 +62,25 @@ class Trainer:
         self.optimizer = Adam(fit.optimizer, self.space)
         self.checkpoints = checkpoint_manager
         self._stop_requested = False
+        buckets = tuple(buckets)
+        denominators = component_denominators(fit.components, buckets)
+        registry = default_loss_registry()
         self._prepared = tuple(
-            self._prepare_bucket(bucket, protocol) for bucket in buckets
+            self._prepare_bucket(
+                bucket,
+                protocol,
+                BucketObjective(fit.components, bucket, denominators, registry),
+            )
+            for bucket in buckets
         )
         if not self._prepared:
             raise ValueError("Trainer requires at least one trace bucket.")
 
     def _prepare_bucket(
-        self, bucket: TraceBucket, protocol: ProtocolSpec
+        self,
+        bucket: TraceBucket,
+        protocol: ProtocolSpec,
+        objective: BucketObjective,
     ) -> PreparedBucket:
         initial_voltages = (
             bucket.initial_voltage_mV
@@ -86,8 +102,8 @@ class Trainer:
         )
         currents = jnp.asarray(bucket.currents_nA)
         observed = jnp.asarray(bucket.observed_mV)
-        masks = jnp.asarray(bucket.score_masks)
-        weights = jnp.asarray(bucket.weights)
+        score_masks = jnp.asarray(bucket.score_masks)
+        trace_weights = jnp.asarray(bucket.weights)
 
         def loss(normalized):
             physical = self.space.physical(normalized)
@@ -96,10 +112,11 @@ class Trainer:
                 if self.fit.batching_strategy == "serial"
                 else kernel.simulate_batch(physical, currents, initial_states)
             )
-            return (
-                weighted_bucket_loss(predicted, observed, masks, weights),
-                predicted,
+            objective_loss, components = objective(predicted, observed)
+            evaluation_mse = weighted_bucket_loss(
+                predicted, observed, score_masks, trace_weights
             )
+            return objective_loss, (predicted, components, evaluation_mse)
 
         loss_and_gradient = jax.value_and_grad(loss, has_aux=True)
         if self.runtime.jit:
@@ -147,12 +164,22 @@ class Trainer:
             total_gradient = jnp.zeros_like(normalized)
             bucket_losses = {}
             bucket_predictions = {}
+            component_losses = {
+                component.label: 0.0 for component in self.fit.components
+            }
+            evaluation_mse = 0.0
             for prepared in self._prepared:
-                (loss, predicted), gradient = prepared.loss_and_gradient(normalized)
+                (
+                    (loss, (predicted, components, bucket_evaluation_mse)),
+                    gradient,
+                ) = prepared.loss_and_gradient(normalized)
                 total_loss = total_loss + loss
                 total_gradient = total_gradient + gradient
                 bucket_losses[str(prepared.bucket.key)] = float(loss)
                 bucket_predictions[prepared.bucket.key] = np.asarray(predicted)
+                evaluation_mse += float(bucket_evaluation_mse)
+                for label, value in components.items():
+                    component_losses[label] += float(value)
 
             loss_value = float(total_loss)
             is_best = loss_value < best_loss
@@ -166,9 +193,10 @@ class Trainer:
             metrics = {
                 "epoch": epoch,
                 "loss": loss_value,
-                "rmse_mV": loss_value**0.5,
+                "rmse_mV": evaluation_mse**0.5,
                 "gradient_norm": float(gradient_norm),
                 "bucket_losses": bucket_losses,
+                "component_losses": component_losses,
             }
             if on_epoch is not None:
                 on_epoch(metrics, bucket_predictions)
