@@ -184,6 +184,7 @@ preemption warning by checkpointing and returning exit code 75.
 ## Documentation and validation
 
 - `docs/ARCHITECTURE.md`: module responsibilities and extension points.
+- `docs/LOSS_LIBRARY.md`: registered losses, windows, scaling, and composition.
 - `COMPARTMENT_PROPERTY_COMPATIBILITY.md`: exact HOC update semantics.
 - `REFACTORING_PLAN.md`: audit, decisions, and migration history.
 - `CONFIG_BLUEPRINT.yaml`: broader schema roadmap; executable configs live
