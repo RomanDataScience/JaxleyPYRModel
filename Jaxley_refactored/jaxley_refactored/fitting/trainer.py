@@ -23,7 +23,7 @@ from .losses import (
     default_loss_registry,
     weighted_bucket_loss,
 )
-from .optimizer import Adam
+from .optimizer import Adam, BacktrackingLineSearch
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,7 @@ class PreparedBucket:
     bucket: TraceBucket
     kernel: SimulationKernel
     initial_states: object
+    evaluate: Callable
     loss_and_gradient: Callable
 
 
@@ -60,6 +61,9 @@ class Trainer:
         self.runtime = runtime
         self.space = ProjectedBoxSpace.from_specs(model.parameterizer.specs)
         self.optimizer = Adam(fit.optimizer, self.space)
+        self.line_search = BacktrackingLineSearch(
+            fit.optimizer.line_search, self.optimizer.candidate
+        )
         self.checkpoints = checkpoint_manager
         self._stop_requested = False
         buckets = tuple(buckets)
@@ -118,16 +122,59 @@ class Trainer:
             )
             return objective_loss, (predicted, components, evaluation_mse)
 
+        evaluate = loss
         loss_and_gradient = jax.value_and_grad(loss, has_aux=True)
         if self.runtime.jit:
             # The simulation functions are already compiled per shape. Jitting
             # this small wrapper fuses loss reduction and reverse-mode setup.
+            evaluate = jax.jit(evaluate)
             loss_and_gradient = jax.jit(loss_and_gradient)
         return PreparedBucket(
             bucket=bucket,
             kernel=kernel,
             initial_states=initial_states,
+            evaluate=evaluate,
             loss_and_gradient=loss_and_gradient,
+        )
+
+    def _evaluate(
+        self, normalized, *, gradient: bool
+    ) -> tuple[object, object | None, dict, dict, dict, float]:
+        """Evaluate every shape bucket and optionally accumulate its gradient."""
+        total_loss = jnp.asarray(0.0)
+        total_gradient = jnp.zeros_like(normalized) if gradient else None
+        bucket_losses = {}
+        bucket_predictions = {}
+        component_losses = {
+            component.label: 0.0 for component in self.fit.components
+        }
+        evaluation_mse = 0.0
+        for prepared in self._prepared:
+            if gradient:
+                (
+                    (loss, (predicted, components, bucket_evaluation_mse)),
+                    bucket_gradient,
+                ) = prepared.loss_and_gradient(normalized)
+                total_gradient = total_gradient + bucket_gradient
+            else:
+                loss, (
+                    predicted,
+                    components,
+                    bucket_evaluation_mse,
+                ) = prepared.evaluate(normalized)
+            total_loss = total_loss + loss
+            bucket_losses[str(prepared.bucket.key)] = float(loss)
+            bucket_predictions[prepared.bucket.key] = np.asarray(predicted)
+            evaluation_mse += float(bucket_evaluation_mse)
+            for label, value in components.items():
+                component_losses[label] += float(value)
+        return (
+            total_loss,
+            total_gradient,
+            bucket_losses,
+            bucket_predictions,
+            component_losses,
+            evaluation_mse,
         )
 
     def install_signal_handlers(self) -> None:
@@ -160,41 +207,88 @@ class Trainer:
 
         completed = start_epoch
         for epoch in range(start_epoch, self.fit.optimizer.epochs):
-            total_loss = jnp.asarray(0.0)
-            total_gradient = jnp.zeros_like(normalized)
-            bucket_losses = {}
-            bucket_predictions = {}
-            component_losses = {
-                component.label: 0.0 for component in self.fit.components
-            }
-            evaluation_mse = 0.0
-            for prepared in self._prepared:
-                (
-                    (loss, (predicted, components, bucket_evaluation_mse)),
-                    gradient,
-                ) = prepared.loss_and_gradient(normalized)
-                total_loss = total_loss + loss
-                total_gradient = total_gradient + gradient
-                bucket_losses[str(prepared.bucket.key)] = float(loss)
-                bucket_predictions[prepared.bucket.key] = np.asarray(predicted)
-                evaluation_mse += float(bucket_evaluation_mse)
-                for label, value in components.items():
-                    component_losses[label] += float(value)
+            (
+                total_loss,
+                total_gradient,
+                bucket_losses,
+                bucket_predictions,
+                component_losses,
+                evaluation_mse,
+            ) = self._evaluate(normalized, gradient=True)
+            assert total_gradient is not None
+            evaluated_normalized = normalized
+            loss_before_step = float(total_loss)
+            learning_rate = self.fit.optimizer.learning_rate
+            line_search_trials = 0
+            step_accepted = True
+
+            if self.fit.optimizer.line_search.enabled:
+                direction, proposed_state, gradient_norm = self.optimizer.direction(
+                    total_gradient, optimizer_state
+                )
+                search = self.fit.optimizer.line_search
+                learning_rate = float(
+                    optimizer_state.current_learning_rate
+                    if optimizer_state.current_learning_rate is not None
+                    else self.fit.optimizer.learning_rate
+                )
+                learning_rate = min(
+                    search.maximum_learning_rate,
+                    max(search.minimum_learning_rate, learning_rate),
+                )
+                result = self.line_search.search(
+                    normalized,
+                    direction,
+                    loss_before_step,
+                    learning_rate,
+                    lambda candidate: self._evaluate(candidate, gradient=False),
+                )
+                normalized = result.values
+                learning_rate = result.learning_rate
+                line_search_trials = result.trials
+                step_accepted = result.accepted
+                if result.accepted:
+                    optimizer_state = self.optimizer.accept(
+                        proposed_state, result.learning_rate
+                    )
+                    assert result.evaluation is not None
+                    (
+                        total_loss,
+                        _,
+                        bucket_losses,
+                        bucket_predictions,
+                        component_losses,
+                        evaluation_mse,
+                    ) = result.evaluation
+                else:
+                    optimizer_state = self.optimizer.reject(
+                        optimizer_state, result.next_learning_rate
+                    )
+            else:
+                normalized, optimizer_state, gradient_norm = self.optimizer.update(
+                    normalized, total_gradient, optimizer_state
+                )
 
             loss_value = float(total_loss)
+            loss_parameters = (
+                normalized
+                if self.fit.optimizer.line_search.enabled
+                else evaluated_normalized
+            )
             is_best = loss_value < best_loss
             if is_best:
                 best_loss = loss_value
-                best_normalized = normalized
-            normalized, optimizer_state, gradient_norm = self.optimizer.update(
-                normalized, total_gradient, optimizer_state
-            )
+                best_normalized = loss_parameters
             completed = epoch + 1
             metrics = {
                 "epoch": epoch,
                 "loss": loss_value,
+                "loss_before_step": loss_before_step,
                 "rmse_mV": evaluation_mse**0.5,
                 "gradient_norm": float(gradient_norm),
+                "learning_rate": learning_rate,
+                "line_search_trials": line_search_trials,
+                "step_accepted": step_accepted,
                 "bucket_losses": bucket_losses,
                 "component_losses": component_losses,
             }

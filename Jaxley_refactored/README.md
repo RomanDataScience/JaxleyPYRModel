@@ -103,6 +103,17 @@ per-cell logs under `runs/launcher_logs/<timestamp>/`. After every epoch, an
 eight-panel simulated-versus-experimental figure is saved under the run's
 `plots/` directory; `plots/latest.png` always points to the newest result.
 
+To use loss-decreasing adaptive Adam steps:
+
+```bash
+bash scripts/run_full_fitting.sh \
+  --config configs/optimizers/adam_backtracking.yaml \
+  --cells m20240527cd
+```
+
+The log prints the tested learning rate, whether the step was accepted, and the
+number of forward trials. See [docs/OPTIMIZATION.md](docs/OPTIMIZATION.md).
+
 ## Configuration knobs
 
 The main executable configuration is

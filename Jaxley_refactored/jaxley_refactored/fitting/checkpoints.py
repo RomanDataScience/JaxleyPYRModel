@@ -42,6 +42,11 @@ class CheckpointManager:
             "first_moment": np.asarray(optimizer.first_moment),
             "second_moment": np.asarray(optimizer.second_moment),
             "optimizer_step": np.asarray(optimizer.step),
+            "optimizer_learning_rate": np.asarray(
+                np.nan
+                if optimizer.current_learning_rate is None
+                else optimizer.current_learning_rate
+            ),
             "best_normalized": np.asarray(best_normalized),
             "best_loss": np.asarray(best_loss),
         }
@@ -76,6 +81,12 @@ class CheckpointManager:
                     step=int(arrays["optimizer_step"]),
                     first_moment=arrays["first_moment"],
                     second_moment=arrays["second_moment"],
+                    current_learning_rate=(
+                        None
+                        if "optimizer_learning_rate" not in arrays.files
+                        or np.isnan(float(arrays["optimizer_learning_rate"]))
+                        else float(arrays["optimizer_learning_rate"])
+                    ),
                 ),
                 "best_normalized": arrays["best_normalized"],
                 "best_loss": float(arrays["best_loss"]),

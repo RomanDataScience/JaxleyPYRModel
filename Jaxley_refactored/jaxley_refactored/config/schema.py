@@ -416,6 +416,75 @@ class DatasetSpec:
 
 
 @dataclass(frozen=True)
+class LineSearchSpec:
+    """Policy for accepting an Adam direction only when it improves the loss."""
+
+    enabled: bool = False
+    reduction_factor: float = 0.5
+    growth_factor: float = 1.2
+    minimum_learning_rate: float = 1e-5
+    maximum_learning_rate: float = 5e-2
+    maximum_trials: int = 6
+
+    @classmethod
+    def from_mapping(cls, value: Any, learning_rate: float) -> "LineSearchSpec":
+        data = _mapping(value, "fit.optimizer.line_search")
+        _strict(
+            data,
+            {
+                "enabled",
+                "reduction_factor",
+                "growth_factor",
+                "minimum_learning_rate",
+                "maximum_learning_rate",
+                "maximum_trials",
+                "require_loss_decrease",
+            },
+            "fit.optimizer.line_search",
+        )
+        reduction = float(data.get("reduction_factor", 0.5))
+        growth = float(data.get("growth_factor", 1.2))
+        minimum = _positive(
+            data.get("minimum_learning_rate", 1e-5),
+            "fit.optimizer.line_search.minimum_learning_rate",
+        )
+        maximum = _positive(
+            data.get("maximum_learning_rate", max(5e-2, learning_rate)),
+            "fit.optimizer.line_search.maximum_learning_rate",
+        )
+        trials = int(data.get("maximum_trials", 6))
+        if not 0.0 < reduction < 1.0:
+            raise ConfigError(
+                "fit.optimizer.line_search.reduction_factor must be in (0, 1)."
+            )
+        if growth < 1.0:
+            raise ConfigError(
+                "fit.optimizer.line_search.growth_factor must be at least 1."
+            )
+        if minimum > maximum:
+            raise ConfigError(
+                "fit.optimizer.line_search.minimum_learning_rate cannot exceed "
+                "maximum_learning_rate."
+            )
+        if trials <= 0:
+            raise ConfigError(
+                "fit.optimizer.line_search.maximum_trials must be positive."
+            )
+        if data.get("require_loss_decrease", True) is not True:
+            raise ConfigError(
+                "Backtracking currently requires require_loss_decrease: true."
+            )
+        return cls(
+            enabled=bool(data.get("enabled", False)),
+            reduction_factor=reduction,
+            growth_factor=growth,
+            minimum_learning_rate=minimum,
+            maximum_learning_rate=maximum,
+            maximum_trials=trials,
+        )
+
+
+@dataclass(frozen=True)
 class OptimizerSpec:
     learning_rate: float = 1e-3
     gradient_clip_norm: float = 10.0
@@ -423,6 +492,7 @@ class OptimizerSpec:
     beta1: float = 0.9
     beta2: float = 0.999
     epsilon: float = 1e-8
+    line_search: LineSearchSpec = field(default_factory=LineSearchSpec)
 
     @classmethod
     def from_mapping(cls, value: Any) -> "OptimizerSpec":
@@ -437,6 +507,7 @@ class OptimizerSpec:
                 "beta1",
                 "beta2",
                 "epsilon",
+                "line_search",
             },
             "fit.optimizer",
         )
@@ -445,10 +516,11 @@ class OptimizerSpec:
         epochs = int(data.get("epochs", 50))
         if epochs <= 0:
             raise ConfigError("fit.optimizer.epochs must be positive.")
+        learning_rate = _positive(
+            data.get("learning_rate", 1e-3), "fit.optimizer.learning_rate"
+        )
         return cls(
-            learning_rate=_positive(
-                data.get("learning_rate", 1e-3), "fit.optimizer.learning_rate"
-            ),
+            learning_rate=learning_rate,
             gradient_clip_norm=_positive(
                 data.get("gradient_clip_norm", 10.0),
                 "fit.optimizer.gradient_clip_norm",
@@ -457,6 +529,9 @@ class OptimizerSpec:
             beta1=float(data.get("beta1", 0.9)),
             beta2=float(data.get("beta2", 0.999)),
             epsilon=_positive(data.get("epsilon", 1e-8), "fit.optimizer.epsilon"),
+            line_search=LineSearchSpec.from_mapping(
+                data.get("line_search"), learning_rate
+            ),
         )
 
 

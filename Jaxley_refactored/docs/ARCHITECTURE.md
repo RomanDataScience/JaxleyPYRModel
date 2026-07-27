@@ -28,7 +28,7 @@ Model-specific legacy calls point inward through
 | `parameters` | Metadata, bounds, transforms, JAX parameter state | Add catalog entries or another `ParameterStateBackend` |
 | `data` | Immutable traces, validation, resampling, weights, buckets | Implement another loader returning `TraceRecord` |
 | `simulation` | Sites, trace-specific states, JIT/vmap kernel | Add a kernel without changing data or optimization |
-| `fitting` | Loss primitives, projected Adam, checkpoints, trainer | Inject another loss/optimizer implementation |
+| `fitting` | Losses, projected Adam, backtracking, checkpoints, trainer | Inject another loss/optimizer implementation |
 | `runtime` | Pre-import JAX environment and device validation | Add backend policy without touching model code |
 | `reporting` | Atomic run outputs and provenance | Add reporters around immutable metrics |
 
@@ -86,3 +86,7 @@ A compatibility hash covers the resolved configuration, model signature, and
 input file hashes. Checkpoints with a different hash are rejected. Run outputs
 include initial/best/final parameter CSV files, metrics, resolved configuration,
 device/environment provenance, and atomic latest/best checkpoints.
+
+Adaptive learning-rate state is stored with Adam's moments. The backtracking
+policy evaluates candidates against the sum of all bucket objectives and only
+commits a shared parameter update when that total loss decreases.

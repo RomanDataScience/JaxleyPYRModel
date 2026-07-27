@@ -369,8 +369,14 @@ def _fit(config, args) -> int:
         message = (
             f"epoch={metrics['epoch']:04d} loss={metrics['loss']:.8g} "
             f"rmse_mV={metrics['rmse_mV']:.6g} "
-            f"grad_norm={metrics['gradient_norm']:.6g}"
+            f"grad_norm={metrics['gradient_norm']:.6g} "
+            f"lr={metrics['learning_rate']:.6g}"
         )
+        if config.fit.optimizer.line_search.enabled:
+            message += (
+                f" accepted={str(metrics['step_accepted']).lower()}"
+                f" trials={metrics['line_search_trials']}"
+            )
         if plot_path is not None:
             message += f" plot={plot_path}"
         print(message, flush=True)
