@@ -1,0 +1,8 @@
+extends: cpu_x64.yaml
+
+dataset:
+  resampling:
+    target_dt_ms: 0.1
+
+output:
+  run_name: dt-0p1-test

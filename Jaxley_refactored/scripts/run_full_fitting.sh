@@ -15,13 +15,13 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_DIR=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 REPOSITORY_DIR=$(cd -- "${PROJECT_DIR}/.." && pwd)
 
-CONFIG="${PROJECT_DIR}/configs/runtimes/cpu_x64.yaml"
+CONFIG="${PROJECT_DIR}/configs/runtimes/cpu_dt_0p1.yaml" # cpu_dt_0p1.yaml cpu_x64.yaml
 MANIFEST="${REPOSITORY_DIR}/JaxleyModel/Experimental_currentClamp_Analysis/Segmented_Traces/segment_metadata.csv"
 PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE:-python}
 CELL_SELECTION=all
 MAX_PARALLEL_CELLS=1
 SEED=0
-EPOCHS=
+EPOCHS=1000
 MAX_STEPS=
 DRY_RUN=false
 
