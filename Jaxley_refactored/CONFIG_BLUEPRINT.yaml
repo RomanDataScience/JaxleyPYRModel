@@ -1,0 +1,190 @@
+# Proposed configuration contract. This file is a design artifact, not yet an
+# executable configuration.
+schema_version: 1
+
+model:
+  id: combe2023
+
+  morphology:
+    # exact_hoc_artifact | hoc_live | swc | registered
+    provider: exact_hoc_artifact
+    path: assets/morphologies/combe_pc2b_dlambda_0p3
+    source_provenance:
+      hoc_archive: ../Combe2023.zip
+      setup: cell_setup_pc2b_CCh_driven.hoc
+
+    grouping:
+      strategy: hoc_section_names
+      required_groups: [soma, axon, basal, apical]
+      reject_unclassified: true
+
+    root:
+      group: soma
+      branch: 0
+      compartment: 0
+      distance: pathwise
+      include_root_half_length: true
+
+    discretization:
+      strategy: d_lambda
+      d_lambda: 0.3
+      frequency_hz: 100.0
+
+  profile:
+    # exact_hoc_frozen_grid preserves final NEURON segment values and applies
+    # endpoint-rule deltas without changing ncomp during JIT fitting.
+    # rule_based_final_centers reapplies portable rules on a new morphology.
+    # hoc_rebuild is a future CPU-only validation mode that may change ncomp.
+    mode: exact_hoc_frozen_grid
+    id: combe2023_cch_driven
+    assignment_distance_feature: hoc_assignment_distance_um
+    topology_during_fit: frozen
+    # reference_delta evaluates: HOC reference + endpoint_rule(theta)
+    # - endpoint_rule(default).
+    # This makes the default theta an identity while retaining differentiable
+    # HOC-compatible compartment-property changes.
+    fit_parameterization: reference_delta
+
+  mechanisms:
+    preset: combe2023_cch_driven
+    include: all_from_preset
+    exclude: []
+    overrides: {}
+    calcium_diffusion:
+      enabled: true
+      state: CaCon_i
+      axial_diffusion: 0.22
+
+  distributions:
+    preset: combe2023_cch_driven
+    overrides: {}
+
+  parameters:
+    catalog: combe2023
+    value_overrides: {}
+    fit:
+      include_tags: [conductance, passive]
+      include: []
+      exclude: []
+
+protocol:
+  injection_site:
+    group: soma
+    branch: 0
+    location: 0.5
+  recording_sites:
+    - state: v
+      group: soma
+      branch: 0
+      location: 0.5
+  initial_state:
+    # observed_first_sample preserves current fitter behavior.
+    # fixed and equilibrated are explicit alternatives.
+    mode: observed_first_sample
+    fixed_voltage_mV: -71.9879
+
+dataset:
+  provider: segmented_current_clamp
+  root: ../JaxleyModel/Experimental_currentClamp_Analysis/Segmented_Traces
+  manifest: segment_metadata.csv
+  cell_id: m20240527cd
+  selection:
+    traces: ["*"]
+    segments: [depolarizing_step, hyperpolarizing_pulse]
+  units:
+    voltage: mV
+    current_on_disk: pA
+    current_for_jaxley: nA
+    time: ms
+  validation:
+    require_v_i_t_triplet: true
+    reject_length_mismatch: true
+    reject_nonfinite: true
+    require_uniform_time: true
+    ignore_absolute_manifest_output_paths: true
+  resampling:
+    target_dt_ms: 0.05
+    voltage_method: linear
+    current_method: zero_order_hold
+  score_windows:
+    source: manifest_epoch
+    pre_ms: 100.0
+    post_ms: 800.0
+
+fit:
+  objective:
+    components:
+      - kind: masked_voltage_mse
+        weight: 1.0
+    aggregation: protocol_mean
+    protocol_weights:
+      depolarizing_step: 0.5
+      hyperpolarizing_pulse: 0.5
+    report_metrics:
+      - rmse_mV
+      - mae_mV
+      - max_abs_mV
+      - spike_count
+      - spike_time_error_ms
+      - resting_voltage_error_mV
+      - final_voltage_error_mV
+
+  parameter_transform:
+    default: bounded_sigmoid
+    boundary_default: projected_box
+    preserve_exact_zero_defaults: true
+
+  optimizer:
+    name: adam
+    learning_rate: 0.001
+    gradient_clip_norm: 10.0
+    epochs: 50
+
+  batching:
+    bucket_by: [delta_t, n_steps]
+    # vmap | lax_map | serial | auto
+    strategy: auto
+    trace_microbatch_size: auto
+    pad_trace_count_to_microbatch: true
+
+  checkpoint:
+    every_epochs: 1
+    keep_best: true
+    keep_latest: true
+    resume: auto
+    reject_incompatible_hashes: true
+
+runtime:
+  # auto | cpu | gpu
+  backend: auto
+  precision: float64
+  seed: 0
+  jit: true
+  solver:
+    ode: bwd_euler
+    voltage: jaxley.dhs
+  rematerialization:
+    policy: sqrt
+    levels: 2
+  compilation_cache:
+    enabled: true
+    directory: "${RUN_SCRATCH}/jax_cache"
+  memory:
+    preallocate: false
+    fraction: 0.8
+  distributed:
+    # single_process | single_host_multi_gpu | multi_host
+    mode: single_process
+
+output:
+  root: runs
+  run_name: auto
+  plot_every_epochs: 0
+  evaluate_every_epochs: 5
+  save_predictions: best_and_final
+  provenance:
+    include_git_state: true
+    include_environment: true
+    include_device: true
+    include_input_hashes: true
+    include_resolved_config: true

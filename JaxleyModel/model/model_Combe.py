@@ -385,6 +385,13 @@ def build_hoc_section_cell(d_lambda: float = 0.3):
         cell.nodes.loc[indices, "hoc_g_pas"] = [float(seg.pas.g) for seg in sec]
         cell.nodes.loc[indices, "hoc_e_pas"] = [float(seg.pas.e) for seg in sec]
         cell.nodes.loc[indices, "hoc_section_index"] = section_index
+        # Most Combe distributions are assigned while the HOC section still has
+        # nseg=1. HOC's final write is therefore evaluated at x=1 and remains
+        # sectionwise constant after later nseg changes. Keep that exact coordinate
+        # rather than reconstructing it from Jaxley's center-to-center distances.
+        cell.nodes.loc[indices, "hoc_assignment_distance_um"] = float(
+            h.distance(1.0, sec=sec)
+        )
         cell.nodes.loc[indices, "hoc_celsius"] = float(h.celsius)
         for target, attr_name in HOC_ION_PARAM_MAP.items():
             cell.nodes.loc[indices, f"hoc_{target}"] = [
@@ -709,11 +716,16 @@ def _passive_sigmoid_jax(distance, soma_value, tuft_value, half_distance, slope)
     )
 
 
-def _fit_values(keys, values):
-    out = asdict(COMBE_PARAMS)
+EXACT_HOC_UPDATE_MODE = "exact_hoc_frozen_grid"
+RULE_UPDATE_MODE = "rule_based_final_centers"
+SUPPORTED_FIT_PARAMETER_KEYS = frozenset(
+    (*CONDUCTANCE_PARAMETER_KEYS, *PASSIVE_PARAMETER_KEYS)
+)
+
+
+def _fit_values(keys, values, reference_values=None):
+    out = dict(reference_values or asdict(COMBE_PARAMS))
     for index, key in enumerate(keys):
-        if key not in out:
-            raise KeyError(f"Unknown Combe fit parameter: {key}")
         out[key] = values[index]
     return out
 
@@ -733,31 +745,92 @@ def _apical_na16a_c1o1v2_jax(distance, p):
     return jnp.where(y > 65.79, p["distalv"], proximal)
 
 
-def set_fitted_passive_parameters(cell, p, state=None):
-    dist = jnp.asarray(cell.nodes["dist_from_soma"].to_numpy(dtype=float))
-    soma = jnp.asarray(group_mask(cell, "soma"))
-    axon = jnp.asarray(group_mask(cell, "axon"))
-    basal = jnp.asarray(group_mask(cell, "basal"))
-    apical = jnp.asarray(group_mask(cell, "apical"))
+def _reference_parameters(cell):
+    return dict(getattr(cell, "_combe_reference_parameters", asdict(COMBE_PARAMS)))
 
+
+def _parameter_update_mode(cell):
+    return getattr(cell, "_combe_parameter_update_mode", RULE_UPDATE_MODE)
+
+
+def _profile_distances(view, update_mode):
+    distance_key = (
+        "hoc_assignment_distance_um"
+        if update_mode == EXACT_HOC_UPDATE_MODE
+        and "hoc_assignment_distance_um" in view.nodes.columns
+        else "dist_from_soma"
+    )
+    return jnp.asarray(view.nodes[distance_key].to_numpy(dtype=float))
+
+
+def _parameter_baseline(view, key):
+    values = view.nodes[key]
+    return jnp.asarray(values[values.notna()].to_numpy(dtype=float))
+
+
+def _anchor_to_reference(view, key, fitted, reference):
+    """Apply a fitted rule without discarding the imported HOC profile.
+
+    The HOC assignments were evaluated once per section and copied when nseg
+    changed. On the frozen fitting grid, the exact corresponding operation is
+    therefore the imported baseline plus the full endpoint-rule delta. This
+    works for zero defaults, coupled products, and nonlinear passive rules.
+    """
+    baseline = _parameter_baseline(view, key)
+    fitted = jnp.broadcast_to(jnp.asarray(fitted), baseline.shape)
+    reference = jnp.broadcast_to(jnp.asarray(reference), baseline.shape)
+    return baseline + (fitted - reference)
+
+
+def _fit_profile(view, key, value, *dependencies):
+    return view, key, value, frozenset(dependencies)
+
+
+def _write_selected_profiles(
+    fitted_profiles,
+    reference_profiles,
+    selected_keys,
+    update_mode,
+    state,
+):
+    for fitted_spec, reference_spec in zip(fitted_profiles, reference_profiles):
+        view, key, fitted, dependencies = fitted_spec
+        _, reference_key, reference, reference_dependencies = reference_spec
+        if key != reference_key or dependencies != reference_dependencies:
+            raise RuntimeError("Mismatched Combe fitted/reference profile definitions.")
+        if dependencies.isdisjoint(selected_keys):
+            continue
+
+        value = (
+            _anchor_to_reference(view, key, fitted, reference)
+            if update_mode == EXACT_HOC_UPDATE_MODE
+            else fitted
+        )
+        state = view.data_set(key, value, state)
+    return state
+
+
+def _passive_fit_profiles(cell, p, update_mode):
     soma_rm = _passive_sigmoid_jax(
         0.0, p["RmSoma"], p["RmTuft"], p["DistHalfRm"], p["SlopeRm"]
     )
     soma_ra = _passive_sigmoid_jax(
         0.0, p["RaSoma"], p["RaTuft"], p["DistHalfRa"], p["SlopeRa"]
     )
-    capacitance = jnp.full_like(dist, p["CmSoma"])
-    g_leak = jnp.full_like(dist, 1.0 / soma_rm)
-    axial = jnp.full_like(dist, soma_ra)
 
-    apical_dist = jnp.minimum(dist, 394.0)
+    apical_distances = _profile_distances(cell.apical, update_mode)
+    basal_distances = _profile_distances(cell.basal, update_mode)
+    apical_dist = jnp.minimum(apical_distances, 394.0)
     apical_spines = jnp.where(
-        dist <= 100.0,
+        apical_distances <= 100.0,
         1.0,
         jnp.where(
-            dist > 394.0,
+            apical_distances > 394.0,
             p["SpineFactorTuft"],
-            2.0 + (dist - 100.0) * (p["SpineFactorTuft"] - 2.0) / 294.0,
+            2.0
+            + (apical_distances - 100.0)
+            * (p["SpineFactorTuft"] - 2.0)
+            / 294.0,
         ),
     )
     apical_rm = _passive_sigmoid_jax(
@@ -766,138 +839,307 @@ def set_fitted_passive_parameters(cell, p, state=None):
     apical_ra = _passive_sigmoid_jax(
         apical_dist, p["RaSoma"], p["RaTuft"], p["DistHalfRa"], p["SlopeRa"]
     )
-    capacitance = jnp.where(apical, apical_spines * p["CmSoma"], capacitance)
-    g_leak = jnp.where(apical, apical_spines / apical_rm, g_leak)
-    axial = jnp.where(apical, apical_ra, axial)
+    basal_spines = jnp.where(
+        basal_distances <= 40.0, 1.0, p["SpineFactorBasal"]
+    )
 
-    basal_spines = jnp.where(dist <= 40.0, 1.0, p["SpineFactorBasal"])
-    capacitance = jnp.where(basal, basal_spines * p["CmSoma"], capacitance)
-    g_leak = jnp.where(basal, basal_spines / soma_rm, g_leak)
-    axial = jnp.where(basal, soma_ra, axial)
+    rm_dependencies = ("RmSoma", "RmTuft", "DistHalfRm", "SlopeRm")
+    ra_dependencies = ("RaSoma", "RaTuft", "DistHalfRa", "SlopeRa")
+    return (
+        _fit_profile(cell.soma, "capacitance", p["CmSoma"], "CmSoma"),
+        _fit_profile(cell.axon, "capacitance", p["CmSoma"], "CmSoma"),
+        _fit_profile(
+            cell.basal,
+            "capacitance",
+            basal_spines * p["CmSoma"],
+            "CmSoma",
+            "SpineFactorBasal",
+        ),
+        _fit_profile(
+            cell.apical,
+            "capacitance",
+            apical_spines * p["CmSoma"],
+            "CmSoma",
+            "SpineFactorTuft",
+        ),
+        _fit_profile(
+            cell.soma, "axial_resistivity", soma_ra, *ra_dependencies
+        ),
+        _fit_profile(
+            cell.axon, "axial_resistivity", soma_ra, *ra_dependencies
+        ),
+        _fit_profile(
+            cell.basal, "axial_resistivity", soma_ra, *ra_dependencies
+        ),
+        _fit_profile(
+            cell.apical, "axial_resistivity", apical_ra, *ra_dependencies
+        ),
+        _fit_profile(cell.soma, "Leak_gLeak", 1.0 / soma_rm, *rm_dependencies),
+        _fit_profile(cell.axon, "Leak_gLeak", 1.0 / soma_rm, *rm_dependencies),
+        _fit_profile(
+            cell.basal,
+            "Leak_gLeak",
+            basal_spines / soma_rm,
+            *(rm_dependencies + ("SpineFactorBasal",)),
+        ),
+        _fit_profile(
+            cell.apical,
+            "Leak_gLeak",
+            apical_spines / apical_rm,
+            *(rm_dependencies + ("SpineFactorTuft",)),
+        ),
+        _fit_profile(cell, "Leak_eLeak", p["Epas"], "Epas"),
+    )
 
-    soma_or_axon = soma | axon
-    capacitance = jnp.where(soma_or_axon, p["CmSoma"], capacitance)
-    g_leak = jnp.where(soma_or_axon, 1.0 / soma_rm, g_leak)
-    axial = jnp.where(soma_or_axon, soma_ra, axial)
 
-    state = cell.data_set("capacitance", capacitance, state)
-    state = cell.data_set("axial_resistivity", axial, state)
-    state = cell.data_set("Leak_gLeak", g_leak, state)
-    state = cell.data_set("Leak_eLeak", p["Epas"], state)
-    return state
-
-
-def set_fitted_conductance_parameters(cell, p, state=None):
-    apical_dist = jnp.asarray(cell.apical.nodes["dist_from_soma"].to_numpy(dtype=float))
-    basal_dist = jnp.asarray(cell.basal.nodes["dist_from_soma"].to_numpy(dtype=float))
+def _conductance_fit_profiles(cell, p, update_mode):
+    apical_dist = _profile_distances(cell.apical, update_mode)
+    basal_dist = _profile_distances(cell.basal, update_mode)
     capped_h_dist = jnp.minimum(apical_dist, 500.0)
-    ndist = jnp.minimum(capped_h_dist, 300.0)
 
-    state = cell.soma.data_set("icand_gbar", p["icangbar"], state)
-    state = cell.soma.data_set("na16a_gbar", p["gna"] * p["scale_Na_conduct"], state)
-    state = cell.soma.data_set("kd_gbar", p["gkdrsoma"], state)
-    state = cell.soma.data_set("Kv2like_gbar", p["gkv2soma"], state)
-    state = cell.soma.data_set("nap_gnabar", p["nap_gnabar"], state)
-    state = cell.soma.data_set("h_gbar", p["soma_hbar"], state)
-    state = cell.soma.data_set("kap_gkabar", p["soma_kap"], state)
-    state = cell.soma.data_set("km_gbar", p["soma_km"], state)
-    state = cell.soma.data_set("cal_gcalbar", 0.1 * p["soma_caL"], state)
-    state = cell.soma.data_set("cat_gcatbar", p["soma_caT"], state)
-    state = cell.soma.data_set("car_gcabar", p["gsomacar"], state)
-    state = cell.soma.data_set("kca_gbar", 0.5 * p["soma_kca"], state)
-    state = cell.soma.data_set("mykca_gkbar", 5.5 * p["mykca_init"], state)
-
-    state = cell.apical.data_set("icand_gbar", p["icangbar"], state)
-    state = cell.apical.data_set("car_gcabar", 0.1 * p["soma_car"], state)
-    state = cell.apical.data_set(
-        "calH_gcalbar",
-        jnp.where(apical_dist > 50.0, 2.0 * p["soma_caLH"], 0.1 * p["soma_caLH"]),
-        state,
-    )
-    state = cell.apical.data_set(
-        "cat_gcatbar",
-        jnp.where(apical_dist < 100.0, 0.0, 4.0 * p["soma_caT"] * apical_dist / 350.0),
-        state,
-    )
-    state = cell.apical.data_set(
-        "kca_gbar",
-        jnp.where(
-            (apical_dist < 200.0) & (apical_dist > 50.0),
-            5.0 * p["soma_kca"],
-            0.5 * p["soma_kca"],
+    return (
+        _fit_profile(cell.soma, "icand_gbar", p["icangbar"], "icangbar"),
+        _fit_profile(
+            cell.soma,
+            "na16a_gbar",
+            p["gna"] * p["scale_Na_conduct"],
+            "gna",
+            "scale_Na_conduct",
         ),
-        state,
-    )
-    state = cell.apical.data_set(
-        "mykca_gkbar",
-        jnp.where(
-            (apical_dist < 200.0) & (apical_dist > 50.0),
-            2.0 * p["mykca_init"],
-            0.5 * p["mykca_init"],
+        _fit_profile(cell.soma, "kd_gbar", p["gkdrsoma"], "gkdrsoma"),
+        _fit_profile(
+            cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"
         ),
-        state,
-    )
-    state = cell.apical.data_set(
-        "h_gbar",
-        p["soma_hbar"] * (1.0 + (6.0 / 5.0) * capped_h_dist / 100.0),
-        state,
-    )
-    state = cell.apical.data_set(
-        "kap_gkabar",
-        jnp.where(capped_h_dist > 100.0, 0.0, p["soma_kap"] * (1.0 + capped_h_dist / 100.0)),
-        state,
-    )
-    state = cell.apical.data_set(
-        "kad_gkabar",
-        jnp.where(
-            capped_h_dist > 100.0,
-            p["soma_kad"] * (1.0 + capped_h_dist / 100.0),
-            0.0,
+        _fit_profile(cell.soma, "nap_gnabar", p["nap_gnabar"], "nap_gnabar"),
+        _fit_profile(cell.soma, "h_gbar", p["soma_hbar"], "soma_hbar"),
+        _fit_profile(cell.soma, "kap_gkabar", p["soma_kap"], "soma_kap"),
+        _fit_profile(cell.soma, "km_gbar", p["soma_km"], "soma_km"),
+        _fit_profile(
+            cell.soma, "cal_gcalbar", 0.1 * p["soma_caL"], "soma_caL"
         ),
-        state,
+        _fit_profile(cell.soma, "cat_gcatbar", p["soma_caT"], "soma_caT"),
+        _fit_profile(cell.soma, "car_gcabar", p["gsomacar"], "gsomacar"),
+        _fit_profile(
+            cell.soma, "kca_gbar", 0.5 * p["soma_kca"], "soma_kca"
+        ),
+        _fit_profile(
+            cell.soma,
+            "mykca_gkbar",
+            5.5 * p["mykca_init"],
+            "mykca_init",
+        ),
+        _fit_profile(cell.apical, "icand_gbar", p["icangbar"], "icangbar"),
+        _fit_profile(
+            cell.apical, "car_gcabar", 0.1 * p["soma_car"], "soma_car"
+        ),
+        _fit_profile(
+            cell.apical,
+            "calH_gcalbar",
+            jnp.where(
+                apical_dist > 50.0,
+                2.0 * p["soma_caLH"],
+                0.1 * p["soma_caLH"],
+            ),
+            "soma_caLH",
+        ),
+        _fit_profile(
+            cell.apical,
+            "cat_gcatbar",
+            jnp.where(
+                apical_dist < 100.0,
+                0.0,
+                4.0 * p["soma_caT"] * apical_dist / 350.0,
+            ),
+            "soma_caT",
+        ),
+        _fit_profile(
+            cell.apical,
+            "kca_gbar",
+            jnp.where(
+                (apical_dist < 200.0) & (apical_dist > 50.0),
+                5.0 * p["soma_kca"],
+                0.5 * p["soma_kca"],
+            ),
+            "soma_kca",
+        ),
+        _fit_profile(
+            cell.apical,
+            "mykca_gkbar",
+            jnp.where(
+                (apical_dist < 200.0) & (apical_dist > 50.0),
+                2.0 * p["mykca_init"],
+                0.5 * p["mykca_init"],
+            ),
+            "mykca_init",
+        ),
+        _fit_profile(
+            cell.apical,
+            "h_gbar",
+            p["soma_hbar"] * (1.0 + (6.0 / 5.0) * capped_h_dist / 100.0),
+            "soma_hbar",
+        ),
+        _fit_profile(
+            cell.apical,
+            "kap_gkabar",
+            jnp.where(
+                capped_h_dist > 100.0,
+                0.0,
+                p["soma_kap"] * (1.0 + capped_h_dist / 100.0),
+            ),
+            "soma_kap",
+        ),
+        _fit_profile(
+            cell.apical,
+            "kad_gkabar",
+            jnp.where(
+                capped_h_dist > 100.0,
+                p["soma_kad"] * (1.0 + capped_h_dist / 100.0),
+                0.0,
+            ),
+            "soma_kad",
+        ),
+        _fit_profile(
+            cell.apical,
+            "Kv2like_gbar",
+            jnp.where(
+                capped_h_dist > 100.0,
+                p["gkv2"] * p["gkv2scale"],
+                p["gkv2"],
+            ),
+            "gkv2",
+            "gkv2scale",
+        ),
+        _fit_profile(
+            cell.apical,
+            "na16a_gbar",
+            p["gnadend"] * p["scale_Na_conduct"],
+            "gnadend",
+            "scale_Na_conduct",
+        ),
+        _fit_profile(cell.apical, "kd_gbar", p["gkdrapical"], "gkdrapical"),
+        _fit_profile(cell.apical, "km_gbar", p["soma_km"], "soma_km"),
+        _fit_profile(
+            cell.apical,
+            "kir_gbar",
+            jnp.where(
+                apical_dist > 100.0,
+                p["KirGbar"],
+                p["KirGbar"] * apical_dist / 100.0,
+            ),
+            "KirGbar",
+        ),
+        _fit_profile(
+            cell.axon, "nax_gbar", p["gna"] * p["AXNa"], "gna", "AXNa"
+        ),
+        _fit_profile(cell.axon, "kd_gbar", p["axongkdr"], "axongkdr"),
+        _fit_profile(cell.axon, "km_gbar", 3.0 * p["soma_km"], "soma_km"),
+        _fit_profile(cell.axon, "kap_gkabar", p["axon_kap"], "axon_kap"),
+        _fit_profile(
+            cell.axon, "Kv2like_gbar", p["gkv2axon"], "gkv2axon"
+        ),
+        _fit_profile(cell.basal, "na3dend_gbar", p["gnadend"], "gnadend"),
+        _fit_profile(cell.basal, "nap_gnabar", p["nap_gnabar"], "nap_gnabar"),
+        _fit_profile(cell.basal, "kap_gkabar", p["basal_kap"], "basal_kap"),
+        _fit_profile(cell.basal, "h_gbar", p["soma_hbar"], "soma_hbar"),
+        _fit_profile(cell.basal, "kd_gbar", p["gkdrdend"], "gkdrdend"),
+        _fit_profile(
+            cell.basal,
+            "Kv2like_gbar",
+            p["gkv2"] * p["gkv2scale"],
+            "gkv2",
+            "gkv2scale",
+        ),
+        _fit_profile(
+            cell.basal,
+            "kir_gbar",
+            jnp.where(
+                basal_dist > 40.0,
+                p["KirGbar"],
+                p["KirGbar"] * basal_dist / 40.0,
+            ),
+            "KirGbar",
+        ),
     )
-    state = cell.apical.data_set(
-        "Kv2like_gbar",
-        jnp.where(capped_h_dist > 100.0, p["gkv2"] * p["gkv2scale"], p["gkv2"]),
-        state,
-    )
-    state = cell.apical.data_set("na16a_gbar", p["gnadend"] * p["scale_Na_conduct"], state)
-    state = cell.apical.data_set("na16a_dist", _apical_na16a_dist_jax(apical_dist), state)
-    state = cell.apical.data_set(
-        "na16a_C1O1v2", _apical_na16a_c1o1v2_jax(apical_dist, p), state
-    )
-    state = cell.apical.data_set("kd_gbar", p["gkdrapical"], state)
-    state = cell.apical.data_set("km_gbar", p["soma_km"], state)
-    state = cell.apical.data_set(
-        "kir_gbar",
-        jnp.where(apical_dist > 100.0, p["KirGbar"], p["KirGbar"] * apical_dist / 100.0),
+
+
+def set_fitted_passive_parameters(
+    cell,
+    p,
+    state=None,
+    *,
+    selected_keys=PASSIVE_PARAMETER_KEYS,
+    reference=None,
+    update_mode=None,
+):
+    selected_keys = frozenset(selected_keys)
+    reference = reference or _reference_parameters(cell)
+    update_mode = update_mode or _parameter_update_mode(cell)
+    return _write_selected_profiles(
+        _passive_fit_profiles(cell, p, update_mode),
+        _passive_fit_profiles(cell, reference, update_mode),
+        selected_keys,
+        update_mode,
         state,
     )
 
-    state = cell.axon.data_set("nax_gbar", p["gna"] * p["AXNa"], state)
-    state = cell.axon.data_set("kd_gbar", p["axongkdr"], state)
-    state = cell.axon.data_set("km_gbar", 3.0 * p["soma_km"], state)
-    state = cell.axon.data_set("kap_gkabar", p["axon_kap"], state)
-    state = cell.axon.data_set("Kv2like_gbar", p["gkv2axon"], state)
 
-    state = cell.basal.data_set("na3dend_gbar", p["gnadend"], state)
-    state = cell.basal.data_set("nap_gnabar", p["nap_gnabar"], state)
-    state = cell.basal.data_set("kap_gkabar", p["basal_kap"], state)
-    state = cell.basal.data_set("h_gbar", p["soma_hbar"], state)
-    state = cell.basal.data_set("kd_gbar", p["gkdrdend"], state)
-    state = cell.basal.data_set("Kv2like_gbar", p["gkv2"] * p["gkv2scale"], state)
-    state = cell.basal.data_set(
-        "kir_gbar",
-        jnp.where(basal_dist > 40.0, p["KirGbar"], p["KirGbar"] * basal_dist / 40.0),
+def set_fitted_conductance_parameters(
+    cell,
+    p,
+    state=None,
+    *,
+    selected_keys=CONDUCTANCE_PARAMETER_KEYS,
+    reference=None,
+    update_mode=None,
+):
+    selected_keys = frozenset(selected_keys)
+    reference = reference or _reference_parameters(cell)
+    update_mode = update_mode or _parameter_update_mode(cell)
+    return _write_selected_profiles(
+        _conductance_fit_profiles(cell, p, update_mode),
+        _conductance_fit_profiles(cell, reference, update_mode),
+        selected_keys,
+        update_mode,
         state,
     )
-    return state
 
 
 def set_fitted_parameters(cell, keys, values, state=None):
-    p = _fit_values(keys, values)
-    state = set_fitted_passive_parameters(cell, p, state)
-    state = set_fitted_conductance_parameters(cell, p, state)
+    keys = tuple(keys)
+    if len(keys) != len(values):
+        raise ValueError(
+            f"Expected {len(keys)} Combe fit values for {len(keys)} keys, "
+            f"received {len(values)}."
+        )
+    if len(set(keys)) != len(keys):
+        duplicates = sorted({key for key in keys if keys.count(key) > 1})
+        raise ValueError(f"Duplicate Combe fit parameter keys: {duplicates}")
+    unsupported = sorted(set(keys) - SUPPORTED_FIT_PARAMETER_KEYS)
+    if unsupported:
+        raise KeyError(f"Unsupported Combe fit parameter keys: {unsupported}")
+    if not keys:
+        return state
+
+    reference = _reference_parameters(cell)
+    p = _fit_values(keys, values, reference)
+    update_mode = _parameter_update_mode(cell)
+    selected_keys = frozenset(keys)
+    state = set_fitted_passive_parameters(
+        cell,
+        p,
+        state,
+        selected_keys=selected_keys,
+        reference=reference,
+        update_mode=update_mode,
+    )
+    state = set_fitted_conductance_parameters(
+        cell,
+        p,
+        state,
+        selected_keys=selected_keys,
+        reference=reference,
+        update_mode=update_mode,
+    )
     return state
 
 
@@ -945,6 +1187,12 @@ def Combe2023(
         enable_cal4_diffusion(cell, axial_diffusion=0.22)
 
     cell.set("v", params.Epas)
+    cell._combe_reference_parameters = asdict(params)
+    cell._combe_parameter_update_mode = (
+        EXACT_HOC_UPDATE_MODE
+        if morphology_source == "hoc" and params == COMBE_PARAMS
+        else RULE_UPDATE_MODE
+    )
     return cell
 
 
