@@ -14,8 +14,21 @@ segmented current-clamp records for `m20240527cd`:
 
 The simulation backbone follows Jaxley's documented
 [`jit(vmap(...))` approach](https://jaxley.readthedocs.io/en/latest/tutorials/04_jit_and_vmap.html).
-Traces with the same `(dt, n_steps)` are stacked into static-shape buckets,
-initialized independently, and simulated in parallel.
+Traces are grouped into natural static shapes, initialized independently, and
+simulated through jitted `vmap` kernels. Every bucket gradient is summed before
+one update to the parameter vector shared by all recordings.
+
+## Repository layout
+
+```text
+Jaxley_refactored/
+├── jaxley_refactored/   # model, data, simulation, fitting, and reporting code
+├── configs/             # model, runtime, dataset, and sweep configurations
+├── scripts/             # local fitting launchers
+├── slurm/               # cluster launchers
+├── tests/               # unit and integration tests
+└── pyproject.toml
+```
 
 ## Quick start
 
@@ -49,6 +62,46 @@ jaxley-refactored fit \
 
 Run `fit --dry-run` to build the model, load and hash every input, and write a
 run manifest without compiling the optimizer.
+
+### Fit every recorded cell locally
+
+The local launcher discovers cell IDs from `segment_metadata.csv` and performs
+one complete fit per cell:
+
+```bash
+scripts/run_full_fitting.sh
+```
+
+Within each cell, traces are grouped by `(dt_ms, n_steps)` and simulated with
+jitted `vmap` kernels. All bucket losses and gradients are accumulated before
+one optimizer update, so all eight recordings share exactly one parameter
+vector without wasting integration steps on padding. Cell fits run sequentially
+by default because each process can use substantial GPU memory or CPU RAM. A
+machine with enough memory can also run independent cells concurrently:
+
+```bash
+scripts/run_full_fitting.sh --max-parallel-cells 2
+```
+
+Useful first checks are:
+
+```bash
+# Build and validate every cell without optimization.
+scripts/run_full_fitting.sh --dry-run
+
+# Run one epoch for one cell.
+scripts/run_full_fitting.sh --cells m20240527cd --epochs 1
+
+# Fast end-to-end gradient, logging, checkpoint, and plotting test.
+scripts/run_full_fitting.sh \
+  --cells m20240527cd --epochs 1 --max-steps 100
+```
+
+Set `PYTHON_EXECUTABLE=/path/to/python` if the desired environment is not the
+shell's default Python. Epoch metrics are printed live and also written to
+per-cell logs under `runs/launcher_logs/<timestamp>/`. After every epoch, an
+eight-panel simulated-versus-experimental figure is saved under the run's
+`plots/` directory; `plots/latest.png` always points to the newest result.
 
 ## Configuration knobs
 

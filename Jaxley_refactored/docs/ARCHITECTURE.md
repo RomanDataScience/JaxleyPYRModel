@@ -43,8 +43,9 @@ initial-state pytree, observations, masks, and weights are arrays passed through
 the numerical boundary. The parameter key tuple is static; values are dynamic.
 
 Records are bucketed by `(dt_ms, n_steps)`. One `SimulationKernel` is compiled
-per bucket. `jax.vmap` maps a pure single-trace simulation over current and
-initial state, while sharing the parameter vector.
+per natural shape. `jax.vmap` maps a pure single-trace simulation over currents
+and initial states in each bucket. Bucket losses and gradients are summed before
+one optimizer step, so every recording shares exactly one parameter vector.
 
 ## HOC frozen-grid semantics
 

@@ -22,9 +22,9 @@ test = ["pytest"]
 jaxley-refactored = "jaxley_refactored.cli.bootstrap:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["jaxley_refactored*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
-

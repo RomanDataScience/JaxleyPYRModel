@@ -317,7 +317,7 @@ Jaxley_refactored/
 │   └── sweeps/
 ├── assets/
 │   └── morphologies/
-├── src/jaxley_refactored/
+├── jaxley_refactored/
 │   ├── config/
 │   │   ├── schema.py
 │   │   ├── loading.py
@@ -668,13 +668,16 @@ Compile one kernel per static signature:
 )
 ```
 
-The default data naturally requires two time buckets:
+The original memory-efficient design used two natural time buckets:
 
 - `(4, 24_000)` depolarizing.
 - `(4, 13_000)` hyperpolarizing.
 
-Do not pad all traces to 24,000 by default. The two compiled executables avoid
-11,000 unnecessary integration steps for each hyperpolarizing trace.
+The implemented full-cell configuration sets `pad_to_longest: false`, retaining
+these two natural shapes. Both bucket losses and gradients are accumulated
+before a single optimizer update, so all eight traces still fit one shared
+parameter vector without spending 11,000 unnecessary integration steps per
+hyperpolarizing trace.
 
 ### 8.2 Trace-axis memory control
 
@@ -1232,7 +1235,7 @@ NEURON-vs-Jaxley tolerance for internal refactor parity.
 | Zero conductances cannot activate through sigmoid | Explicit boundary-safe transform/projection |
 | `vmap` exhausts GPU memory | Fixed microbatch plus `lax.map`/serial fallback |
 | Long traces make reverse mode too large | Independent time rematerialization tuning |
-| Shape variation causes compile storms | Bucket by `dt/n_steps`; pad trace-count axis only |
+| Shape variation causes compile storms | Group by `dt`; optionally pad time to the longest trace with a false score mask |
 | Float32 destabilizes detailed morphology | Float64 default and explicit qualification |
 | HOC/NEURON unavailable on GPU nodes | Portable exact-HOC artifact |
 | Native MOD files differ by architecture | Compile preprocessing inputs on target; worker uses artifact |

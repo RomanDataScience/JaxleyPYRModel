@@ -39,6 +39,11 @@ def test_protocol_mean_is_invariant_to_trace_count():
 
     np.testing.assert_allclose([item.weight for item in weighted], [0.25, 0.25, 0.5])
     assert [bucket.key for bucket in bucket_records(weighted)] == [(0.05, 3), (0.05, 5)]
+    padded = bucket_records(weighted, pad_to_longest=True)
+    assert [(bucket.key, len(bucket.records)) for bucket in padded] == [
+        ((0.05, 5), 3)
+    ]
+    assert not padded[0].score_masks[0, 3:].any()
 
 
 def test_masked_loss_uses_only_scored_samples_and_trace_weights():
@@ -51,3 +56,13 @@ def test_masked_loss_uses_only_scored_samples_and_trace_weights():
         float(weighted_bucket_loss(predicted, observed, mask, [0.25, 0.75])),
         7.75,
     )
+
+
+def test_short_smoke_prefix_replaces_an_out_of_range_score_window():
+    record = _record("a", "depolarizing_step", 1000, 0)
+    shortened = record.with_max_steps(100)
+
+    assert len(shortened.time_ms) == 100
+    assert shortened.score_mask.all()
+    assert shortened.metadata["original_n_steps"] == 1000
+    assert shortened.metadata["score_window_replaced"] is True

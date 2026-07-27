@@ -8,6 +8,7 @@ from typing import Callable, Iterable
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from jaxley_refactored.config.schema import FitSpec, ProtocolSpec, RuntimeSpec
 from jaxley_refactored.data import TraceBucket
@@ -95,9 +96,12 @@ class Trainer:
                 if self.fit.batching_strategy == "serial"
                 else kernel.simulate_batch(physical, currents, initial_states)
             )
-            return weighted_bucket_loss(predicted, observed, masks, weights)
+            return (
+                weighted_bucket_loss(predicted, observed, masks, weights),
+                predicted,
+            )
 
-        loss_and_gradient = jax.value_and_grad(loss)
+        loss_and_gradient = jax.value_and_grad(loss, has_aux=True)
         if self.runtime.jit:
             # The simulation functions are already compiled per shape. Jitting
             # this small wrapper fuses loss reduction and reverse-mode setup.
@@ -116,7 +120,11 @@ class Trainer:
         signal.signal(signal.SIGUSR1, request_stop)
         signal.signal(signal.SIGTERM, request_stop)
 
-    def train(self, on_epoch: Callable[[dict], None] | None = None) -> FitResult:
+    def train(
+        self,
+        on_epoch: Callable[[dict, dict[tuple[float, int], np.ndarray]], None]
+        | None = None,
+    ) -> FitResult:
         physical = jnp.asarray(self.model.reference_values)
         normalized = self.space.normalize(physical)
         optimizer_state = self.optimizer.initialize(normalized)
@@ -138,11 +146,13 @@ class Trainer:
             total_loss = jnp.asarray(0.0)
             total_gradient = jnp.zeros_like(normalized)
             bucket_losses = {}
+            bucket_predictions = {}
             for prepared in self._prepared:
-                loss, gradient = prepared.loss_and_gradient(normalized)
+                (loss, predicted), gradient = prepared.loss_and_gradient(normalized)
                 total_loss = total_loss + loss
                 total_gradient = total_gradient + gradient
                 bucket_losses[str(prepared.bucket.key)] = float(loss)
+                bucket_predictions[prepared.bucket.key] = np.asarray(predicted)
 
             loss_value = float(total_loss)
             is_best = loss_value < best_loss
@@ -161,7 +171,7 @@ class Trainer:
                 "bucket_losses": bucket_losses,
             }
             if on_epoch is not None:
-                on_epoch(metrics)
+                on_epoch(metrics, bucket_predictions)
             if self.checkpoints is not None and (
                 completed % self.fit.checkpoint_every_epochs == 0
                 or self._stop_requested

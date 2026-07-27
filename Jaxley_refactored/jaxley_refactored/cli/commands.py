@@ -42,7 +42,9 @@ def _parser() -> argparse.ArgumentParser:
             command.add_argument("--output", type=Path)
         if name == "fit":
             command.add_argument("--epochs", type=int)
+            command.add_argument("--max-steps", type=int)
             command.add_argument("--seed", type=int)
+            command.add_argument("--cell-id")
             command.add_argument("--run-name")
             command.add_argument("--dry-run", action="store_true")
     return parser
@@ -86,7 +88,9 @@ def _records(config):
 
 def _inspect_data(config) -> int:
     records = _records(config)
-    buckets = bucket_records(records)
+    buckets = bucket_records(
+        records, pad_to_longest=config.fit.pad_to_longest
+    )
     print(
         json.dumps(
             {
@@ -232,15 +236,23 @@ def _simulate(config, args) -> int:
 def _fit(config, args) -> int:
     from jaxley_refactored.fitting.checkpoints import CheckpointManager
     from jaxley_refactored.fitting.trainer import Trainer
-    from jaxley_refactored.reporting import RunDirectory
+    from jaxley_refactored.reporting import RunDirectory, plot_epoch_traces
 
     if args.epochs is not None:
         if args.epochs <= 0:
             raise ValueError("--epochs must be positive.")
         optimizer = replace(config.fit.optimizer, epochs=args.epochs)
         config = replace(config, fit=replace(config.fit, optimizer=optimizer))
+    if args.max_steps is not None and args.max_steps <= 1:
+        raise ValueError("--max-steps must be greater than one.")
     if args.seed is not None:
         config = replace(config, runtime=replace(config.runtime, seed=args.seed))
+    if args.cell_id is not None:
+        if not args.cell_id.strip():
+            raise ValueError("--cell-id cannot be empty.")
+        config = replace(
+            config, dataset=replace(config.dataset, cell_id=args.cell_id)
+        )
     if args.run_name is not None:
         if not args.run_name.strip():
             raise ValueError("--run-name cannot be empty.")
@@ -249,7 +261,20 @@ def _fit(config, args) -> int:
         )
 
     records = _records(config)
-    buckets = bucket_records(records)
+    if args.max_steps is not None:
+        records = tuple(
+            record.with_max_steps(args.max_steps) for record in records
+        )
+    buckets = bucket_records(
+        records, pad_to_longest=config.fit.pad_to_longest
+    )
+    print(
+        f"fit_setup cell={config.dataset.cell_id} traces={len(records)} "
+        f"buckets={[(len(bucket.records), bucket.n_steps) for bucket in buckets]} "
+        f"max_steps={args.max_steps}",
+        flush=True,
+    )
+    print("building_model", flush=True)
     model = _build_model(config)
     compatibility_hash = stable_hash(
         {
@@ -258,6 +283,7 @@ def _fit(config, args) -> int:
             "inputs": {
                 record.trace_key: record.checksums for record in records
             },
+            "max_steps": args.max_steps,
         }
     )
     run_id = (
@@ -270,7 +296,9 @@ def _fit(config, args) -> int:
         )
     )
     output = RunDirectory(config.output.root, run_id)
-    output.write_yaml("resolved_config.yaml", config_as_dict(config))
+    resolved_config = config_as_dict(config)
+    resolved_config["run_overrides"] = {"max_steps": args.max_steps}
+    output.write_yaml("resolved_config.yaml", resolved_config)
     device = validate_device(config.runtime)
     output.write_json(
         "run_manifest.json",
@@ -281,7 +309,11 @@ def _fit(config, args) -> int:
             "input_checksums": {
                 record.trace_key: record.checksums for record in records
             },
-            **collect_provenance(Path(__file__).resolve().parents[4], device),
+            "max_steps": args.max_steps,
+            "trace_shapes": {
+                record.trace_key: len(record.time_ms) for record in records
+            },
+            **collect_provenance(Path(__file__).resolve().parents[3], device),
         },
     )
     output.write_parameters(
@@ -291,7 +323,16 @@ def _fit(config, args) -> int:
     )
     if args.dry_run:
         output.write_json("status.json", {"status": "validated", "dry_run": True})
-        print(json.dumps({"run": str(output.path), "dry_run": True}, indent=2))
+        print(
+            json.dumps(
+                {
+                    "run": str(output.path),
+                    "dry_run": True,
+                    "max_steps": args.max_steps,
+                },
+                indent=2,
+            )
+        )
         return 0
 
     checkpoints = CheckpointManager(
@@ -306,15 +347,33 @@ def _fit(config, args) -> int:
         checkpoints,
     )
     trainer.install_signal_handlers()
+    print(
+        "starting_optimization "
+        "(the first epoch includes JAX forward/backward compilation)",
+        flush=True,
+    )
 
-    def report(metrics):
+    def report(metrics, predictions):
         output.append_metrics(metrics)
-        print(
+        plot_path = None
+        if config.output.plot_every_epochs and (
+            (metrics["epoch"] + 1) % config.output.plot_every_epochs == 0
+        ):
+            plot_path = plot_epoch_traces(
+                output.path / "plots",
+                buckets,
+                predictions,
+                epoch=metrics["epoch"],
+                loss=metrics["loss"],
+            )
+        message = (
             f"epoch={metrics['epoch']:04d} loss={metrics['loss']:.8g} "
             f"rmse_mV={metrics['rmse_mV']:.6g} "
-            f"grad_norm={metrics['gradient_norm']:.6g}",
-            flush=True,
+            f"grad_norm={metrics['gradient_norm']:.6g}"
         )
+        if plot_path is not None:
+            message += f" plot={plot_path}"
+        print(message, flush=True)
 
     output.write_json("status.json", {"status": "running"})
     result = trainer.train(report)

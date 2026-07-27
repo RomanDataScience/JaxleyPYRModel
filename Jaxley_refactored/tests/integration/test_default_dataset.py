@@ -17,7 +17,9 @@ def test_default_cell_loads_all_segmented_traces():
         aggregation=config.fit.aggregation,
         protocol_weights=config.fit.protocol_weights,
     )
-    buckets = bucket_records(weighted)
+    buckets = bucket_records(
+        weighted, pad_to_longest=config.fit.pad_to_longest
+    )
 
     assert len(records) == 8
     assert {(bucket.n_steps, len(bucket.records)) for bucket in buckets} == {
@@ -26,3 +28,10 @@ def test_default_cell_loads_all_segmented_traces():
     }
     assert np.isclose(sum(record.weight for record in weighted), 1.0)
     assert all(np.isclose(record.dt_ms, 0.05) for record in records)
+
+    smoke_records = tuple(record.with_max_steps(100) for record in weighted)
+    smoke_buckets = bucket_records(smoke_records)
+    assert [(bucket.n_steps, len(bucket.records)) for bucket in smoke_buckets] == [
+        (100, 8)
+    ]
+    assert smoke_buckets[0].score_masks.all()

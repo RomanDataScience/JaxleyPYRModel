@@ -146,6 +146,7 @@ fit:
     strategy: auto
     trace_microbatch_size: auto
     pad_trace_count_to_microbatch: true
+    pad_to_longest: false
 
   checkpoint:
     every_epochs: 1
@@ -179,7 +180,7 @@ runtime:
 output:
   root: runs
   run_name: auto
-  plot_every_epochs: 0
+  plot_every_epochs: 1
   evaluate_every_epochs: 5
   save_predictions: best_and_final
   provenance:

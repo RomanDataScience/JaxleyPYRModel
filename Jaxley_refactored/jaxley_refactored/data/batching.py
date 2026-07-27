@@ -66,27 +66,52 @@ def weight_records(
     return tuple(weighted)
 
 
-def bucket_records(records: Iterable[TraceRecord]) -> tuple[TraceBucket, ...]:
+def bucket_records(
+    records: Iterable[TraceRecord], *, pad_to_longest: bool = False
+) -> tuple[TraceBucket, ...]:
+    """Stack traces into static-shape batches.
+
+    With ``pad_to_longest=True``, records sharing a time step are padded to the
+    longest trace. Padded score-mask entries are false, so they contribute
+    exactly zero loss while enabling a single ``vmap`` across all such traces.
+    """
     grouped: dict[tuple[float, int], list[TraceRecord]] = defaultdict(list)
     for record in records:
-        grouped[(record.dt_ms, len(record.time_ms))].append(record)
+        length_key = 0 if pad_to_longest else len(record.time_ms)
+        grouped[(record.dt_ms, length_key)].append(record)
     buckets = []
-    for key, items in sorted(grouped.items()):
+    for grouping_key, items in sorted(grouped.items()):
         records_in_bucket = tuple(
             sorted(items, key=lambda item: (item.protocol, item.trace_id))
         )
+        n_steps = max(len(record.time_ms) for record in records_in_bucket)
+        key = (grouping_key[0], n_steps)
+
+        def padded(values, *, fill):
+            missing = n_steps - len(values)
+            return np.pad(values, (0, missing), constant_values=fill)
+
         buckets.append(
             TraceBucket(
                 key=key,
                 records=records_in_bucket,
                 currents_nA=np.stack(
-                    [record.current_nA for record in records_in_bucket]
+                    [
+                        padded(record.current_nA, fill=0.0)
+                        for record in records_in_bucket
+                    ]
                 ),
                 observed_mV=np.stack(
-                    [record.voltage_mV for record in records_in_bucket]
+                    [
+                        padded(record.voltage_mV, fill=0.0)
+                        for record in records_in_bucket
+                    ]
                 ),
                 score_masks=np.stack(
-                    [record.score_mask for record in records_in_bucket]
+                    [
+                        padded(record.score_mask, fill=False)
+                        for record in records_in_bucket
+                    ]
                 ),
                 weights=np.asarray(
                     [record.weight for record in records_in_bucket], dtype=float
@@ -98,4 +123,3 @@ def bucket_records(records: Iterable[TraceRecord]) -> tuple[TraceBucket, ...]:
             )
         )
     return tuple(buckets)
-

@@ -15,7 +15,7 @@ from typing import Any, Sequence
 
 
 def _repository_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+    return Path(__file__).resolve().parents[3]
 
 
 @lru_cache(maxsize=1)

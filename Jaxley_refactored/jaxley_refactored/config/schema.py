@@ -466,6 +466,7 @@ class FitSpec:
     protocol_weights: Mapping[str, float]
     optimizer: OptimizerSpec
     batching_strategy: str = "vmap"
+    pad_to_longest: bool = False
     checkpoint_every_epochs: int = 1
 
     @classmethod
@@ -512,6 +513,7 @@ class FitSpec:
             protocol_weights=weights,
             optimizer=OptimizerSpec.from_mapping(data.get("optimizer")),
             batching_strategy=strategy,
+            pad_to_longest=bool(batching.get("pad_to_longest", False)),
             checkpoint_every_epochs=every,
         )
 
@@ -579,6 +581,7 @@ class RuntimeSpec:
 class OutputSpec:
     root: Path = Path("runs")
     run_name: str = "auto"
+    plot_every_epochs: int = 1
     evaluate_every_epochs: int = 5
 
     @classmethod
@@ -596,9 +599,13 @@ class OutputSpec:
             },
             "output",
         )
+        plot_every = int(data.get("plot_every_epochs", 1))
+        if plot_every < 0:
+            raise ConfigError("output.plot_every_epochs cannot be negative.")
         return cls(
             root=Path(data.get("root", "runs")),
             run_name=str(data.get("run_name", "auto")),
+            plot_every_epochs=plot_every,
             evaluate_every_epochs=int(data.get("evaluate_every_epochs", 5)),
         )
 
