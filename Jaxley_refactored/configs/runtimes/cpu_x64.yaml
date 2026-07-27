@@ -1,0 +1,6 @@
+extends: ../fits/combe_m20240527cd_all.yaml
+runtime:
+  backend: cpu
+  precision: float64
+  jit: true
+

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jaxley-refactored"
+version = "0.1.0"
+description = "Configuration-driven Combe2023 modeling and multi-trace fitting with Jaxley."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "jax",
+  "jaxley>=0.13",
+  "numpy",
+  "PyYAML",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+jaxley-refactored = "jaxley_refactored.cli.bootstrap:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+

@@ -1,0 +1,135 @@
+schema_version: 1
+
+model:
+  id: combe2023
+  morphology:
+    provider: hoc_live
+    grouping:
+      required_groups: [soma, axon, basal, apical]
+      reject_unclassified: true
+    discretization:
+      strategy: d_lambda
+      d_lambda: 0.3
+      frequency_hz: 100.0
+  profile:
+    mode: exact_hoc_frozen_grid
+  mechanisms:
+    include: all_from_preset
+    exclude: []
+    calcium_diffusion:
+      enabled: true
+      axial_diffusion: 0.22
+  distributions:
+    preset: combe2023_cch_driven
+    # Override a profile coefficient, e.g. soma_hbar or DistHalfRm. It becomes
+    # a starting value when fitted, or a fixed value when excluded from fitting.
+    overrides: {}
+  parameters:
+    catalog: combe2023
+    value_overrides: {}
+    fit:
+      include_tags: [conductance, passive]
+      include: []
+      exclude: []
+
+protocol:
+  injection_site:
+    group: soma
+    branch: 0
+    location: 0.5
+  recording_sites:
+    - state: v
+      group: soma
+      branch: 0
+      location: 0.5
+  initial_state:
+    mode: observed_first_sample
+    fixed_voltage_mV: -71.9879
+  alignment: prefix
+
+dataset:
+  provider: segmented_current_clamp
+  root: ../../../JaxleyModel/Experimental_currentClamp_Analysis/Segmented_Traces
+  manifest: segment_metadata.csv
+  cell_id: m20240527cd
+  selection:
+    traces: ["*"]
+    segments: [depolarizing_step, hyperpolarizing_pulse]
+  units:
+    voltage: mV
+    current_on_disk: pA
+    current_for_jaxley: nA
+    time: ms
+  validation:
+    require_v_i_t_triplet: true
+    reject_length_mismatch: true
+    reject_nonfinite: true
+    require_uniform_time: true
+    ignore_absolute_manifest_output_paths: true
+  resampling:
+    target_dt_ms: 0.05
+    voltage_method: linear
+    current_method: zero_order_hold
+  score_windows:
+    source: manifest_epoch
+    pre_ms: 100.0
+    post_ms: 800.0
+
+fit:
+  objective:
+    components:
+      - kind: masked_voltage_mse
+        weight: 1.0
+    aggregation: protocol_mean
+    protocol_weights:
+      depolarizing_step: 0.5
+      hyperpolarizing_pulse: 0.5
+  parameter_transform:
+    default: projected_box
+    preserve_exact_zero_defaults: true
+  optimizer:
+    name: adam
+    learning_rate: 0.001
+    gradient_clip_norm: 10.0
+    epochs: 50
+  batching:
+    bucket_by: [delta_t, n_steps]
+    strategy: vmap
+  checkpoint:
+    every_epochs: 1
+    keep_best: true
+    keep_latest: true
+    resume: auto
+    reject_incompatible_hashes: true
+
+runtime:
+  backend: auto
+  precision: float64
+  seed: 0
+  jit: true
+  solver:
+    ode: bwd_euler
+    voltage: jaxley.dhs
+  rematerialization:
+    policy: sqrt
+    levels: 2
+  compilation_cache:
+    enabled: false
+  memory:
+    preallocate: false
+    fraction: 0.8
+  distributed:
+    mode: single_process
+
+output:
+  root: ../../runs
+  run_name: auto
+  plot_every_epochs: 0
+  evaluate_every_epochs: 5
+  save_predictions: best_and_final
+  provenance:
+    include_git_state: true
+    include_environment: true
+    include_device: true
+    include_input_hashes: true
+    include_resolved_config: true

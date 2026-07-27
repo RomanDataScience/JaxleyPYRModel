@@ -2,7 +2,24 @@
 
 Date: 2026-07-27
 
-Status: implementation plan; no production code has been moved yet
+Status: core implementation delivered in `Jaxley_refactored/` on 2026-07-27.
+The milestone sections remain as the audit trail and roadmap for replacing the
+deliberate `LegacyCombeBackend` compatibility boundary with fully native rules.
+
+Implemented now:
+
+- validated YAML configuration and inheritance;
+- live-HOC, checksum-protected HOC artifact, and caller-supplied SWC providers;
+- channel/dependency and spatial-profile registries;
+- canonical 40-parameter catalog with exact HOC frozen-grid updates;
+- all-trace manifest loading, resampling, weighting, and static-shape buckets;
+- trace-specific initial states with `jit(vmap(...))` and serial kernels;
+- masked multi-bucket loss, projected Adam, atomic latest/best checkpoints;
+- CPU/GPU bootstrap, provenance, run outputs, and SLURM array launchers.
+
+Deferred roadmap items include native removal of the compatibility backend,
+trace microbatch auto-tuning, equilibrated initial states, richer electrophysiology
+metrics, and synchronous multi-device optimization.
 
 ## 1. Outcome
 

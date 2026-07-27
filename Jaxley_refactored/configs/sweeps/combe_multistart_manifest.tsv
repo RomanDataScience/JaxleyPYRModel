@@ -1,0 +1,5 @@
+# config	seed	run_name
+../runtimes/gpu_x64.yaml	0	combe-m20240527cd-seed0
+../runtimes/gpu_x64.yaml	1	combe-m20240527cd-seed1
+../runtimes/gpu_x64.yaml	2	combe-m20240527cd-seed2
+../runtimes/gpu_x64.yaml	3	combe-m20240527cd-seed3

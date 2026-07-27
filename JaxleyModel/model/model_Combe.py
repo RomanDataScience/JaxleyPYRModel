@@ -8,8 +8,10 @@ from pathlib import Path
 
 from jax import config
 
-config.update("jax_enable_x64", True)
-config.update("jax_platform_name", "cpu")
+# Preserve the historical float64 default for direct imports while allowing the
+# refactored runtime bootstrap to select precision and CPU/GPU before import.
+if "JAX_ENABLE_X64" not in os.environ:
+    config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp
 import jaxley as jx
@@ -449,8 +451,8 @@ def passive_sigmoid(distance, soma_value, tuft_value, half_distance, slope):
     )
 
 
-def update_number_compartments(cell, d_lambda=0.1):
-    frequency = 100.0
+def update_number_compartments(cell, d_lambda=0.1, frequency=100.0):
+    """Apply the d-lambda rule at ``frequency`` Hz (100 Hz by default)."""
 
     for branch in cell.branches:
         diameter = 2.0 * branch.nodes["radius"].to_numpy(dtype=float)[0]

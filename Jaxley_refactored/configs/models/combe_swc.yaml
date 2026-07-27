@@ -1,0 +1,14 @@
+extends: ../fits/combe_m20240527cd_all.yaml
+
+# Portable rule-based morphology example. Replace this path with another SWC
+# whose type labels can be assigned to soma/axon/basal/apical by Jaxley.
+model:
+  morphology:
+    provider: swc
+    path: ../../../JaxleyModel/model/CELL.SWC
+  profile:
+    mode: rule_based_final_centers
+
+runtime:
+  backend: cpu
+  precision: float64

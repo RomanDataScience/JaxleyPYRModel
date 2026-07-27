@@ -1,0 +1,343 @@
+"""User-facing orchestration; domain logic remains in dedicated services."""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import replace
+import json
+from pathlib import Path
+import sys
+
+import numpy as np
+
+from jaxley_refactored.config.hashing import config_as_dict, stable_hash
+from jaxley_refactored.data import (
+    SegmentedTraceLoader,
+    TraceBucket,
+    bucket_records,
+    weight_records,
+)
+from jaxley_refactored.runtime import collect_provenance, validate_device
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="jaxley-refactored")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    for name, help_text in (
+        ("validate-config", "Validate YAML without building a cell."),
+        ("inspect-data", "Load and summarize selected experimental traces."),
+        ("inspect-model", "Build and summarize the configured model."),
+        ("export-hoc-artifact", "Export a portable exact-HOC artifact."),
+        ("simulate", "Run one selected trace or a short smoke simulation."),
+        ("fit", "Fit shared parameters to every selected trace."),
+    ):
+        command = subparsers.add_parser(name, help=help_text)
+        command.add_argument("--config", required=True, type=Path)
+        if name == "export-hoc-artifact":
+            command.add_argument("--destination", required=True, type=Path)
+        if name == "simulate":
+            command.add_argument("--trace")
+            command.add_argument("--protocol")
+            command.add_argument("--max-steps", type=int)
+            command.add_argument("--output", type=Path)
+        if name == "fit":
+            command.add_argument("--epochs", type=int)
+            command.add_argument("--seed", type=int)
+            command.add_argument("--run-name")
+            command.add_argument("--dry-run", action="store_true")
+    return parser
+
+
+def run(config, argv: list[str]) -> int:
+    args = _parser().parse_args(argv)
+    if args.command == "validate-config":
+        print(
+            json.dumps(
+                {
+                    "valid": True,
+                    "config_hash": stable_hash(config_as_dict(config)),
+                    "source": str(config.source_path),
+                },
+                indent=2,
+            )
+        )
+        return 0
+    if args.command == "inspect-data":
+        return _inspect_data(config)
+    if args.command == "inspect-model":
+        return _inspect_model(config)
+    if args.command == "export-hoc-artifact":
+        return _export_artifact(config, args.destination)
+    if args.command == "simulate":
+        return _simulate(config, args)
+    if args.command == "fit":
+        return _fit(config, args)
+    raise AssertionError(args.command)
+
+
+def _records(config):
+    records = SegmentedTraceLoader().load(config.dataset)
+    return weight_records(
+        records,
+        aggregation=config.fit.aggregation,
+        protocol_weights=config.fit.protocol_weights,
+    )
+
+
+def _inspect_data(config) -> int:
+    records = _records(config)
+    buckets = bucket_records(records)
+    print(
+        json.dumps(
+            {
+                "cell_id": config.dataset.cell_id,
+                "n_records": len(records),
+                "weight_sum": sum(record.weight for record in records),
+                "records": [
+                    {
+                        "trace": record.trace_id,
+                        "protocol": record.protocol,
+                        "shape": list(record.voltage_mV.shape),
+                        "dt_ms": record.dt_ms,
+                        "score_samples": int(record.score_mask.sum()),
+                        "weight": record.weight,
+                    }
+                    for record in records
+                ],
+                "buckets": [
+                    {
+                        "dt_ms": bucket.dt_ms,
+                        "n_steps": bucket.n_steps,
+                        "n_traces": len(bucket.records),
+                    }
+                    for bucket in buckets
+                ],
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _build_model(config):
+    validate_device(config.runtime)
+    from jaxley_refactored.models import default_builder
+
+    return default_builder().build(config.model)
+
+
+def _inspect_model(config) -> int:
+    model = _build_model(config)
+    group_counts = {
+        group: int(mask.sum()) for group, mask in model.features.group_masks.items()
+    }
+    print(
+        json.dumps(
+            {
+                "signature": model.signature,
+                "branches": len(model.cell.xyzr),
+                "compartments": len(model.cell.nodes),
+                "groups": group_counts,
+                "enabled_mechanisms": sorted(model.enabled_mechanisms),
+                "fit_parameters": list(model.parameterizer.keys),
+                "provider": model.provenance,
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _export_artifact(config, destination: Path) -> int:
+    if config.model.morphology.provider != "hoc_live":
+        raise ValueError("Artifact export requires morphology.provider=hoc_live.")
+    model = _build_model(config)
+    from jaxley_refactored.morphology import export_hoc_artifact
+
+    manifest = export_hoc_artifact(
+        model.cell,
+        destination,
+        provenance={
+            "model_signature": model.signature,
+            "source_config": str(config.source_path),
+            **model.provenance,
+        },
+    )
+    print(json.dumps(manifest, indent=2, sort_keys=True))
+    return 0
+
+
+def _selected_record(config, args):
+    records = _records(config)
+    matching = [
+        record
+        for record in records
+        if (args.trace is None or record.trace_id == args.trace)
+        and (args.protocol is None or record.protocol == args.protocol)
+    ]
+    if not matching:
+        raise ValueError("No record matches --trace/--protocol.")
+    return matching[0]
+
+
+def _simulate(config, args) -> int:
+    import jax.numpy as jnp
+
+    from jaxley_refactored.simulation import InitialStateFactory, SimulationKernel
+
+    record = _selected_record(config, args)
+    steps = len(record.time_ms)
+    if args.max_steps is not None:
+        if args.max_steps <= 1:
+            raise ValueError("--max-steps must be greater than one.")
+        steps = min(steps, args.max_steps)
+    model = _build_model(config)
+    current = jnp.asarray(record.current_nA[:steps])[None, :]
+    initial_voltage = (
+        record.initial_voltage_mV
+        if config.protocol.initial_state_mode == "observed_first_sample"
+        else config.protocol.fixed_voltage_mV
+    )
+    states = InitialStateFactory(model.cell, record.dt_ms).build([initial_voltage])
+    kernel = SimulationKernel(
+        model.cell,
+        model.parameterizer,
+        config.protocol,
+        config.runtime,
+        record.dt_ms,
+        steps,
+    )
+    parameters = jnp.asarray(model.reference_values)
+    voltage = np.asarray(kernel.simulate_batch(parameters, current, states)[0])
+    result = {
+        "trace": record.trace_key,
+        "samples": len(voltage),
+        "finite": bool(np.isfinite(voltage).all()),
+        "min_mV": float(voltage.min()),
+        "max_mV": float(voltage.max()),
+    }
+    if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            args.output,
+            voltage_mV=voltage,
+            current_nA=np.asarray(current[0]),
+            time_ms=np.arange(steps) * record.dt_ms,
+        )
+        result["output"] = str(args.output)
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+def _fit(config, args) -> int:
+    from jaxley_refactored.fitting.checkpoints import CheckpointManager
+    from jaxley_refactored.fitting.trainer import Trainer
+    from jaxley_refactored.reporting import RunDirectory
+
+    if args.epochs is not None:
+        if args.epochs <= 0:
+            raise ValueError("--epochs must be positive.")
+        optimizer = replace(config.fit.optimizer, epochs=args.epochs)
+        config = replace(config, fit=replace(config.fit, optimizer=optimizer))
+    if args.seed is not None:
+        config = replace(config, runtime=replace(config.runtime, seed=args.seed))
+    if args.run_name is not None:
+        if not args.run_name.strip():
+            raise ValueError("--run-name cannot be empty.")
+        config = replace(
+            config, output=replace(config.output, run_name=args.run_name)
+        )
+
+    records = _records(config)
+    buckets = bucket_records(records)
+    model = _build_model(config)
+    compatibility_hash = stable_hash(
+        {
+            "config": config_as_dict(config),
+            "model": model.signature,
+            "inputs": {
+                record.trace_key: record.checksums for record in records
+            },
+        }
+    )
+    run_id = (
+        config.output.run_name
+        if config.output.run_name != "auto"
+        else (
+            f"{config.model.model_id}-{config.dataset.cell_id}-"
+            f"{model.signature[:8]}-{compatibility_hash[:8]}-"
+            f"seed{config.runtime.seed}"
+        )
+    )
+    output = RunDirectory(config.output.root, run_id)
+    output.write_yaml("resolved_config.yaml", config_as_dict(config))
+    device = validate_device(config.runtime)
+    output.write_json(
+        "run_manifest.json",
+        {
+            "compatibility_hash": compatibility_hash,
+            "model_signature": model.signature,
+            "model_provenance": model.provenance,
+            "input_checksums": {
+                record.trace_key: record.checksums for record in records
+            },
+            **collect_provenance(Path(__file__).resolve().parents[4], device),
+        },
+    )
+    output.write_parameters(
+        "parameters_initial.csv",
+        model.parameterizer.specs,
+        model.reference_values,
+    )
+    if args.dry_run:
+        output.write_json("status.json", {"status": "validated", "dry_run": True})
+        print(json.dumps({"run": str(output.path), "dry_run": True}, indent=2))
+        return 0
+
+    checkpoints = CheckpointManager(
+        output.path / "checkpoints", compatibility_hash
+    )
+    trainer = Trainer(
+        model,
+        buckets,
+        config.protocol,
+        config.fit,
+        config.runtime,
+        checkpoints,
+    )
+    trainer.install_signal_handlers()
+
+    def report(metrics):
+        output.append_metrics(metrics)
+        print(
+            f"epoch={metrics['epoch']:04d} loss={metrics['loss']:.8g} "
+            f"rmse_mV={metrics['rmse_mV']:.6g} "
+            f"grad_norm={metrics['gradient_norm']:.6g}",
+            flush=True,
+        )
+
+    output.write_json("status.json", {"status": "running"})
+    result = trainer.train(report)
+    output.write_parameters(
+        "parameters_best.csv",
+        model.parameterizer.specs,
+        np.asarray(result.best_parameters),
+    )
+    output.write_parameters(
+        "parameters_final.csv",
+        model.parameterizer.specs,
+        np.asarray(result.final_parameters),
+    )
+    output.write_json(
+        "status.json",
+        {
+            "status": "interrupted" if result.stopped_by_signal else "complete",
+            "epochs_completed": result.epochs_completed,
+            "best_loss": result.best_loss,
+        },
+    )
+    return 0 if not result.stopped_by_signal else 75
+
+
+if __name__ == "__main__":
+    sys.exit("Use jaxley_refactored.cli.bootstrap so runtime is configured first.")
