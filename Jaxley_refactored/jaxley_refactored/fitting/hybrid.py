@@ -91,6 +91,7 @@ def run_hybrid(
     for generation in range(cma.state.generation, search.global_search.generations):
         population = cma.ask()
         losses = []
+        generation_best = None
         for index, partial in enumerate(population):
             full = base.copy()
             full[subset] = partial
@@ -104,6 +105,8 @@ def run_hybrid(
                 component_losses = result[4]
                 if not np.isfinite(loss):
                     raise FloatingPointError("nonfinite objective")
+                if generation_best is None or loss < generation_best[0]:
+                    generation_best = (loss, result[3])
             except Exception as error:
                 loss = search.global_search.invalid_loss
                 status = f"invalid:{type(error).__name__}"
@@ -124,6 +127,20 @@ def run_hybrid(
             if status == "ok":
                 candidates.append((loss, full, candidate_id))
         cma.tell(population, losses)
+        cma_plot_every = search.reporting.cma_plot_every_generations
+        if (
+            generation_best is not None
+            and cma_plot_every
+            and (generation + 1) % cma_plot_every == 0
+        ):
+            plot_epoch_traces(
+                cma_directory / "plots",
+                training_buckets,
+                generation_best[1],
+                epoch=generation,
+                loss=generation_best[0],
+                experimental_alpha=0.6,
+            )
         _append_jsonl(
             cma_directory / "generations.jsonl",
             {
@@ -152,6 +169,23 @@ def run_hybrid(
     exploration_fit = _stage_fit(config.fit, search.local_exploration)
     explored = []
     local_trainer = evaluator
+
+    def stage_report(stage_dir):
+        def report(metrics, predictions):
+            _append_jsonl(stage_dir / "metrics.jsonl", metrics)
+            every = search.reporting.adam_plot_every_epochs
+            if every and (metrics["epoch"] + 1) % every == 0:
+                plot_epoch_traces(
+                    stage_dir / "plots",
+                    training_buckets,
+                    predictions,
+                    epoch=metrics["epoch"],
+                    loss=metrics["loss"],
+                    experimental_alpha=0.6,
+                )
+
+        return report
+
     for _loss, initial, candidate_id in elites:
         stage_dir = output.path / "local_exploration" / candidate_id
         checkpoint = CheckpointManager(
@@ -160,9 +194,7 @@ def run_hybrid(
         )
         local_trainer.configure_optimizer(exploration_fit, checkpoint)
         result = local_trainer.train(
-            lambda metrics, _predictions: _append_jsonl(
-                stage_dir / "metrics.jsonl", metrics
-            ),
+            stage_report(stage_dir),
             initial_normalized=initial,
         )
         if result.stopped_by_signal:
@@ -182,9 +214,7 @@ def run_hybrid(
         )
         local_trainer.configure_optimizer(refinement_fit, checkpoint)
         result = local_trainer.train(
-            lambda metrics, _predictions: _append_jsonl(
-                stage_dir / "metrics.jsonl", metrics
-            ),
+            stage_report(stage_dir),
             initial_normalized=initial,
         )
         if result.stopped_by_signal:
@@ -197,6 +227,7 @@ def run_hybrid(
     )
     comparison = []
     for training_loss, normalized, candidate_id in refined:
+        training_evaluation = evaluator.evaluate(normalized, gradient=False)
         evaluation = validation_evaluator.evaluate(normalized, gradient=False)
         comparison.append(
             {
@@ -208,6 +239,28 @@ def run_hybrid(
                 "normalized": normalized.tolist(),
             }
         )
+        if search.reporting.plot_final_candidates:
+            candidate_plot_dir = (
+                output.path / "final_candidates" / candidate_id / "plots"
+            )
+            plot_epoch_traces(
+                candidate_plot_dir,
+                training_buckets,
+                training_evaluation[3],
+                epoch=0,
+                loss=float(training_evaluation[0]),
+                experimental_alpha=0.6,
+                filename="training.png",
+            )
+            plot_epoch_traces(
+                candidate_plot_dir,
+                validation_buckets,
+                evaluation[3],
+                epoch=0,
+                loss=float(evaluation[0]),
+                experimental_alpha=0.6,
+                filename="validation.png",
+            )
     comparison.sort(key=lambda item: item["validation_loss"])
     selected = comparison[0]
     space = ProjectedBoxSpace.from_specs(specs)

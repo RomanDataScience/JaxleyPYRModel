@@ -964,6 +964,35 @@ class LocalStageSpec:
 
 
 @dataclass(frozen=True)
+class SearchReportingSpec:
+    cma_plot_every_generations: int = 1
+    adam_plot_every_epochs: int = 10
+    plot_final_candidates: bool = True
+
+    @classmethod
+    def from_mapping(cls, value: Any) -> "SearchReportingSpec":
+        data = _mapping(value, "search.reporting")
+        _strict(
+            data,
+            {
+                "cma_plot_every_generations",
+                "adam_plot_every_epochs",
+                "plot_final_candidates",
+            },
+            "search.reporting",
+        )
+        cma_every = int(data.get("cma_plot_every_generations", 1))
+        adam_every = int(data.get("adam_plot_every_epochs", 10))
+        if cma_every < 0 or adam_every < 0:
+            raise ConfigError("Hybrid plotting intervals cannot be negative.")
+        return cls(
+            cma_plot_every_generations=cma_every,
+            adam_plot_every_epochs=adam_every,
+            plot_final_candidates=bool(data.get("plot_final_candidates", True)),
+        )
+
+
+@dataclass(frozen=True)
 class SearchSpec:
     strategy: str = "fit"
     global_search: CMAESSpec = field(default_factory=CMAESSpec)
@@ -976,11 +1005,23 @@ class SearchSpec:
         )
     )
     keep_after_exploration: int = 2
+    reporting: SearchReportingSpec = field(default_factory=SearchReportingSpec)
 
     @classmethod
     def from_mapping(cls, value: Any) -> "SearchSpec":
         data = _mapping(value, "search")
-        _strict(data, {"strategy", "global", "local_exploration", "local_refinement", "selection"}, "search")
+        _strict(
+            data,
+            {
+                "strategy",
+                "global",
+                "local_exploration",
+                "local_refinement",
+                "selection",
+                "reporting",
+            },
+            "search",
+        )
         strategy = str(data.get("strategy", "fit"))
         if strategy not in {"fit", "hybrid"}:
             raise ConfigError("search.strategy must be fit or hybrid.")
@@ -1008,6 +1049,7 @@ class SearchSpec:
                 default_epochs=50, backtracking=True,
             ),
             keep_after_exploration=keep,
+            reporting=SearchReportingSpec.from_mapping(data.get("reporting")),
         )
 
 

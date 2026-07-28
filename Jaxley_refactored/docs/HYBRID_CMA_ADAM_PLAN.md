@@ -14,6 +14,8 @@ Implemented:
 - within-cell validation on second/fourth traces;
 - candidate/generation histories, resolved config, checksums, selected parameters,
   comparison metrics, and validation plot;
+- best-of-generation CMA plots, periodic Adam plots with `latest.png`, and
+  training/validation plots for every finalist;
 - full and smoke hybrid presets plus a local launcher.
 
 Not yet implemented:

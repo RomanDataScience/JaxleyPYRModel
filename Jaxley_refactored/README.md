@@ -77,6 +77,15 @@ bash scripts/run_hybrid_fitting.sh \
 Use `configs/search/LSU_1_cma_adam_smoke.yaml` only for short end-to-end
 correctness checks; it is not a scientific optimization budget.
 
+Hybrid reporting defaults to:
+
+- the best training candidate after every CMA generation;
+- each Adam candidate every 10 epochs, with a stage-local `latest.png`;
+- training and validation plots for every final candidate;
+- a selected-model validation plot.
+
+Configure these under `search.reporting`. Experimental traces use `alpha=0.6`.
+
 ### Fit every recorded cell locally
 
 The local launcher discovers cell IDs from `segment_metadata.csv` and performs

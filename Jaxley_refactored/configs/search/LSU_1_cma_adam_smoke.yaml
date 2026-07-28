@@ -13,3 +13,5 @@ search:
   selection:
     keep_after_global: 1
     keep_after_exploration: 1
+  reporting:
+    adam_plot_every_epochs: 1

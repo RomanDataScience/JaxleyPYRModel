@@ -53,5 +53,10 @@ search:
     keep_after_global: 4
     keep_after_exploration: 2
 
+  reporting:
+    cma_plot_every_generations: 1
+    adam_plot_every_epochs: 10
+    plot_final_candidates: true
+
 output:
   run_name: auto

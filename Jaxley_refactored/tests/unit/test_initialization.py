@@ -83,3 +83,6 @@ def test_hybrid_config_does_not_change_legacy_fit_default():
     assert hybrid.search.global_search.population_size == 16
     assert hybrid.search.local_exploration.backtracking is False
     assert hybrid.search.local_refinement.backtracking is True
+    assert hybrid.search.reporting.cma_plot_every_generations == 1
+    assert hybrid.search.reporting.adam_plot_every_epochs == 10
+    assert hybrid.search.reporting.plot_final_candidates is True
