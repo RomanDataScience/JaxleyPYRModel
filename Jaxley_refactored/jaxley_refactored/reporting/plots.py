@@ -19,6 +19,9 @@ def plot_epoch_traces(
     *,
     epoch: int,
     loss: float,
+    experimental_alpha: float = 0.4,
+    experimental_linestyle: str = "-",
+    filename: str | None = None,
 ) -> Path:
     """Save one panel per recorded trace and update ``latest.png``.
 
@@ -59,6 +62,8 @@ def plot_epoch_traces(
             record.voltage_mV,
             color="black",
             linewidth=0.9,
+            alpha=experimental_alpha,
+            linestyle=experimental_linestyle,
             label="experimental",
         )
         axis.plot(
@@ -66,7 +71,7 @@ def plot_epoch_traces(
             simulated,
             color="tab:orange",
             linewidth=0.9,
-            alpha=0.9,
+            alpha=1.0,
             label="simulated",
         )
         axis.set_title(f"{record.trace_id} — {record.protocol}")
@@ -83,10 +88,12 @@ def plot_epoch_traces(
     )
 
     directory.mkdir(parents=True, exist_ok=True)
-    destination = directory / f"epoch_{epoch:04d}.png"
-    temporary = directory / f".epoch_{epoch:04d}.tmp.png"
+    output_name = filename or f"epoch_{epoch:04d}.png"
+    destination = directory / output_name
+    temporary = directory / f".{output_name}.tmp.png"
     figure.savefig(temporary, dpi=140)
     plt.close(figure)
     temporary.replace(destination)
-    shutil.copyfile(destination, directory / "latest.png")
+    if filename is None:
+        shutil.copyfile(destination, directory / "latest.png")
     return destination

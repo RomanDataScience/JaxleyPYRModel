@@ -41,3 +41,23 @@ def test_epoch_plot_contains_real_samples_and_updates_latest(tmp_path: Path):
     assert destination.name == "epoch_0003.png"
     assert destination.stat().st_size > 0
     assert (tmp_path / "latest.png").stat().st_size == destination.stat().st_size
+
+
+def test_epoch_plot_accepts_experimental_style_preview(tmp_path: Path):
+    bucket = bucket_records((_record("trace", "depolarizing_step", 10),))[0]
+    predictions = {bucket.key: bucket.observed_mV + 1.0}
+
+    destination = plot_epoch_traces(
+        tmp_path,
+        (bucket,),
+        predictions,
+        epoch=0,
+        loss=1.0,
+        experimental_alpha=0.6,
+        experimental_linestyle="--",
+        filename="preview.png",
+    )
+
+    assert destination.name == "preview.png"
+    assert destination.stat().st_size > 0
+    assert not (tmp_path / "latest.png").exists()
