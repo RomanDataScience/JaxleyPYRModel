@@ -89,6 +89,7 @@ dataset:
   manifest: segment_metadata.csv
   cell_id: m20240527cd
   selection:
+    # Use `trace_indices: [1, 3]` instead for cell-independent ordinal selection.
     traces: ["*"]
     segments: [depolarizing_step, hyperpolarizing_pulse]
   units:

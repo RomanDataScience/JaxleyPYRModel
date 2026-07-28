@@ -6,16 +6,16 @@ extends: ../runtimes/cpu_dt_0p1.yaml
 fit:
   optimizer:
     name: adam
-    learning_rate: 0.02
+    learning_rate: 0.01
     gradient_clip_norm: 10.0
     epochs: 50
     line_search:
       enabled: true
       reduction_factor: 0.5
       growth_factor: 1.2
-      minimum_learning_rate: 0.001
+      minimum_learning_rate: 0.0001
       maximum_learning_rate: 0.1
-      maximum_trials: 3
+      maximum_trials: 6
       require_loss_decrease: true
 
 output:

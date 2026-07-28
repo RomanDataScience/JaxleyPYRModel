@@ -48,6 +48,29 @@ def _strings(value: Any, where: str) -> tuple[str, ...]:
     return result
 
 
+def _positive_ints(value: Any, where: str) -> tuple[int, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        raise ConfigError(f"{where} must be a list of positive integers.")
+    result: list[int] = []
+    for item in value:
+        if isinstance(item, bool):
+            raise ConfigError(f"{where} must contain only positive integers.")
+        try:
+            integer = int(item)
+        except (TypeError, ValueError) as error:
+            raise ConfigError(
+                f"{where} must contain only positive integers."
+            ) from error
+        if integer != item or integer <= 0:
+            raise ConfigError(f"{where} must contain only positive integers.")
+        result.append(integer)
+    if len(result) != len(set(result)):
+        raise ConfigError(f"{where} cannot contain duplicate indices.")
+    return tuple(result)
+
+
 def _positive(value: Any, where: str) -> float:
     result = float(value)
     if result <= 0.0:
@@ -354,6 +377,7 @@ class DatasetSpec:
     manifest: Path
     cell_id: str = "m20240527cd"
     traces: tuple[str, ...] = ("*",)
+    trace_indices: tuple[int, ...] = ()
     segments: tuple[str, ...] = (
         "depolarizing_step",
         "hyperpolarizing_pulse",
@@ -384,6 +408,11 @@ class DatasetSpec:
         if data.get("provider", "segmented_current_clamp") != "segmented_current_clamp":
             raise ConfigError("Only segmented_current_clamp datasets are supported.")
         selection = _mapping(data.get("selection"), "dataset.selection")
+        _strict(
+            selection,
+            {"traces", "trace_indices", "segments"},
+            "dataset.selection",
+        )
         units = _mapping(data.get("units"), "dataset.units")
         resampling = _mapping(data.get("resampling"), "dataset.resampling")
         windows = _mapping(data.get("score_windows"), "dataset.score_windows")
@@ -393,11 +422,23 @@ class DatasetSpec:
             raise ConfigError("dataset.units.current_on_disk must be pA or nA.")
         root = Path(data.get("root", ""))
         manifest = Path(data.get("manifest", "segment_metadata.csv"))
+        traces = _strings(
+            selection.get("traces", () if "trace_indices" in selection else ("*",)),
+            "dataset.selection.traces",
+        )
+        trace_indices = _positive_ints(
+            selection.get("trace_indices"), "dataset.selection.trace_indices"
+        )
+        if trace_indices and traces:
+            raise ConfigError(
+                "dataset.selection.traces and trace_indices are mutually exclusive."
+            )
         return cls(
             root=root,
             manifest=manifest,
             cell_id=str(data.get("cell_id", "m20240527cd")),
-            traces=_strings(selection.get("traces", ("*",)), "dataset.selection.traces"),
+            traces=traces,
+            trace_indices=trace_indices,
             segments=_strings(
                 selection.get(
                     "segments",

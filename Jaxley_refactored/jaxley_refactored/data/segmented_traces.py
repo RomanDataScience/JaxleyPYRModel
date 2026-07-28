@@ -28,12 +28,33 @@ class SegmentedTraceLoader:
             raise FileNotFoundError(spec.manifest)
         with spec.manifest.open(newline="", encoding="utf-8") as handle:
             rows = tuple(csv.DictReader(handle))
+        indexed_trace_ids = {
+            protocol: self._select_indices(
+                tuple(
+                    dict.fromkeys(
+                        row["trace"]
+                        for row in rows
+                        if row["cell"] == spec.cell_id
+                        and self._canonical(row["segment"]) == protocol
+                    )
+                ),
+                spec.trace_indices,
+                spec.cell_id,
+                protocol,
+            )
+            for protocol in spec.segments
+        }
         selected = [
             row
             for row in rows
             if row["cell"] == spec.cell_id
-            and self._selected(row["trace"], spec.traces)
             and self._canonical(row["segment"]) in spec.segments
+            and (
+                row["trace"]
+                in indexed_trace_ids[self._canonical(row["segment"])]
+                if spec.trace_indices
+                else self._selected(row["trace"], spec.traces)
+            )
         ]
         if not selected:
             raise ValueError(f"No traces selected for cell {spec.cell_id}.")
@@ -47,6 +68,24 @@ class SegmentedTraceLoader:
     def _selected(trace_id: str, selectors: Iterable[str]) -> bool:
         selectors = tuple(selectors)
         return "*" in selectors or trace_id in selectors
+
+    @staticmethod
+    def _select_indices(
+        trace_ids: tuple[str, ...],
+        indices: tuple[int, ...],
+        cell_id: str,
+        protocol: str,
+    ) -> frozenset[str]:
+        if not indices:
+            return frozenset()
+        unavailable = tuple(index for index in indices if index > len(trace_ids))
+        if unavailable:
+            joined = ", ".join(str(index) for index in unavailable)
+            raise ValueError(
+                f"Trace index/indices {joined} unavailable for "
+                f"{cell_id}/{protocol}; the protocol has {len(trace_ids)} trace(s)."
+            )
+        return frozenset(trace_ids[index - 1] for index in indices)
 
     @staticmethod
     def _canonical(segment: str) -> str:
