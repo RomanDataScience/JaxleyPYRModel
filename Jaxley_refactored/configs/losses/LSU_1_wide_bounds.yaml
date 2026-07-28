@@ -5,13 +5,13 @@ extends: LSU_1.yaml
 # bounds are divided by two and upper bounds are multiplied by two.
 model:
   parameters:
-    bound_expansion_factor: 2.0
+    bound_expansion_factor: 1.0
 
 fit:
   initialization:
     mode: jittered_reference
     # Uniform perturbation of up to +/-20% of each normalized parameter range.
-    scale: 0.20
+    scale: 0.10
     preserve_exact_zero_reference: true
 
 output:

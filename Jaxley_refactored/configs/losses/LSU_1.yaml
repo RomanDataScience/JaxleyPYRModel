@@ -28,7 +28,7 @@ fit:
       # Inter-spike voltage plateau, excluding experimental spike samples.
       - kind: subthreshold_mean_error
         label: depolarizing_voltage_plateau
-        weight: 0.15
+        weight: 0.25
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -62,7 +62,7 @@ fit:
       # Full post-step trajectory and its slow slope back toward baseline.
       - kind: pseudo_huber
         label: depolarizing_recovery_waveform
-        weight: 0.15
+        weight: 0.25
         protocols: [depolarizing_step]
         window: recovery
         scale_mV: 3.0
@@ -70,7 +70,7 @@ fit:
 
       - kind: derivative_mse
         label: depolarizing_recovery_derivative
-        weight: 0.05
+        weight: 0.1
         protocols: [depolarizing_step]
         window: recovery
         scale_mV_per_ms: 1.0
