@@ -63,6 +63,20 @@ jaxley-refactored fit \
 Run `fit --dry-run` to build the model, load and hash every input, and write a
 run manifest without compiling the optimizer.
 
+The existing `fit` command remains the standard local optimizer. The additive
+hybrid pipeline runs bounded CMA-ES, fixed-step Adam exploration, backtracking
+Adam refinement, and validation on the second/fourth traces:
+
+```bash
+bash scripts/run_hybrid_fitting.sh \
+  --config configs/search/LSU_1_cma_adam.yaml \
+  --cell m20260331b \
+  --seed 1234
+```
+
+Use `configs/search/LSU_1_cma_adam_smoke.yaml` only for short end-to-end
+correctness checks; it is not a scientific optimization budget.
+
 ### Fit every recorded cell locally
 
 The local launcher discovers cell IDs from `segment_metadata.csv` and performs

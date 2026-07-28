@@ -1,5 +1,35 @@
 # Hybrid CMA-ES and gradient fitting plan
 
+## Implementation status
+
+Implemented:
+
+- additive `hybrid-fit` CLI; legacy `fit` remains unchanged;
+- serial full-covariance bounded CMA-ES in normalized coordinates;
+- deterministic ask/tell state and atomic JSON/NPZ checkpoints;
+- shared prepared Jaxley evaluator for forward CMA scoring and Adam gradients;
+- configurable CMA parameter subsets and invalid-candidate penalties;
+- CMA elite handoff to fixed-step Adam and then backtracking Adam;
+- checkpointed local stages with reset Adam moments;
+- within-cell validation on second/fourth traces;
+- candidate/generation histories, resolved config, checksums, selected parameters,
+  comparison metrics, and validation plot;
+- full and smoke hybrid presets plus a local launcher.
+
+Not yet implemented:
+
+- cell-level nested development/validation/locked-test dataset management;
+- discrete physiological validation metrics;
+- distributed Slurm candidate arrays and coordinator;
+- nested candidate `vmap`;
+- coarse-to-full fidelity reevaluation;
+- synthetic parameter recovery, identifiability, uncertainty, and statistical
+  reporting workflows;
+- external validation and publication artifact automation.
+
+The current implementation is a correct serial research prototype, not the
+completed publication evidence package described below.
+
 ## Objective
 
 Add a reproducible three-stage optimizer that uses the same bounded parameter

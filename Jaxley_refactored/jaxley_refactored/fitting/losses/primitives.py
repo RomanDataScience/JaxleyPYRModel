@@ -124,6 +124,8 @@ def soft_minimum_voltage_error(
         logits = -voltage / temperature_mV
         masked_logits = jnp.where(mask, logits, -jnp.inf)
         reference = jnp.max(masked_logits, axis=-1, keepdims=True)
+        valid = jnp.any(mask, axis=-1)
+        reference = jnp.where(valid[:, None], reference, 0.0)
         count = jnp.maximum(jnp.sum(mask, axis=-1), 1.0)
         mean_exponential = (
             jnp.sum(
@@ -132,9 +134,11 @@ def soft_minimum_voltage_error(
             )
             / count
         )
-        return -temperature_mV * (
+        mean_exponential = jnp.where(valid, mean_exponential, 1.0)
+        result = -temperature_mV * (
             jnp.squeeze(reference, axis=-1) + jnp.log(mean_exponential)
         )
+        return jnp.where(valid, result, 0.0)
 
     difference = soft_minimum(predicted) - soft_minimum(observed)
     return (difference / scale) ** 2
@@ -155,6 +159,8 @@ def soft_maximum_voltage_error(
         logits = voltage / temperature_mV
         masked_logits = jnp.where(mask, logits, -jnp.inf)
         reference = jnp.max(masked_logits, axis=-1, keepdims=True)
+        valid = jnp.any(mask, axis=-1)
+        reference = jnp.where(valid[:, None], reference, 0.0)
         count = jnp.maximum(jnp.sum(mask, axis=-1), 1.0)
         mean_exponential = (
             jnp.sum(
@@ -163,9 +169,11 @@ def soft_maximum_voltage_error(
             )
             / count
         )
-        return temperature_mV * (
+        mean_exponential = jnp.where(valid, mean_exponential, 1.0)
+        result = temperature_mV * (
             jnp.squeeze(reference, axis=-1) + jnp.log(mean_exponential)
         )
+        return jnp.where(valid, result, 0.0)
 
     difference = soft_maximum(predicted) - soft_maximum(observed)
     return (difference / scale) ** 2

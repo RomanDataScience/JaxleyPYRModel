@@ -1,13 +1,19 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 
+from jaxley_refactored.config import load_config
+from jaxley_refactored.config.hashing import config_as_dict
 from jaxley_refactored.config.schema import InitializationSpec
 from jaxley_refactored.fitting.initialization import (
     initial_normalized_values,
     initial_physical_values,
 )
 from jaxley_refactored.parameters import combe2023_catalog
+
+
+PROJECT = Path(__file__).resolve().parents[2]
 
 
 def _inputs(seed: int, initialization: InitializationSpec):
@@ -64,3 +70,16 @@ def test_reference_initialization_returns_catalog_defaults():
         initial_physical_values(model, fit, runtime),
         model.reference_values,
     )
+
+
+def test_hybrid_config_does_not_change_legacy_fit_default():
+    legacy = load_config(PROJECT / "configs/losses/LSU_1_wide_bounds.yaml")
+    hybrid = load_config(PROJECT / "configs/search/LSU_1_cma_adam.yaml")
+
+    assert legacy.search.strategy == "fit"
+    assert "search" not in config_as_dict(legacy)
+    assert hybrid.search.strategy == "hybrid"
+    assert config_as_dict(hybrid)["search"]["strategy"] == "hybrid"
+    assert hybrid.search.global_search.population_size == 16
+    assert hybrid.search.local_exploration.backtracking is False
+    assert hybrid.search.local_refinement.backtracking is True

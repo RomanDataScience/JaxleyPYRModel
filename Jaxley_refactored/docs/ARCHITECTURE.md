@@ -11,6 +11,18 @@ YAML -> AppConfig -> ModelBuilder -> BuiltModel
 DatasetProvider -> TraceBucket -> SimulationKernel -> Loss -> Optimizer
                                       |
                                 jit(vmap(trace))
+
+Hybrid fitting adds a forward-only use of the same prepared objective:
+
+```text
+CMA-ES ask -> forward objective -> tell -> elites
+                                         |
+                                         v
+                           Adam -> backtracking Adam
+```
+
+The existing `fit` command and hybrid `hybrid-fit` command share model, data,
+loss, simulation, parameter-space, and checkpoint abstractions.
 ```
 
 ## Dependency direction

@@ -81,6 +81,22 @@ class Trainer:
         if not self._prepared:
             raise ValueError("Trainer requires at least one trace bucket.")
 
+    def configure_optimizer(
+        self, fit: FitSpec, checkpoint_manager: CheckpointManager | None
+    ) -> None:
+        """Reuse prepared simulation/loss kernels with a new Adam policy."""
+        if fit.components != self.fit.components:
+            raise ValueError("Optimizer reconfiguration cannot change loss components.")
+        if fit.batching_strategy != self.fit.batching_strategy:
+            raise ValueError("Optimizer reconfiguration cannot change batching strategy.")
+        self.fit = fit
+        self.optimizer = Adam(fit.optimizer, self.space)
+        self.line_search = BacktrackingLineSearch(
+            fit.optimizer.line_search, self.optimizer.candidate
+        )
+        self.checkpoints = checkpoint_manager
+        self._stop_requested = False
+
     def _prepare_bucket(
         self,
         bucket: TraceBucket,
@@ -138,7 +154,7 @@ class Trainer:
             loss_and_gradient=loss_and_gradient,
         )
 
-    def _evaluate(
+    def evaluate(
         self, normalized, *, gradient: bool
     ) -> tuple[object, object | None, dict, dict, dict, float]:
         """Evaluate every shape bucket and optionally accumulate its gradient."""
@@ -185,13 +201,21 @@ class Trainer:
         signal.signal(signal.SIGUSR1, request_stop)
         signal.signal(signal.SIGTERM, request_stop)
 
+    @property
+    def stop_requested(self) -> bool:
+        return self._stop_requested
+
     def train(
         self,
         on_epoch: Callable[[dict, dict[tuple[float, int], np.ndarray]], None]
         | None = None,
+        *,
+        initial_normalized=None,
     ) -> FitResult:
         normalized = jnp.asarray(
-            initial_normalized_values(self.model, self.fit, self.runtime)
+            initial_normalized
+            if initial_normalized is not None
+            else initial_normalized_values(self.model, self.fit, self.runtime)
         )
         optimizer_state = self.optimizer.initialize(normalized)
         best_normalized = normalized
@@ -216,7 +240,7 @@ class Trainer:
                 bucket_predictions,
                 component_losses,
                 evaluation_mse,
-            ) = self._evaluate(normalized, gradient=True)
+            ) = self.evaluate(normalized, gradient=True)
             assert total_gradient is not None
             evaluated_normalized = normalized
             loss_before_step = float(total_loss)
@@ -243,7 +267,7 @@ class Trainer:
                     direction,
                     loss_before_step,
                     learning_rate,
-                    lambda candidate: self._evaluate(candidate, gradient=False),
+                    lambda candidate: self.evaluate(candidate, gradient=False),
                 )
                 normalized = result.values
                 learning_rate = result.learning_rate

@@ -12,7 +12,7 @@ dictionaries (dependency inversion).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -889,6 +889,129 @@ class OutputSpec:
 
 
 @dataclass(frozen=True)
+class CMAESSpec:
+    parameter_names: tuple[str, ...] = ()
+    population_size: int = 0
+    generations: int = 10
+    sigma0: float = 0.15
+    elites: int = 4
+    invalid_loss: float = 1e12
+    checkpoint_every_generations: int = 1
+
+    @classmethod
+    def from_mapping(cls, value: Any) -> "CMAESSpec":
+        data = _mapping(value, "search.global")
+        _strict(
+            data,
+            {
+                "algorithm", "seed", "parameter_names", "population_size",
+                "generations", "sigma0", "boundary_policy", "invalid_loss",
+                "elites", "checkpoint_every_generations",
+            },
+            "search.global",
+        )
+        if str(data.get("algorithm", "cma_es")) != "cma_es":
+            raise ConfigError("Only cma_es global search is supported.")
+        if str(data.get("boundary_policy", "resample")) != "resample":
+            raise ConfigError("Only resample CMA boundary handling is supported.")
+        population = int(data.get("population_size", 0))
+        generations = int(data.get("generations", 10))
+        elites = int(data.get("elites", 4))
+        checkpoint_every = int(data.get("checkpoint_every_generations", 1))
+        if population < 0 or population == 1:
+            raise ConfigError("search.global.population_size must be 0 or at least 2.")
+        if generations <= 0 or elites <= 0 or checkpoint_every <= 0:
+            raise ConfigError("CMA generations, elites, and checkpoint interval must be positive.")
+        if population and elites > population:
+            raise ConfigError("search.global.elites cannot exceed population_size.")
+        return cls(
+            parameter_names=_strings(data.get("parameter_names"), "search.global.parameter_names"),
+            population_size=population,
+            generations=generations,
+            sigma0=_positive(data.get("sigma0", 0.15), "search.global.sigma0"),
+            elites=elites,
+            invalid_loss=_positive(data.get("invalid_loss", 1e12), "search.global.invalid_loss"),
+            checkpoint_every_generations=checkpoint_every,
+        )
+
+
+@dataclass(frozen=True)
+class LocalStageSpec:
+    epochs: int
+    learning_rate: float
+    gradient_clip_norm: float = 10.0
+    backtracking: bool = False
+
+    @classmethod
+    def from_mapping(
+        cls, value: Any, where: str, *, default_epochs: int, backtracking: bool
+    ) -> "LocalStageSpec":
+        data = _mapping(value, where)
+        _strict(data, {"optimizer", "epochs", "learning_rate", "gradient_clip_norm", "line_search"}, where)
+        if str(data.get("optimizer", "adam")) != "adam":
+            raise ConfigError(f"{where}.optimizer must be adam.")
+        line_search = _mapping(data.get("line_search"), f"{where}.line_search")
+        _strict(line_search, {"enabled"}, f"{where}.line_search")
+        epochs = int(data.get("epochs", default_epochs))
+        if epochs <= 0:
+            raise ConfigError(f"{where}.epochs must be positive.")
+        return cls(
+            epochs=epochs,
+            learning_rate=_positive(data.get("learning_rate", 0.001), f"{where}.learning_rate"),
+            gradient_clip_norm=_positive(data.get("gradient_clip_norm", 10.0), f"{where}.gradient_clip_norm"),
+            backtracking=bool(line_search.get("enabled", backtracking)),
+        )
+
+
+@dataclass(frozen=True)
+class SearchSpec:
+    strategy: str = "fit"
+    global_search: CMAESSpec = field(default_factory=CMAESSpec)
+    local_exploration: LocalStageSpec = field(
+        default_factory=lambda: LocalStageSpec(epochs=25, learning_rate=0.005)
+    )
+    local_refinement: LocalStageSpec = field(
+        default_factory=lambda: LocalStageSpec(
+            epochs=50, learning_rate=0.001, backtracking=True
+        )
+    )
+    keep_after_exploration: int = 2
+
+    @classmethod
+    def from_mapping(cls, value: Any) -> "SearchSpec":
+        data = _mapping(value, "search")
+        _strict(data, {"strategy", "global", "local_exploration", "local_refinement", "selection"}, "search")
+        strategy = str(data.get("strategy", "fit"))
+        if strategy not in {"fit", "hybrid"}:
+            raise ConfigError("search.strategy must be fit or hybrid.")
+        selection = _mapping(data.get("selection"), "search.selection")
+        _strict(
+            selection,
+            {"global_rank_by", "local_rank_by", "final_rank_by", "keep_after_global", "keep_after_exploration"},
+            "search.selection",
+        )
+        keep = int(selection.get("keep_after_exploration", 2))
+        if keep <= 0:
+            raise ConfigError("search.selection.keep_after_exploration must be positive.")
+        global_search = CMAESSpec.from_mapping(data.get("global"))
+        if "keep_after_global" in selection:
+            global_search = replace(global_search, elites=int(selection["keep_after_global"]))
+        return cls(
+            strategy=strategy,
+            global_search=global_search,
+            local_exploration=LocalStageSpec.from_mapping(
+                data.get("local_exploration"), "search.local_exploration",
+                default_epochs=25, backtracking=False,
+            ),
+            local_refinement=LocalStageSpec.from_mapping(
+                data.get("local_refinement"), "search.local_refinement",
+                default_epochs=50, backtracking=True,
+            ),
+            keep_after_exploration=keep,
+        )
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """Validated root configuration used throughout the application."""
 
@@ -899,6 +1022,7 @@ class AppConfig:
     fit: FitSpec
     runtime: RuntimeSpec
     output: OutputSpec
+    search: SearchSpec = field(default_factory=SearchSpec)
     source_path: Path | None = None
 
     @classmethod
@@ -916,6 +1040,7 @@ class AppConfig:
                 "fit",
                 "runtime",
                 "output",
+                "search",
             },
             "configuration",
         )
@@ -930,5 +1055,6 @@ class AppConfig:
             fit=FitSpec.from_mapping(data.get("fit")),
             runtime=RuntimeSpec.from_mapping(data.get("runtime")),
             output=OutputSpec.from_mapping(data.get("output")),
+            search=SearchSpec.from_mapping(data.get("search")),
             source_path=source_path,
         )

@@ -44,5 +44,8 @@ def config_as_dict(value: Any) -> dict[str, Any]:
     if not isinstance(result, dict):
         raise TypeError("Expected a dataclass or mapping at the configuration root.")
     result.pop("source_path", None)
+    # Keep legacy-fit hashes/resolved configs stable when the additive hybrid
+    # search subsystem is not enabled.
+    if result.get("search", {}).get("strategy") == "fit":
+        result.pop("search", None)
     return result
-

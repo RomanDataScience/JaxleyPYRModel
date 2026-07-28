@@ -1,0 +1,57 @@
+extends: ../losses/LSU_1_wide_bounds.yaml
+
+search:
+  strategy: hybrid
+  global:
+    algorithm: cma_es
+    parameter_names:
+      - AXNa
+      - gna
+      - gnadend
+      - scale_Na_conduct
+      - nap_gnabar
+      - gkdrsoma
+      - gkdrdend
+      - axongkdr
+      - gkdrapical
+      - gkv2soma
+      - gkv2
+      - gkv2axon
+      - gkv2scale
+      - soma_kap
+      - axon_kap
+      - basal_kap
+      - soma_kad
+      - soma_hbar
+    population_size: 16
+    generations: 20
+    sigma0: 0.15
+    boundary_policy: resample
+    invalid_loss: 1.0e12
+    checkpoint_every_generations: 1
+
+  local_exploration:
+    optimizer: adam
+    epochs: 50
+    learning_rate: 0.005
+    gradient_clip_norm: 10.0
+    line_search:
+      enabled: false
+
+  local_refinement:
+    optimizer: adam
+    epochs: 150
+    learning_rate: 0.001
+    gradient_clip_norm: 10.0
+    line_search:
+      enabled: true
+
+  selection:
+    global_rank_by: training_loss
+    local_rank_by: training_loss
+    final_rank_by: validation_primary_endpoint
+    keep_after_global: 4
+    keep_after_exploration: 2
+
+output:
+  run_name: auto

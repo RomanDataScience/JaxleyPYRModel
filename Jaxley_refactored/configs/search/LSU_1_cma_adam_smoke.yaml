@@ -1,0 +1,15 @@
+extends: LSU_1_cma_adam.yaml
+
+# Minimal end-to-end correctness run; not a scientific optimization preset.
+search:
+  global:
+    population_size: 4
+    generations: 1
+    elites: 1
+  local_exploration:
+    epochs: 1
+  local_refinement:
+    epochs: 1
+  selection:
+    keep_after_global: 1
+    keep_after_exploration: 1
