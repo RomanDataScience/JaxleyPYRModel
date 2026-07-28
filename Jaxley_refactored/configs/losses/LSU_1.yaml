@@ -85,9 +85,11 @@ fit:
         scale_mV: 3.0
 
     aggregation: protocol_mean
+    # With two training traces per protocol, these protocol totals assign 0.35
+    # to each depolarizing trace and 0.15 to each hyperpolarizing trace.
     protocol_weights:
-      depolarizing_step: 0.5
-      hyperpolarizing_pulse: 0.5
+      depolarizing_step: 0.7
+      hyperpolarizing_pulse: 0.3
 
 output:
   run_name: auto
