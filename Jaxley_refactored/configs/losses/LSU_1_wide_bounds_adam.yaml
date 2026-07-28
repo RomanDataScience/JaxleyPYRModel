@@ -1,0 +1,15 @@
+extends: LSU_1_wide_bounds.yaml
+
+# Fixed-step Adam: accept every projected update without testing whether the
+# immediate objective decreases. This can move through temporarily worse
+# regions, unlike the strictly descending backtracking preset.
+fit:
+  optimizer:
+    name: adam
+    learning_rate: 0.01
+    gradient_clip_norm: 10.0
+    line_search:
+      enabled: false
+
+output:
+  run_name: auto
