@@ -1,8 +1,9 @@
 extends: ../runtimes/cpu_dt_0p1.yaml
 
 # Adam determines the direction. Backtracking tests the largest candidate
-# learning rate first and shrinks it until the objective over all eight traces
-# is strictly lower. One accepted candidate updates the shared parameter vector.
+# learning rate first and shrinks it until the objective over all selected
+# training traces is strictly lower. One accepted candidate updates the shared
+# parameter vector.
 fit:
   optimizer:
     name: adam
