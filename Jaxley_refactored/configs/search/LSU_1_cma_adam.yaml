@@ -4,27 +4,12 @@ search:
   strategy: hybrid
   global:
     algorithm: cma_es
-    parameter_names:
-      - AXNa
-      - gna
-      - gnadend
-      - scale_Na_conduct
-      - nap_gnabar
-      - gkdrsoma
-      - gkdrdend
-      - axongkdr
-      - gkdrapical
-      - gkv2soma
-      - gkv2
-      - gkv2axon
-      - gkv2scale
-      - soma_kap
-      - axon_kap
-      - basal_kap
-      - soma_kad
-      - soma_hbar
-    population_size: 16
-    generations: 20
+    # An empty subset means every parameter selected by model.parameters.fit.
+    # LSU_1 inherits the 40 conductance and passive parameters in the canonical
+    # Combe catalog, matching the parameter vector used by the local pipeline.
+    parameter_names: []
+    population_size: 30
+    generations: 50
     sigma0: 0.15
     boundary_policy: resample
     invalid_loss: 1.0e12
