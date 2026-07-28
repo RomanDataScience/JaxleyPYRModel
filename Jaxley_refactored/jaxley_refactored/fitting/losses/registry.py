@@ -43,4 +43,7 @@ def default_loss_registry() -> LossRegistry:
     registry.register(
         "soft_minimum_voltage_error", primitives.soft_minimum_voltage_error
     )
+    registry.register(
+        "soft_maximum_voltage_error", primitives.soft_maximum_voltage_error
+    )
     return registry

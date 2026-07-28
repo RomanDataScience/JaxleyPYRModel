@@ -20,6 +20,7 @@ are summed before one update to the shared parameter vector.
 | `soft_firing_rate_error` | Squared difference between smooth upward-crossing rates | `threshold_mV`, `temperature_mV`, `scale_hz` |
 | `subthreshold_mean_error` | Squared inter-spike mean-voltage error using an experimental subthreshold mask | `threshold_mV`, `scale_mV` |
 | `soft_minimum_voltage_error` | Squared difference between smooth minimum voltages | `temperature_mV`, `scale_mV` |
+| `soft_maximum_voltage_error` | Squared difference between smooth maximum voltages | `temperature_mV`, `scale_mV` |
 
 `masked_voltage_mse` remains an alias for backward compatibility.
 

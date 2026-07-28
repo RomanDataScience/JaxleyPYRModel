@@ -33,6 +33,7 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
             "depolarizing_voltage_plateau",
             "depolarizing_spike_waveform",
             "depolarizing_spike_derivative",
+            "depolarizing_spike_height",
             "depolarizing_recovery_waveform",
             "depolarizing_recovery_derivative",
             "depolarizing_ahp_depth",
@@ -60,6 +61,7 @@ def test_registered_waveform_losses_are_finite_and_differentiable():
         "soft_firing_rate_error",
         "subthreshold_mean_error",
         "soft_minimum_voltage_error",
+        "soft_maximum_voltage_error",
     ):
         term = registry.get(name)
 

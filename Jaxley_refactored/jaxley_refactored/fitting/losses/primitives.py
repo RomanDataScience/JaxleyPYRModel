@@ -140,6 +140,37 @@ def soft_minimum_voltage_error(
     return (difference / scale) ** 2
 
 
+def soft_maximum_voltage_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    scale=1.0,
+    temperature_mV=1.0,
+    **_,
+):
+    """Compare smooth maximum voltages, e.g. depolarizing spike peaks."""
+
+    def soft_maximum(voltage):
+        logits = voltage / temperature_mV
+        masked_logits = jnp.where(mask, logits, -jnp.inf)
+        reference = jnp.max(masked_logits, axis=-1, keepdims=True)
+        count = jnp.maximum(jnp.sum(mask, axis=-1), 1.0)
+        mean_exponential = (
+            jnp.sum(
+                jnp.where(mask, jnp.exp(masked_logits - reference), 0.0),
+                axis=-1,
+            )
+            / count
+        )
+        return temperature_mV * (
+            jnp.squeeze(reference, axis=-1) + jnp.log(mean_exponential)
+        )
+
+    difference = soft_maximum(predicted) - soft_maximum(observed)
+    return (difference / scale) ** 2
+
+
 def weighted_bucket_loss(predicted, observed, mask, weights):
     """Backward-compatible weighted masked voltage MSE."""
     return jnp.sum(jnp.asarray(weights) * masked_mse(predicted, observed, mask))
