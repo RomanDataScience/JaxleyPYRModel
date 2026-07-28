@@ -1,7 +1,8 @@
 extends: ../optimizers/adam_backtracking.yaml
 
-# LSU_1 gives equal total component weight to the hyperpolarizing and
-# depolarizing objectives. Every term is continuous in the simulated voltage.
+# LSU_1 prioritizes matching depolarizing firing rate while retaining secondary
+# waveform, plateau, spike-shape, recovery, and AHP constraints. Every term is
+# continuous in the simulated voltage.
 fit:
   objective:
     components:
@@ -16,7 +17,9 @@ fit:
       # Depolarizing pulse: smooth firing-frequency surrogate.
       - kind: soft_firing_rate_error
         label: depolarizing_firing_rate
-        weight: 0.25
+        # Dominant depolarizing term: larger than all other depolarizing
+        # component weights combined (0.75).
+        weight: 1.0
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
