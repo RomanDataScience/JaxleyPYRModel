@@ -10,3 +10,4 @@ mod/
 *.npz
 *.csv
 runs/
+*.out
