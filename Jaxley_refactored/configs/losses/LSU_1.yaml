@@ -17,8 +17,7 @@ fit:
       # Depolarizing pulse: smooth firing-frequency surrogate.
       - kind: soft_firing_rate_error
         label: depolarizing_firing_rate
-        # Dominant depolarizing term: larger than all other depolarizing
-        # component weights combined (0.90).
+        # Dominant individual depolarizing term.
         weight: 1.0
         protocols: [depolarizing_step]
         window: stimulus
@@ -54,7 +53,7 @@ fit:
       # Smooth peak-voltage matching emphasizes action-potential height.
       - kind: soft_maximum_voltage_error
         label: depolarizing_spike_height
-        weight: 0.15
+        weight: 0.5
         protocols: [depolarizing_step]
         window: stimulus
         temperature_mV: 1.0
