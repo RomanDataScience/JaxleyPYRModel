@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=lsu1-m20260331b
-#SBATCH --cpus-per-task=4
+#SBATCH --job-name=lsu1-cpu-seeds
+#SBATCH --array=0-4
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=24:00:00
-#SBATCH --output=%x-%j.out
+#SBATCH --output=%x-%A_%a.out
 #SBATCH --signal=B:USR1@120
 
-# Fit cell m20260331b with LSU_1, widened parameter bounds, and Adam
-# backtracking. Adjust the SBATCH resource directives for the local cluster.
+# Run one independent LSU_1 fit for each seed in SEEDS. The array range above
+# must contain exactly one task per SEEDS entry.
 set -euo pipefail
+
+SEEDS=(0 1 2 3 4)
+SEED=${SEEDS[${SLURM_ARRAY_TASK_ID}]}
 
 PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE:-python}
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -19,11 +23,13 @@ export MPLBACKEND=${MPLBACKEND:-Agg}
 export MPLCONFIGDIR=${MPLCONFIGDIR:-"${SLURM_TMPDIR:-/tmp}/matplotlib"}
 export RUN_SCRATCH=${RUN_SCRATCH:-"${SLURM_TMPDIR:-/tmp}/jaxley-${SLURM_JOB_ID}"}
 export NEURON_MODULE_OPTIONS=${NEURON_MODULE_OPTIONS:--nogui}
-mkdir -p logs "${MPLCONFIGDIR}" "${RUN_SCRATCH}"
+export PYTHON_EXECUTABLE
 
+mkdir -p "${MPLCONFIGDIR}" "${RUN_SCRATCH}"
 cd "${PROJECT_DIR}"
 
-export PYTHON_EXECUTABLE
 srun bash scripts/run_full_fitting.sh \
   --config configs/losses/LSU_1_wide_bounds.yaml \
-  --cells m20260331b
+  --cells m20260331b \
+  --seed "${SEED}" \
+  --max-parallel-cells 1
