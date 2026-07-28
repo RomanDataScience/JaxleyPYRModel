@@ -12,10 +12,10 @@ fit:
     penalties:
       # Count smooth upward crossings whose destination sample lies before
       # stimulus onset or after stimulus offset. Across all selected traces,
-      # N outside spikes multiply the complete LSU_1 loss by 1.2**N.
+      # N outside spikes multiply the complete LSU_1 loss by 1.1**N.
       - kind: soft_outside_stimulus_spike_multiplier
         label: outside_step_spikes
-        factor_per_spike: 1.2
+        factor_per_spike: 1.1
         maximum_multiplier: 1.0e12
         protocols: [depolarizing_step, hyperpolarizing_pulse]
         threshold_mV: -20.0

@@ -54,7 +54,7 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert not lsu.fit.renormalize_protocol_filtered_components
     assert len(lsu.fit.penalties) == 1
     assert lsu.fit.penalties[0].label == "outside_step_spikes"
-    assert lsu.fit.penalties[0].factor_per_spike == 1.2
+    assert lsu.fit.penalties[0].factor_per_spike == 1.1
 
 
 def test_registered_waveform_losses_are_finite_and_differentiable():

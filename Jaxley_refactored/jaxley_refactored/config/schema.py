@@ -716,7 +716,7 @@ class LossPenaltySpec:
     """One differentiable multiplier applied to the full-dataset objective."""
 
     kind: str
-    factor_per_spike: float = 1.2
+    factor_per_spike: float = 1.1
     maximum_multiplier: float = 1e12
     protocols: tuple[str, ...] = ()
     threshold_mV: float = -20.0
@@ -743,7 +743,7 @@ class LossPenaltySpec:
         kind = str(data.get("kind", "soft_outside_stimulus_spike_multiplier"))
         if kind not in _LOSS_PENALTY_KINDS:
             raise ConfigError(f"Unsupported loss penalty kind: {kind}")
-        factor = float(data.get("factor_per_spike", 1.2))
+        factor = float(data.get("factor_per_spike", 1.1))
         if not math.isfinite(factor) or factor <= 1.0:
             raise ConfigError(
                 f"{where}.factor_per_spike must be finite and greater than 1."

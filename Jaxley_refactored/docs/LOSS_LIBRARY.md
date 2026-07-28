@@ -50,8 +50,8 @@ Across all selected traces, the configured penalty is:
 penalized_loss = base_loss * factor_per_spike ** total_soft_outside_spikes
 ```
 
-The LSU_1 factor is `1.2`. One isolated outside spike therefore approaches a
-multiplier of `1.2`, and two approach `1.44`. Fractional counts preserve useful
+The LSU_1 factor is `1.1`. One isolated outside spike therefore approaches a
+multiplier of `1.1`, and two approach `1.21`. Fractional counts preserve useful
 gradients near threshold. A high `maximum_multiplier` is only a numerical guard
 against pathological long traces sitting near the threshold.
 
@@ -63,7 +63,7 @@ fit:
     penalties:
       - kind: soft_outside_stimulus_spike_multiplier
         label: outside_step_spikes
-        factor_per_spike: 1.2
+        factor_per_spike: 1.1
         maximum_multiplier: 1.0e12
         protocols: [depolarizing_step, hyperpolarizing_pulse]
         threshold_mV: -20.0

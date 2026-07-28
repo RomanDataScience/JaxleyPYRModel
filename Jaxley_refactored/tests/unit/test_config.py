@@ -53,6 +53,19 @@ def test_backtracking_optimizer_configuration_is_validated():
 
 
 def test_outside_spike_penalty_configuration_is_validated():
+    default_config = AppConfig.from_mapping(
+        {
+            "fit": {
+                "objective": {
+                    "penalties": [
+                        {"kind": "soft_outside_stimulus_spike_multiplier"}
+                    ]
+                }
+            }
+        }
+    )
+    assert default_config.fit.penalties[0].factor_per_spike == 1.1
+
     config = AppConfig.from_mapping(
         {
             "fit": {
