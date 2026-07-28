@@ -24,19 +24,111 @@ temporarily worse steps. Backtracking Adam should perform the final stable
 refinement. The hybrid result must be compared with randomized multistart Adam
 under a matched simulation-evaluation budget.
 
+## Publication-grade research contract
+
+This project must distinguish four claims that require different evidence:
+
+1. **Software correctness:** the implementation computes the stated model,
+   objective, gradients, optimizer updates, checkpoints, and metrics.
+2. **Optimization efficacy:** under a matched compute budget, the hybrid method
+   finds better training optima than prespecified baselines.
+3. **Predictive validity:** fitted models predict held-out stimulation
+   conditions and held-out cells.
+4. **Biophysical inference:** fitted parameter values support claims about ion
+   channels or mechanisms.
+
+Passing an earlier claim does not establish a later one. In particular, a low
+voltage-trace loss does not establish that individual conductances are uniquely
+identified. Mechanistic claims require identifiability and uncertainty
+analysis.
+
+Before evaluating a locked test set, freeze and version:
+
+- model equations, morphology processing, mechanisms, solver, and timestep;
+- parameter subset, canonical/wide bounds, and parameter transforms;
+- LSU_1 definition, windows, thresholds, scales, and component weights;
+- optimizer baselines, CMA population/generations, Adam schedules, and stopping
+  criteria;
+- exclusion criteria for cells/traces and numerical failures;
+- primary/secondary endpoints and statistical analysis;
+- random seeds and compute budgets.
+
+Any change made after test-set inspection creates a new analysis version and
+requires a fresh test set or must be labeled exploratory. Optimizer seeds are
+technical replicates, not biological replicates.
+
+No plan can guarantee publication in a particular journal. The target should be
+a defensible, reproducible result whose claims are proportional to the number of
+independent cells, protocols, and external validation conditions.
+
 ## Scientific scope
 
-### Training and validation split
+### Data hierarchy and leakage control
 
-- Training: first and third depolarizing and hyperpolarizing traces.
-- Validation: second and fourth depolarizing and hyperpolarizing traces.
-- CMA-ES and both Adam stages must see training traces only.
-- Candidate selection during optimization uses training loss.
-- Final model selection uses validation metrics after all optimization has
-  stopped.
+- A trace is not an independent biological replicate; the independent unit is
+  normally the recorded cell, animal, or preparation appropriate to the
+  experimental design.
+- Repeated sweeps from one cell quantify within-cell repeatability but must not
+  inflate the biological sample size.
+- The current first/third training and second/fourth validation split is useful
+  for within-cell interpolation only.
+- Because hyperpolarizing pulses may repeat the same amplitude across sweeps,
+  verify whether they are technical replicates rather than distinct stimulation
+  conditions.
+- CMA-ES, Adam stages, loss-weight tuning, parameter-subset selection, and
+  stopping-rule development must see development data only.
+- Maintain three conceptual partitions:
+  - **development/training:** optimizer updates;
+  - **validation:** hyperparameter and model selection;
+  - **locked test:** one-time final assessment.
+- For a multi-cell dataset, prefer nested cell-level evaluation:
+  - outer split holds out entire cells for final testing;
+  - inner split tunes optimizer and loss settings using development cells;
+  - within each cell, hold out current amplitudes or protocols to measure
+    interpolation/extrapolation.
+- If the available dataset is too small for a locked test set, use
+  leave-one-cell-out evaluation and state clearly that independent external
+  validation remains outstanding.
+- A convincing generalization claim should include additional cells not used
+  during LSU_1 or optimizer development, ideally from a separate acquisition
+  batch and, if feasible, an external laboratory.
+
+Candidate ranking during optimization uses training loss. Hyperparameter
+selection uses validation performance. The locked test set is evaluated once
+after every decision is frozen.
+
+### Endpoints
+
+- Prespecify one primary endpoint, such as held-out voltage RMSE or a composite
+  of standardized held-out physiological errors.
+- Prespecify key secondary endpoints: firing-rate error, spike-count error,
+  spike peak/width, plateau voltage, AHP depth, recovery time, and
+  hyperpolarizing RMSE.
+- LSU_1 is the training objective, not automatically the primary scientific
+  endpoint.
+- Compute discrete spike metrics only for evaluation; retain smooth surrogates
+  for differentiation.
+- Define spike-detection thresholds, filtering, and failure handling before
+  viewing locked test results.
 - Report both the continuous LSU_1 objective and discrete post-hoc metrics:
   spike count, firing rate, spike peak, spike width, plateau voltage, AHP depth,
   recovery time, and hyperpolarizing RMSE.
+
+### Synthetic ground-truth benchmark
+
+Before interpreting experimental fits, create synthetic datasets from known
+parameters:
+
+- simulate the exact training/validation protocols;
+- add realistic measurement noise, baseline drift, and stimulus uncertainty;
+- test several ground-truth parameter vectors, including boundary-near cases;
+- quantify parameter recovery, prediction recovery, confidence-interval
+  coverage, optimizer failure rate, and basin discovery;
+- repeat with model mismatch, e.g. an omitted current or perturbed morphology.
+
+This separates optimizer failure from non-identifiability and from model
+misspecification. A method that cannot recover identifiable synthetic
+parameters under realistic noise is not ready for biological interpretation.
 
 ### Initial parameter subset
 
@@ -52,9 +144,13 @@ mechanistically relevant subset of approximately 12–20 active parameters:
 - selected passive values only if passive fitting has not already been staged:
   `RmSoma`, `Epas`, and `CmSoma`.
 
-The first implementation should make this list configurable. Parameters outside
-the CMA subset remain at the supplied starting vector and become trainable
-during the later Adam stages if selected by the fit configuration.
+The first implementation should make this list configurable. Parameter-subset
+selection must be based on prior biology or sensitivity analysis performed on
+development data only. Parameters outside the CMA subset remain at the supplied
+starting vector and become trainable during later Adam stages if selected by
+the fit configuration.
+
+Record and report every tested subset, not only the best-performing one.
 
 ## Optimization coordinates
 
@@ -200,7 +296,9 @@ search:
       enabled: true
 
   selection:
-    rank_by: validation_loss
+    global_rank_by: training_loss
+    local_rank_by: training_loss
+    final_rank_by: validation_primary_endpoint
     keep_after_global: 4
     keep_after_exploration: 2
 ```
@@ -339,6 +437,117 @@ backtracking finalists      2 × 150 epochs
 Record wall time and number of forward/gradient evaluations. Compare methods
 under both equal wall-clock and equal simulation-evaluation budgets.
 
+## Comparator study and fair compute accounting
+
+The hybrid method must be compared against prespecified baselines:
+
+1. reference initialization + backtracking Adam;
+2. randomized multistart + fixed-step Adam;
+3. randomized multistart + backtracking Adam;
+4. CMA-ES only;
+5. CMA-ES + fixed-step Adam;
+6. full CMA-ES + fixed-step Adam + backtracking hybrid;
+7. random or quasi-random search with the same forward-evaluation budget.
+
+Required ablations:
+
+- canonical versus wide bounds;
+- with versus without seed jitter;
+- full LSU_1 versus removal of firing-rate, spike-height, or recovery terms;
+- all selected parameters versus the reduced CMA subset;
+- fixed-step versus backtracking local stages;
+- coarse-to-full fidelity versus full fidelity throughout.
+
+Fairness rules:
+
+- use identical development/test partitions and model code;
+- use a prespecified set of optimizer seeds shared across methods where
+  meaningful;
+- count forward simulations, reverse-mode gradient evaluations, compilation
+  time, wall time, peak memory, and CPU/GPU hours;
+- report results both with compilation included and amortized;
+- do not call one epoch from different methods an equal budget;
+- cap all methods by a common wall-clock or forward-equivalent budget;
+- include failed and divergent runs in success-rate statistics;
+- tune each baseline on development data rather than intentionally using weak
+  defaults.
+
+The principal optimizer result should be a distribution across independent
+cells and repeated algorithm seeds, not one best trajectory.
+
+## Numerical verification
+
+Before optimizer comparisons:
+
+- reproduce reference voltage traces against the source NEURON implementation
+  at frozen parameters;
+- verify stimulus timing, units, initial conditions, recording site, and
+  morphology discretization;
+- perform timestep convergence at, for example, `0.2`, `0.1`, `0.05`, and
+  `0.025 ms` on representative candidates;
+- verify that conclusions and candidate rankings do not depend materially on
+  the chosen timestep;
+- compare final fitted candidates in both Jaxley and the source simulator where
+  equivalent parameter transfer is possible;
+- check autodiff gradients against central finite differences or directional
+  derivatives on a reduced model and selected full-model parameters;
+- test gradients near spike-count transitions and projected parameter bounds;
+- report solver failures, nonfinite states, and bound projections.
+
+Coarse-fidelity CMA evaluations are screening approximations. Every elite must
+be reevaluated at the final solver/timestep before ranking or Adam handoff.
+
+## Identifiability and uncertainty
+
+Biophysical inference requires more than optimizer convergence:
+
+- compute the Jacobian of selected voltage/features with respect to fitted
+  parameters near each optimum;
+- examine singular values, parameter correlations, and sloppy directions;
+- run profile likelihoods for parameters central to biological claims;
+- use parametric bootstrap or repeated-noise synthetic datasets to quantify
+  uncertainty and optimizer variability;
+- compare parameter distributions across near-optimal seeds and cells;
+- distinguish parameter uncertainty from predictive uncertainty;
+- report ensembles of near-optimal models when many parameter vectors predict
+  similarly;
+- avoid interpreting an individual Na/K conductance if only a correlated
+  combination is identifiable;
+- use additional protocols or measurements when required to break parameter
+  degeneracies.
+
+For each claimed mechanism, define in advance:
+
+```text
+claim -> parameter/combination -> observable constraint
+      -> identifiability diagnostic -> uncertainty interval
+      -> perturbation or held-out prediction
+```
+
+When likelihood assumptions are defensible, formulate the observation noise
+model explicitly rather than treating an ad hoc weighted loss as a likelihood.
+Otherwise, describe LSU_1 as an optimization criterion and do not attach
+likelihood-based confidence intervals to it without additional justification.
+
+## Statistical analysis
+
+- Define the biological replicate and sample-size rationale before final data
+  collection.
+- Use paired comparisons because every optimizer should be evaluated on the
+  same cells and partitions.
+- Report effect sizes and confidence intervals, not only P values.
+- Use hierarchical or mixed-effects analysis when seeds are nested within
+  cells and cells are nested within animals/batches.
+- Never treat optimizer seeds or repeated sweeps as independent biological
+  observations.
+- Bootstrap at the biological-unit level, not the trace level.
+- Prespecify handling of missing traces, failed simulations, and excluded
+  cells.
+- Correct or hierarchically organize multiple secondary endpoint comparisons.
+- Show all cells and all prespecified seeds in supplementary results.
+- Report median, dispersion, failure rate, and tail behavior; the best run
+  alone is insufficient.
+
 ## Failure handling
 
 - Nonfinite voltages or losses: assign `invalid_loss` and record the reason.
@@ -349,6 +558,32 @@ under both equal wall-clock and equal simulation-evaluation budgets.
   recovery.
 - Interrupted Adam stage: use existing durable checkpoints.
 - Interrupted CMA stage: restore the last fully completed generation only.
+
+## Reproducibility and audit trail
+
+Every reported result must be reconstructible from:
+
+- immutable raw-data identifiers and checksums;
+- preprocessing and segmentation version;
+- resolved configuration and compatibility hash;
+- source commit, dirty-worktree status, environment lockfile/container, JAX,
+  Jaxley, NEURON, compiler, and hardware versions;
+- model/morphology/mechanism provenance;
+- optimizer seed, candidate ancestry, and exact evaluation budget;
+- initial, best, and final parameters with bounds and units;
+- full metrics history, failure logs, and generated figures.
+
+Prepare:
+
+- a one-command reproduction workflow for every main figure/table;
+- archived code and processed data with persistent identifiers;
+- machine-readable metadata and configuration files;
+- a minimal CPU smoke reproduction plus documented full-compute workflow;
+- deterministic tests in continuous integration;
+- a reporting checklist aligned with the experimental study design.
+
+Data or code that cannot be released must have a documented access path and a
+synthetic public fixture that exercises the complete pipeline.
 
 ## Testing
 
@@ -375,30 +610,53 @@ under both equal wall-clock and equal simulation-evaluation budgets.
 
 Against randomized multistart Adam:
 
-- hybrid search finds equal or lower best training loss under a matched budget;
-- held-out firing-rate and waveform metrics do not degrade materially;
+- hybrid search improves the prespecified primary validation endpoint under a
+  matched budget, with an effect size and uncertainty interval;
+- improvement is observed across independent cells, not driven by one cell or
+  one seed;
+- locked-test firing-rate and waveform metrics meet prespecified success
+  thresholds;
+- optimizer success and failure rates are reported;
+- synthetic identifiable parameters and predictions are recovered within
+  prespecified tolerances;
+- numerical conclusions survive timestep and simulator-parity checks;
 - results reproduce from config, seed, and input hashes;
-- parameter solutions are inspected for boundary saturation and cross-seed
-  variability;
-- conclusions are based on validation performance, not one favorable seed.
+- parameter solutions pass prespecified boundary, sensitivity, and
+  identifiability diagnostics;
+- uncertainty is reported for biological predictions and claimed parameter
+  combinations;
+- conclusions are based on locked-test performance, not one favorable seed or
+  post-hoc metric.
 
 ## Implementation milestones
 
-1. **M1 — Shared forward evaluator:** refactor without changing current fit
+1. **M0 — Research freeze and benchmark specification:** define claims,
+   biological units, partitions, endpoints, baselines, budgets, exclusions, and
+   statistical analysis before locked-test evaluation.
+2. **M1 — Shared forward evaluator:** refactor without changing current fit
    results.
-2. **M2 — Candidate files and imported initialization:** exact handoff into
+3. **M2 — Candidate files and imported initialization:** exact handoff into
    Adam.
-3. **M3 — CMA ask/tell core:** serial population evaluation, checkpoints, and
+4. **M3 — CMA ask/tell core:** serial population evaluation, checkpoints, and
    analytic-function tests.
-4. **M4 — Hybrid CLI:** CMA elites -> fixed Adam -> backtracking Adam.
-5. **M5 — Validation split and physiological report:** traces 2/4 and discrete
-   metrics.
-6. **M6 — Slurm population arrays:** atomic generation manifests and resume.
-7. **M7 — Performance work:** profile nested `vmap`, candidate microbatches,
+5. **M4 — Hybrid CLI:** CMA elites -> fixed Adam -> backtracking Adam.
+6. **M5 — Dataset partitions and physiological report:** within-cell held-out
+   sweeps, cell-level validation/test partitions, and discrete metrics.
+7. **M6 — Synthetic recovery and numerical verification:** known-parameter,
+   noise, model-mismatch, timestep, gradient, and simulator-parity tests.
+8. **M7 — Baseline/ablation study:** matched-budget optimizer comparisons on
+   development data.
+9. **M8 — Slurm population arrays:** atomic generation manifests and resume.
+10. **M9 — Performance work:** profile nested `vmap`, candidate microbatches,
    and coarse-to-full fidelity.
+11. **M10 — Identifiability and uncertainty:** Jacobian diagnostics, profiles,
+    bootstraps, ensembles, and claim-specific evidence.
+12. **M11 — Locked test and publication package:** one-time test evaluation,
+    statistical report, archived artifacts, and figure/table reproduction.
 
-M1–M5 are required for a scientifically usable first version. M6–M7 are
-throughput improvements and should not block correctness experiments.
+M0–M7 are required before interpreting optimizer performance. M10 is required
+before mechanistic parameter claims. M11 occurs only after methods and analysis
+are frozen.
 
 ## Recommended first experiment
 
@@ -412,3 +670,24 @@ Before full CMA-ES, establish the baseline:
 Then run CMA-ES with the same total evaluation budget on a 12–20 parameter
 subset. This determines whether CMA-ES adds value beyond the simpler multistart
 system before investing in distributed population evaluation.
+
+This first experiment is a development benchmark, not the final biological
+test. Do not use its cells or outcomes as an untouched confirmation set after
+using them to revise LSU_1, bounds, parameter subsets, or optimizer settings.
+
+## Methodological references
+
+- Deistler M. et al. *Jaxley: differentiable simulation enables large-scale
+  training of detailed biophysical models of neural dynamics*. Nature Methods
+  22, 2649–2657 (2025).
+  https://doi.org/10.1038/s41592-025-02895-w
+- Hansen N. *The CMA Evolution Strategy: A Tutorial* (2016).
+  https://arxiv.org/abs/1604.00772
+- Raue A. et al. *Structural and practical identifiability analysis of
+  partially observed dynamical models by exploiting the profile likelihood*.
+  Bioinformatics 25, 1923–1929 (2009).
+  https://doi.org/10.1093/bioinformatics/btp358
+- Kreutz C. *Profile likelihood in systems biology*. FEBS Journal 280,
+  2564–2571 (2013). https://doi.org/10.1111/febs.12276
+- Percie du Sert N. et al. *The ARRIVE guidelines 2.0*. PLOS Biology 18,
+  e3000410 (2020). https://doi.org/10.1371/journal.pbio.3000410
