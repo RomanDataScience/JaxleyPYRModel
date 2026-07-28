@@ -102,6 +102,7 @@ def bucket_records(
                 "full_trace": np.ones(len(time), dtype=bool),
                 "baseline": time < start,
                 "stimulus": (time >= start) & (time <= stop),
+                "outside_stimulus": (time < start) | (time > stop),
                 "recovery": time > stop,
                 "stimulus_end": (time >= end_start) & (time <= stop),
             }

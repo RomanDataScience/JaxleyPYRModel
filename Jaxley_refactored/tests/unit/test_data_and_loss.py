@@ -66,3 +66,45 @@ def test_short_smoke_prefix_replaces_an_out_of_range_score_window():
     assert shortened.score_mask.all()
     assert shortened.metadata["original_n_steps"] == 1000
     assert shortened.metadata["score_window_replaced"] is True
+
+
+def test_outside_stimulus_window_excludes_step_and_padded_samples():
+    short = TraceRecord(
+        cell_id="cell",
+        trace_id="short",
+        protocol="depolarizing_step",
+        voltage_mV=np.zeros(6),
+        current_nA=np.zeros(6),
+        time_ms=np.arange(6, dtype=float),
+        score_mask=np.ones(6, dtype=bool),
+        dt_ms=1.0,
+        initial_voltage_mV=-65.0,
+        weight=0.5,
+        metadata={"epoch_start_ms": 2.0, "epoch_stop_ms": 4.0},
+        checksums={},
+    )
+    long = TraceRecord(
+        cell_id="cell",
+        trace_id="long",
+        protocol="depolarizing_step",
+        voltage_mV=np.zeros(8),
+        current_nA=np.zeros(8),
+        time_ms=np.arange(8, dtype=float),
+        score_mask=np.ones(8, dtype=bool),
+        dt_ms=1.0,
+        initial_voltage_mV=-65.0,
+        weight=0.5,
+        metadata={"epoch_start_ms": 2.0, "epoch_stop_ms": 4.0},
+        checksums={},
+    )
+
+    bucket = bucket_records((short, long), pad_to_longest=True)[0]
+    short_row = next(
+        index
+        for index, record in enumerate(bucket.records)
+        if record.trace_id == "short"
+    )
+    np.testing.assert_array_equal(
+        bucket.window_masks["outside_stimulus"][short_row],
+        [True, True, False, False, False, True, False, False],
+    )

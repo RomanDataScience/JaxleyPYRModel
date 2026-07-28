@@ -91,6 +91,29 @@ def soft_firing_rate_error(
     return (difference_hz / scale) ** 2
 
 
+def soft_upward_crossing_count(
+    voltage,
+    event_destination_mask,
+    *,
+    threshold_mV=-20.0,
+    temperature_mV=2.0,
+):
+    """Continuously approximate upward threshold crossings at selected samples.
+
+    The destination-sample mask assigns a crossing at the stimulus boundary to
+    the interval containing the new sample. This counts a crossing at the first
+    recovery sample as outside the stimulus, while a crossing at stimulus onset
+    remains inside.
+    """
+
+    above = jnn.sigmoid((voltage - threshold_mV) / temperature_mV)
+    soft_crossings = above[..., 1:] * (1.0 - above[..., :-1])
+    destinations = jnp.asarray(
+        event_destination_mask[..., 1:], dtype=voltage.dtype
+    )
+    return jnp.sum(destinations * soft_crossings, axis=-1)
+
+
 def subthreshold_mean_error(
     predicted,
     observed,

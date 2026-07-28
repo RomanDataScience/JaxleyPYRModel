@@ -50,3 +50,38 @@ def test_backtracking_optimizer_configuration_is_validated():
                 }
             }
         )
+
+
+def test_outside_spike_penalty_configuration_is_validated():
+    config = AppConfig.from_mapping(
+        {
+            "fit": {
+                "objective": {
+                    "penalties": [
+                        {
+                            "kind": "soft_outside_stimulus_spike_multiplier",
+                            "factor_per_spike": 1.2,
+                            "maximum_multiplier": 1e12,
+                        }
+                    ]
+                }
+            }
+        }
+    )
+    assert config.fit.penalties[0].factor_per_spike == 1.2
+
+    with pytest.raises(ConfigError, match="factor_per_spike"):
+        AppConfig.from_mapping(
+            {
+                "fit": {
+                    "objective": {
+                        "penalties": [
+                            {
+                                "kind": "soft_outside_stimulus_spike_multiplier",
+                                "factor_per_spike": 1.0,
+                            }
+                        ]
+                    }
+                }
+            }
+        )

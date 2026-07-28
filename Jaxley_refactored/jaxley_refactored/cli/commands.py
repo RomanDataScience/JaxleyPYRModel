@@ -381,6 +381,18 @@ def _fit(config, args) -> int:
                 f" accepted={str(metrics['step_accepted']).lower()}"
                 f" trials={metrics['line_search_trials']}"
             )
+        penalty_metrics = metrics["penalty_metrics"]
+        if penalty_metrics:
+            counts = ",".join(
+                f"{label}:{value:.4g}"
+                for label, value in penalty_metrics[
+                    "soft_spike_counts"
+                ].items()
+            )
+            message += (
+                f" loss_multiplier={penalty_metrics['loss_multiplier']:.6g}"
+                f" outside_soft_spikes={counts}"
+            )
         if plot_path is not None:
             message += f" plot={plot_path}"
         print(message, flush=True)

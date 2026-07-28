@@ -80,7 +80,8 @@ def test_hybrid_config_does_not_change_legacy_fit_default():
     assert "search" not in config_as_dict(legacy)
     assert hybrid.search.strategy == "hybrid"
     assert config_as_dict(hybrid)["search"]["strategy"] == "hybrid"
-    assert hybrid.search.global_search.population_size == 16
+    assert hybrid.search.global_search.population_size == 30
+    assert hybrid.search.global_search.generations == 50
     assert hybrid.search.local_exploration.backtracking is False
     assert hybrid.search.local_refinement.backtracking is True
     assert hybrid.search.reporting.cma_plot_every_generations == 1

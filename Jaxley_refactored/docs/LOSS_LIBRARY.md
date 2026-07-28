@@ -31,14 +31,44 @@ are summed before one update to the shared parameter vector.
 - `full_trace`: every real sample.
 - `baseline`: samples before stimulus onset.
 - `stimulus`: onset through offset.
+- `outside_stimulus`: samples before onset and after offset; used by the
+  outside-spike multiplier.
 - `recovery`: samples after stimulus offset.
 - `stimulus_end`: the final 5 ms of the stimulus.
+
+## Multiplicative penalties
+
+`soft_outside_stimulus_spike_multiplier` uses the same continuous upward
+threshold-crossing surrogate as the firing-rate term, without duration
+normalization. A crossing is assigned according to its destination sample, so a
+crossing at the first recovery sample is outside while one at stimulus onset is
+inside.
+
+Across all selected traces, the configured penalty is:
+
+```text
+penalized_loss = base_loss * factor_per_spike ** total_soft_outside_spikes
+```
+
+The LSU_1 factor is `1.2`. One isolated outside spike therefore approaches a
+multiplier of `1.2`, and two approach `1.44`. Fractional counts preserve useful
+gradients near threshold. A high `maximum_multiplier` is only a numerical guard
+against pathological long traces sitting near the threshold.
 
 ## Configuration
 
 ```yaml
 fit:
   objective:
+    penalties:
+      - kind: soft_outside_stimulus_spike_multiplier
+        label: outside_step_spikes
+        factor_per_spike: 1.2
+        maximum_multiplier: 1.0e12
+        protocols: [depolarizing_step, hyperpolarizing_pulse]
+        threshold_mV: -20.0
+        temperature_mV: 2.0
+
     components:
       - kind: pseudo_huber
         label: waveform
@@ -63,9 +93,17 @@ fit:
 
 Labels must be unique. Protocol-filtered components are normalized over the
 selected traces, so their weights do not accidentally depend on trace count.
+Set `renormalize_protocol_filtered_components: false` to retain the global
+protocol weights for those components. LSU_1 uses this mode, giving its two
+depolarizing traces weights of `0.35` each and its two hyperpolarizing traces
+weights of `0.15` each.
+
 `metrics.jsonl` reports both the total objective under `loss` and each weighted
-contribution under `component_losses`. `rmse_mV` always remains the common
-score-window voltage RMSE, independent of the training objective.
+contribution under `component_losses`. When penalties are configured,
+`penalty_metrics` reports the unpenalized `base_loss`, the global
+`loss_multiplier`, and each continuous soft-spike count. `rmse_mV` always
+remains the common score-window voltage RMSE, independent of the training
+objective.
 
 `configs/losses/LSU_1.yaml` combines hyperpolarizing score-window MSE with
 smooth depolarizing firing-rate, plateau, spike-shape, recovery-trajectory, and

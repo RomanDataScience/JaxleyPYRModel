@@ -13,6 +13,7 @@ dictionaries (dependency inversion).
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+import math
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -639,6 +640,7 @@ _LOSS_KINDS = {
     "soft_maximum_voltage_error",
 }
 _LOSS_WINDOWS = {"score", "full_trace", "baseline", "stimulus", "recovery", "stimulus_end"}
+_LOSS_PENALTY_KINDS = {"soft_outside_stimulus_spike_multiplier"}
 
 
 @dataclass(frozen=True)
@@ -710,10 +712,70 @@ class LossComponentSpec:
 
 
 @dataclass(frozen=True)
+class LossPenaltySpec:
+    """One differentiable multiplier applied to the full-dataset objective."""
+
+    kind: str
+    factor_per_spike: float = 1.2
+    maximum_multiplier: float = 1e12
+    protocols: tuple[str, ...] = ()
+    threshold_mV: float = -20.0
+    temperature_mV: float = 2.0
+    label: str = ""
+
+    @classmethod
+    def from_mapping(cls, value: Any, index: int) -> "LossPenaltySpec":
+        where = f"fit.objective.penalties[{index}]"
+        data = _mapping(value, where)
+        _strict(
+            data,
+            {
+                "kind",
+                "factor_per_spike",
+                "maximum_multiplier",
+                "protocols",
+                "threshold_mV",
+                "temperature_mV",
+                "label",
+            },
+            where,
+        )
+        kind = str(data.get("kind", "soft_outside_stimulus_spike_multiplier"))
+        if kind not in _LOSS_PENALTY_KINDS:
+            raise ConfigError(f"Unsupported loss penalty kind: {kind}")
+        factor = float(data.get("factor_per_spike", 1.2))
+        if not math.isfinite(factor) or factor <= 1.0:
+            raise ConfigError(
+                f"{where}.factor_per_spike must be finite and greater than 1."
+            )
+        maximum = float(data.get("maximum_multiplier", 1e12))
+        if not math.isfinite(maximum) or maximum <= 1.0:
+            raise ConfigError(
+                f"{where}.maximum_multiplier must be finite and greater than 1."
+            )
+        threshold = float(data.get("threshold_mV", -20.0))
+        if not math.isfinite(threshold):
+            raise ConfigError(f"{where}.threshold_mV must be finite.")
+        return cls(
+            kind=kind,
+            factor_per_spike=factor,
+            maximum_multiplier=maximum,
+            protocols=_strings(data.get("protocols"), f"{where}.protocols"),
+            threshold_mV=threshold,
+            temperature_mV=_positive(
+                data.get("temperature_mV", 2.0), f"{where}.temperature_mV"
+            ),
+            label=str(data.get("label", kind)),
+        )
+
+
+@dataclass(frozen=True)
 class FitSpec:
     aggregation: str
     protocol_weights: Mapping[str, float]
     components: tuple[LossComponentSpec, ...]
+    penalties: tuple[LossPenaltySpec, ...]
+    renormalize_protocol_filtered_components: bool
     optimizer: OptimizerSpec
     initialization: InitializationSpec = field(default_factory=InitializationSpec)
     batching_strategy: str = "vmap"
@@ -738,7 +800,14 @@ class FitSpec:
         objective = _mapping(data.get("objective"), "fit.objective")
         _strict(
             objective,
-            {"components", "aggregation", "protocol_weights", "report_metrics"},
+            {
+                "components",
+                "penalties",
+                "aggregation",
+                "protocol_weights",
+                "renormalize_protocol_filtered_components",
+                "report_metrics",
+            },
             "fit.objective",
         )
         raw_components = objective.get("components") or [
@@ -755,6 +824,18 @@ class FitSpec:
         labels = [component.label for component in components]
         if len(labels) != len(set(labels)):
             raise ConfigError("Loss component labels must be unique.")
+        raw_penalties = objective.get("penalties") or ()
+        if not isinstance(raw_penalties, Sequence) or isinstance(
+            raw_penalties, str
+        ):
+            raise ConfigError("fit.objective.penalties must be a list.")
+        penalties = tuple(
+            LossPenaltySpec.from_mapping(penalty, index)
+            for index, penalty in enumerate(raw_penalties)
+        )
+        penalty_labels = [penalty.label for penalty in penalties]
+        if len(penalty_labels) != len(set(penalty_labels)):
+            raise ConfigError("Loss penalty labels must be unique.")
         aggregation = str(objective.get("aggregation", "protocol_mean"))
         if aggregation not in {"protocol_mean", "trace_mean", "sample_mean"}:
             raise ConfigError(f"Unsupported objective aggregation: {aggregation}")
@@ -783,6 +864,10 @@ class FitSpec:
             aggregation=aggregation,
             protocol_weights=weights,
             components=components,
+            penalties=penalties,
+            renormalize_protocol_filtered_components=bool(
+                objective.get("renormalize_protocol_filtered_components", True)
+            ),
             optimizer=OptimizerSpec.from_mapping(data.get("optimizer")),
             initialization=InitializationSpec.from_mapping(
                 data.get("initialization")

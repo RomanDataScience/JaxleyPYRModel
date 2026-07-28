@@ -99,10 +99,12 @@ def run_hybrid(
             status = "ok"
             error_message = None
             component_losses = {}
+            penalty_metrics = {}
             try:
                 result = evaluator.evaluate(full, gradient=False)
                 loss = float(result[0])
                 component_losses = result[4]
+                penalty_metrics = result[6]
                 if not np.isfinite(loss):
                     raise FloatingPointError("nonfinite objective")
                 if generation_best is None or loss < generation_best[0]:
@@ -118,6 +120,7 @@ def run_hybrid(
                 "population_index": index,
                 "training_loss": loss,
                 "component_losses": component_losses,
+                "penalty_metrics": penalty_metrics,
                 "status": status,
                 "error": error_message,
                 "normalized": full.tolist(),
@@ -233,8 +236,10 @@ def run_hybrid(
             {
                 "candidate_id": candidate_id,
                 "training_loss": float(training_loss),
+                "training_penalty_metrics": training_evaluation[6],
                 "validation_loss": float(evaluation[0]),
                 "validation_component_losses": evaluation[4],
+                "validation_penalty_metrics": evaluation[6],
                 "validation_rmse_mV": float(evaluation[5]) ** 0.5,
                 "normalized": normalized.tolist(),
             }

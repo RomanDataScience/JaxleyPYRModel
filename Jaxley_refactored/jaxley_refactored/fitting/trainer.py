@@ -19,6 +19,7 @@ from jaxley_refactored.simulation import InitialStateFactory, SimulationKernel
 from .checkpoints import CheckpointManager
 from .losses import (
     BucketObjective,
+    apply_multiplicative_penalties,
     component_denominators,
     default_loss_registry,
     weighted_bucket_loss,
@@ -34,6 +35,7 @@ class PreparedBucket:
     initial_states: object
     evaluate: Callable
     loss_and_gradient: Callable
+    penalty_gradient: Callable | None
 
 
 @dataclass(frozen=True)
@@ -68,13 +70,25 @@ class Trainer:
         self.checkpoints = checkpoint_manager
         self._stop_requested = False
         buckets = tuple(buckets)
-        denominators = component_denominators(fit.components, buckets)
+        denominators = component_denominators(
+            fit.components,
+            buckets,
+            renormalize_protocol_filtered=(
+                fit.renormalize_protocol_filtered_components
+            ),
+        )
         registry = default_loss_registry()
         self._prepared = tuple(
             self._prepare_bucket(
                 bucket,
                 protocol,
-                BucketObjective(fit.components, bucket, denominators, registry),
+                BucketObjective(
+                    fit.components,
+                    bucket,
+                    denominators,
+                    registry,
+                    penalties=fit.penalties,
+                ),
             )
             for bucket in buckets
         )
@@ -85,8 +99,18 @@ class Trainer:
         self, fit: FitSpec, checkpoint_manager: CheckpointManager | None
     ) -> None:
         """Reuse prepared simulation/loss kernels with a new Adam policy."""
-        if fit.components != self.fit.components:
-            raise ValueError("Optimizer reconfiguration cannot change loss components.")
+        if (
+            fit.components != self.fit.components
+            or fit.penalties != self.fit.penalties
+            or (
+                fit.renormalize_protocol_filtered_components
+                != self.fit.renormalize_protocol_filtered_components
+            )
+        ):
+            raise ValueError(
+                "Optimizer reconfiguration cannot change loss components, "
+                "penalties, or component weighting."
+            )
         if fit.batching_strategy != self.fit.batching_strategy:
             raise ValueError("Optimizer reconfiguration cannot change batching strategy.")
         self.fit = fit
@@ -137,27 +161,63 @@ class Trainer:
             evaluation_mse = weighted_bucket_loss(
                 predicted, observed, score_masks, trace_weights
             )
-            return objective_loss, (predicted, components, evaluation_mse)
+            penalty_counts = objective.penalty_counts(predicted)
+            return objective_loss, (
+                predicted,
+                components,
+                evaluation_mse,
+                penalty_counts,
+            )
 
         evaluate = loss
         loss_and_gradient = jax.value_and_grad(loss, has_aux=True)
+        penalty_gradient = None
+        if self.fit.penalties:
+            penalty_labels = tuple(
+                penalty.label for penalty in self.fit.penalties
+            )
+
+            def scaled_loss_gradient_target(
+                normalized,
+                base_coefficient,
+                count_coefficients,
+            ):
+                base_loss, (_, _, _, penalty_counts) = loss(normalized)
+                count_term = jnp.asarray(0.0, dtype=base_loss.dtype)
+                for index, label in enumerate(penalty_labels):
+                    count_term = (
+                        count_term
+                        + count_coefficients[index] * penalty_counts[label]
+                    )
+                return base_coefficient * base_loss + count_term
+
+            penalty_gradient = jax.grad(
+                scaled_loss_gradient_target, argnums=0
+            )
         if self.runtime.jit:
             # The simulation functions are already compiled per shape. Jitting
             # this small wrapper fuses loss reduction and reverse-mode setup.
             evaluate = jax.jit(evaluate)
             loss_and_gradient = jax.jit(loss_and_gradient)
+            if penalty_gradient is not None:
+                penalty_gradient = jax.jit(penalty_gradient)
         return PreparedBucket(
             bucket=bucket,
             kernel=kernel,
             initial_states=initial_states,
             evaluate=evaluate,
             loss_and_gradient=loss_and_gradient,
+            penalty_gradient=penalty_gradient,
         )
 
     def evaluate(
         self, normalized, *, gradient: bool
-    ) -> tuple[object, object | None, dict, dict, dict, float]:
+    ) -> tuple[object, object | None, dict, dict, dict, float, dict]:
         """Evaluate every shape bucket and optionally accumulate its gradient."""
+
+        if self.fit.penalties:
+            return self._evaluate_with_penalties(normalized, gradient=gradient)
+
         total_loss = jnp.asarray(0.0)
         total_gradient = jnp.zeros_like(normalized) if gradient else None
         bucket_losses = {}
@@ -169,7 +229,15 @@ class Trainer:
         for prepared in self._prepared:
             if gradient:
                 (
-                    (loss, (predicted, components, bucket_evaluation_mse)),
+                    (
+                        loss,
+                        (
+                            predicted,
+                            components,
+                            bucket_evaluation_mse,
+                            _penalty_counts,
+                        ),
+                    ),
                     bucket_gradient,
                 ) = prepared.loss_and_gradient(normalized)
                 total_gradient = total_gradient + bucket_gradient
@@ -178,6 +246,7 @@ class Trainer:
                     predicted,
                     components,
                     bucket_evaluation_mse,
+                    _penalty_counts,
                 ) = prepared.evaluate(normalized)
             total_loss = total_loss + loss
             bucket_losses[str(prepared.bucket.key)] = float(loss)
@@ -192,6 +261,100 @@ class Trainer:
             bucket_predictions,
             component_losses,
             evaluation_mse,
+            {},
+        )
+
+    def _evaluate_with_penalties(
+        self, normalized, *, gradient: bool
+    ) -> tuple[object, object | None, dict, dict, dict, float, dict]:
+        """Apply one full-dataset multiplier while preserving bucketed gradients.
+
+        A forward pass first obtains the global base loss and soft spike counts.
+        When gradients are requested, each natural-shape bucket is replayed
+        independently with the exact chain-rule coefficients. This avoids
+        retaining reverse-mode state for every bucket at once.
+        """
+
+        results = []
+        base_loss = jnp.asarray(0.0)
+        penalty_counts = {
+            penalty.label: jnp.asarray(0.0)
+            for penalty in self.fit.penalties
+        }
+        for prepared in self._prepared:
+            result = prepared.evaluate(normalized)
+            results.append(result)
+            bucket_base, (_, _, _, bucket_counts) = result
+            base_loss = base_loss + bucket_base
+            for label in penalty_counts:
+                penalty_counts[label] = (
+                    penalty_counts[label] + bucket_counts[label]
+                )
+
+        total_loss, multiplier, count_log_slopes = (
+            apply_multiplicative_penalties(
+                base_loss,
+                penalty_counts,
+                self.fit.penalties,
+            )
+        )
+        total_gradient = None
+        if gradient:
+            total_gradient = jnp.zeros_like(normalized)
+            count_coefficients = jnp.stack(
+                [
+                    base_loss
+                    * multiplier
+                    * count_log_slopes[penalty.label]
+                    for penalty in self.fit.penalties
+                ]
+            )
+            for prepared in self._prepared:
+                assert prepared.penalty_gradient is not None
+                total_gradient = total_gradient + prepared.penalty_gradient(
+                    normalized,
+                    multiplier,
+                    count_coefficients,
+                )
+
+        multiplier_value = float(multiplier)
+        bucket_losses = {}
+        bucket_predictions = {}
+        component_losses = {
+            component.label: 0.0 for component in self.fit.components
+        }
+        evaluation_mse = 0.0
+        for prepared, result in zip(self._prepared, results, strict=True):
+            bucket_base, (
+                predicted,
+                components,
+                bucket_evaluation_mse,
+                _bucket_counts,
+            ) = result
+            bucket_losses[str(prepared.bucket.key)] = (
+                float(bucket_base) * multiplier_value
+            )
+            bucket_predictions[prepared.bucket.key] = np.asarray(predicted)
+            evaluation_mse += float(bucket_evaluation_mse)
+            for label, value in components.items():
+                component_losses[label] += float(value) * multiplier_value
+
+        penalty_metrics = {
+            "base_loss": float(base_loss),
+            "loss_multiplier": multiplier_value,
+            "soft_spike_counts": {
+                label: float(value)
+                for label, value in penalty_counts.items()
+            },
+        }
+        return (
+            total_loss,
+            total_gradient,
+            bucket_losses,
+            bucket_predictions,
+            component_losses,
+            evaluation_mse,
+            penalty_metrics,
         )
 
     def install_signal_handlers(self) -> None:
@@ -240,6 +403,7 @@ class Trainer:
                 bucket_predictions,
                 component_losses,
                 evaluation_mse,
+                penalty_metrics,
             ) = self.evaluate(normalized, gradient=True)
             assert total_gradient is not None
             evaluated_normalized = normalized
@@ -285,6 +449,7 @@ class Trainer:
                         bucket_predictions,
                         component_losses,
                         evaluation_mse,
+                        penalty_metrics,
                     ) = result.evaluation
                 else:
                     optimizer_state = self.optimizer.reject(
@@ -317,6 +482,7 @@ class Trainer:
                 "step_accepted": step_accepted,
                 "bucket_losses": bucket_losses,
                 "component_losses": component_losses,
+                "penalty_metrics": penalty_metrics,
             }
             if on_epoch is not None:
                 on_epoch(metrics, bucket_predictions)

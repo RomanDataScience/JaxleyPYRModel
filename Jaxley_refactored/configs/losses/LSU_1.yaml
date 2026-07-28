@@ -5,6 +5,22 @@ extends: ../optimizers/adam_backtracking.yaml
 # continuous in the simulated voltage.
 fit:
   objective:
+    # Preserve the global 0.7/0.3 protocol allocation for protocol-specific
+    # components instead of converting each component to a conditional mean.
+    renormalize_protocol_filtered_components: false
+
+    penalties:
+      # Count smooth upward crossings whose destination sample lies before
+      # stimulus onset or after stimulus offset. Across all selected traces,
+      # N outside spikes multiply the complete LSU_1 loss by 1.2**N.
+      - kind: soft_outside_stimulus_spike_multiplier
+        label: outside_step_spikes
+        factor_per_spike: 1.2
+        maximum_multiplier: 1.0e12
+        protocols: [depolarizing_step, hyperpolarizing_pulse]
+        threshold_mV: -20.0
+        temperature_mV: 2.0
+
     components:
       # Hyperpolarizing pulse: retain score-window voltage MSE.
       - kind: voltage_mse
