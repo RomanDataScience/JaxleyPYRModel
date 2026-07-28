@@ -18,6 +18,33 @@ class ParameterSpec:
     targets: tuple[str, ...]
     aliases: tuple[str, ...] = ()
 
+    def with_expanded_bounds(self, factor: float) -> "ParameterSpec":
+        """Return wider physically signed bounds while retaining the default."""
+        factor = float(factor)
+        if factor < 1.0:
+            raise ValueError("Parameter-bound expansion factor must be at least 1.")
+        if factor == 1.0:
+            return self
+        lower, upper = self.bounds
+        if lower >= 0.0:
+            expanded_lower = lower / factor if lower > 0.0 else 0.0
+            expanded_upper = upper * factor
+        elif upper <= 0.0:
+            expanded_lower = self.default + factor * (lower - self.default)
+            expanded_upper = self.default + factor * (upper - self.default)
+        else:
+            expanded_lower = self.default + factor * (lower - self.default)
+            expanded_upper = self.default + factor * (upper - self.default)
+        return ParameterSpec(
+            name=self.name,
+            default=self.default,
+            bounds=(expanded_lower, expanded_upper),
+            units=self.units,
+            tags=self.tags,
+            targets=self.targets,
+            aliases=self.aliases,
+        )
+
     def validate(self, value: float) -> float:
         lower, upper = self.bounds
         value = float(value)
@@ -229,4 +256,3 @@ def _units(name: str) -> str:
     if name.startswith("Spine") or name in {"AXNa", "gkv2scale", "scale_Na_conduct"}:
         return "dimensionless"
     return "S/cm2"
-

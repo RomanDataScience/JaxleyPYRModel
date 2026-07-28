@@ -80,6 +80,10 @@ class ModelBuilder:
             include=spec.parameters.include,
             exclude=spec.parameters.exclude,
         )
+        selected_specs = tuple(
+            item.with_expanded_bounds(spec.parameters.bound_expansion_factor)
+            for item in selected_specs
+        )
         distribution_overrides = self._distributions.resolve(
             spec.distributions.preset, spec.distributions.overrides
         )

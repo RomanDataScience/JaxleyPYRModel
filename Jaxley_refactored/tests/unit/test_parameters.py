@@ -28,6 +28,20 @@ def test_projected_box_preserves_exact_zero_and_bounds():
     np.testing.assert_allclose(space.project([-1.0, 2.0]), [0.0, 1.0])
 
 
+def test_parameter_bounds_can_be_expanded_without_changing_defaults():
+    catalog = combe2023_catalog()
+    conductance = catalog.get("soma_hbar").with_expanded_bounds(2.0)
+    resistance = catalog.get("RmSoma").with_expanded_bounds(2.0)
+    reversal = catalog.get("Epas").with_expanded_bounds(2.0)
+
+    assert conductance.bounds == (0.0, 0.0006)
+    assert resistance.bounds == (25_000.0, 600_000.0)
+    np.testing.assert_allclose(reversal.bounds, (-108.0121, -28.0121))
+    assert conductance.default == catalog.get("soma_hbar").default
+    assert resistance.default == catalog.get("RmSoma").default
+    assert reversal.default == catalog.get("Epas").default
+
+
 def test_parameterizer_appends_fixed_distribution_coefficients():
     catalog = combe2023_catalog()
     fitted = catalog.select(include=("soma_hbar",))

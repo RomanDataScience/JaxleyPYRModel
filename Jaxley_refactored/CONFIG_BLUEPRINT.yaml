@@ -62,6 +62,8 @@ model:
   parameters:
     catalog: combe2023
     value_overrides: {}
+    # 1.0 keeps canonical bounds; values above 1 widen fitted bounds.
+    bound_expansion_factor: 1.0
     fit:
       include_tags: [conductance, passive]
       include: []

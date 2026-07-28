@@ -78,6 +78,13 @@ def _positive(value: Any, where: str) -> float:
     return result
 
 
+def _at_least_one(value: Any, where: str) -> float:
+    result = float(value)
+    if result < 1.0:
+        raise ConfigError(f"{where} must be at least 1.")
+    return result
+
+
 @dataclass(frozen=True)
 class MorphologySpec:
     """Static morphology choice; changes require rebuilding the model."""
@@ -196,13 +203,14 @@ class ParameterSelection:
     include: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
     value_overrides: Mapping[str, float] = field(default_factory=dict)
+    bound_expansion_factor: float = 1.0
 
     @classmethod
     def from_mapping(cls, value: Any) -> "ParameterSelection":
         data = _mapping(value, "model.parameters")
         _strict(
             data,
-            {"catalog", "value_overrides", "fit"},
+            {"catalog", "value_overrides", "bound_expansion_factor", "fit"},
             "model.parameters",
         )
         fit = _mapping(data.get("fit"), "model.parameters.fit")
@@ -221,6 +229,10 @@ class ParameterSelection:
             include=_strings(fit.get("include"), "model.parameters.fit.include"),
             exclude=_strings(fit.get("exclude"), "model.parameters.fit.exclude"),
             value_overrides=overrides,
+            bound_expansion_factor=_at_least_one(
+                data.get("bound_expansion_factor", 1.0),
+                "model.parameters.bound_expansion_factor",
+            ),
         )
 
 
