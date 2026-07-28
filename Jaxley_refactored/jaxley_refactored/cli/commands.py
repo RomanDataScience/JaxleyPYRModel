@@ -235,6 +235,7 @@ def _simulate(config, args) -> int:
 
 def _fit(config, args) -> int:
     from jaxley_refactored.fitting.checkpoints import CheckpointManager
+    from jaxley_refactored.fitting.initialization import initial_physical_values
     from jaxley_refactored.fitting.trainer import Trainer
     from jaxley_refactored.reporting import RunDirectory, plot_epoch_traces
 
@@ -319,7 +320,7 @@ def _fit(config, args) -> int:
     output.write_parameters(
         "parameters_initial.csv",
         model.parameterizer.specs,
-        model.reference_values,
+        initial_physical_values(model, config.fit, config.runtime),
     )
     if args.dry_run:
         output.write_json("status.json", {"status": "validated", "dry_run": True})

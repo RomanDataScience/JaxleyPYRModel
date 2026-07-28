@@ -115,6 +115,12 @@ dataset:
     post_ms: 800.0
 
 fit:
+  initialization:
+    # reference | jittered_reference
+    mode: reference
+    # Fraction of each normalized fitted-parameter range.
+    scale: 0.0
+    preserve_exact_zero_reference: true
   objective:
     components:
       - kind: masked_voltage_mse

@@ -588,6 +588,41 @@ class OptimizerSpec:
         )
 
 
+@dataclass(frozen=True)
+class InitializationSpec:
+    """Deterministic starting-point policy for fitted parameters."""
+
+    mode: str = "reference"
+    scale: float = 0.0
+    preserve_exact_zero_reference: bool = True
+
+    @classmethod
+    def from_mapping(cls, value: Any) -> "InitializationSpec":
+        data = _mapping(value, "fit.initialization")
+        _strict(
+            data,
+            {"mode", "scale", "preserve_exact_zero_reference"},
+            "fit.initialization",
+        )
+        mode = str(data.get("mode", "reference"))
+        if mode not in {"reference", "jittered_reference"}:
+            raise ConfigError(f"Unsupported fit initialization mode: {mode}")
+        scale = float(data.get("scale", 0.0 if mode == "reference" else 0.2))
+        if not 0.0 <= scale <= 1.0:
+            raise ConfigError("fit.initialization.scale must be between 0 and 1.")
+        if mode == "reference" and scale != 0.0:
+            raise ConfigError(
+                "fit.initialization.scale must be 0 when mode is reference."
+            )
+        return cls(
+            mode=mode,
+            scale=scale,
+            preserve_exact_zero_reference=bool(
+                data.get("preserve_exact_zero_reference", True)
+            ),
+        )
+
+
 _LOSS_KINDS = {
     "masked_voltage_mse",
     "voltage_mse",
@@ -680,6 +715,7 @@ class FitSpec:
     protocol_weights: Mapping[str, float]
     components: tuple[LossComponentSpec, ...]
     optimizer: OptimizerSpec
+    initialization: InitializationSpec = field(default_factory=InitializationSpec)
     batching_strategy: str = "vmap"
     pad_to_longest: bool = False
     checkpoint_every_epochs: int = 1
@@ -693,6 +729,7 @@ class FitSpec:
                 "objective",
                 "parameter_transform",
                 "optimizer",
+                "initialization",
                 "batching",
                 "checkpoint",
             },
@@ -747,6 +784,9 @@ class FitSpec:
             protocol_weights=weights,
             components=components,
             optimizer=OptimizerSpec.from_mapping(data.get("optimizer")),
+            initialization=InitializationSpec.from_mapping(
+                data.get("initialization")
+            ),
             batching_strategy=strategy,
             pad_to_longest=bool(batching.get("pad_to_longest", False)),
             checkpoint_every_epochs=every,
@@ -790,6 +830,9 @@ class RuntimeSpec:
         precision = str(data.get("precision", "float64"))
         if precision not in {"float32", "float64"}:
             raise ConfigError("runtime.precision must be float32 or float64.")
+        seed = int(data.get("seed", 0))
+        if seed < 0:
+            raise ConfigError("runtime.seed must be non-negative.")
         solver = _mapping(data.get("solver"), "runtime.solver")
         remat = _mapping(data.get("rematerialization"), "runtime.rematerialization")
         cache = _mapping(data.get("compilation_cache"), "runtime.compilation_cache")
@@ -801,7 +844,7 @@ class RuntimeSpec:
         return cls(
             backend=backend,
             precision=precision,
-            seed=int(data.get("seed", 0)),
+            seed=seed,
             jit=bool(data.get("jit", True)),
             solver=str(solver.get("ode", "bwd_euler")),
             voltage_solver=str(solver.get("voltage", "jaxley.dhs")),

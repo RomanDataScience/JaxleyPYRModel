@@ -23,6 +23,7 @@ from .losses import (
     default_loss_registry,
     weighted_bucket_loss,
 )
+from .initialization import initial_normalized_values
 from .optimizer import Adam, BacktrackingLineSearch
 
 
@@ -189,8 +190,9 @@ class Trainer:
         on_epoch: Callable[[dict, dict[tuple[float, int], np.ndarray]], None]
         | None = None,
     ) -> FitResult:
-        physical = jnp.asarray(self.model.reference_values)
-        normalized = self.space.normalize(physical)
+        normalized = jnp.asarray(
+            initial_normalized_values(self.model, self.fit, self.runtime)
+        )
         optimizer_state = self.optimizer.initialize(normalized)
         best_normalized = normalized
         best_loss = float("inf")

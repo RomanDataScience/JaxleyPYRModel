@@ -1,5 +1,26 @@
 # Optimization and adaptive step sizes
 
+## Initial parameter exploration
+
+`fit.initialization.mode: reference` starts every fit from the configured model
+reference. Use `jittered_reference` for deterministic multistart fitting:
+
+```yaml
+fit:
+  initialization:
+    mode: jittered_reference
+    scale: 0.20
+    preserve_exact_zero_reference: true
+```
+
+The runtime seed generates a uniform perturbation in projected-box coordinates.
+A scale of `0.20` moves each nonzero reference by at most 20% of its configured
+parameter range, clipped to the bounds. Equal seeds reproduce equal starting
+points; different seeds produce different starts. Exact-zero references can
+remain zero initially while still being trainable during optimization.
+
+## Backtracking
+
 The default configuration uses projected Adam with a fixed learning rate.
 Parameters are optimized in normalized `[0, 1]` coordinates and projected back
 into that interval after every proposal.

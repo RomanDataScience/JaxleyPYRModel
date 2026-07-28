@@ -7,5 +7,12 @@ model:
   parameters:
     bound_expansion_factor: 2.0
 
+fit:
+  initialization:
+    mode: jittered_reference
+    # Uniform perturbation of up to +/-20% of each normalized parameter range.
+    scale: 0.20
+    preserve_exact_zero_reference: true
+
 output:
   run_name: auto
