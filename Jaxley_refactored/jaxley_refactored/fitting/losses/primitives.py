@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import jax.nn as jnn
 import jax.numpy as jnp
 
 
@@ -63,6 +64,79 @@ def correlation_loss(predicted, observed, mask, **_):
 
 def mean_voltage_error(predicted, observed, mask, *, scale=1.0, **_):
     difference = _masked_mean(predicted, mask) - _masked_mean(observed, mask)
+    return (difference / scale) ** 2
+
+
+def soft_firing_rate_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    dt_ms,
+    scale=1.0,
+    threshold_mV=-20.0,
+    temperature_mV=2.0,
+    **_,
+):
+    """Squared error between differentiable upward-crossing rate surrogates."""
+
+    def soft_rate(voltage):
+        above = jnn.sigmoid((voltage - threshold_mV) / temperature_mV)
+        pair_mask = mask[..., 1:] & mask[..., :-1]
+        soft_crossings = above[..., 1:] * (1.0 - above[..., :-1])
+        duration_s = jnp.maximum(jnp.sum(pair_mask, axis=-1) * dt_ms * 1e-3, 1e-9)
+        return jnp.sum(pair_mask * soft_crossings, axis=-1) / duration_s
+
+    difference_hz = soft_rate(predicted) - soft_rate(observed)
+    return (difference_hz / scale) ** 2
+
+
+def subthreshold_mean_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    scale=1.0,
+    threshold_mV=-20.0,
+    **_,
+):
+    """Compare inter-spike plateau means using a fixed experimental mask."""
+
+    plateau_mask = mask & (observed < threshold_mV)
+    difference = _masked_mean(predicted, plateau_mask) - _masked_mean(
+        observed, plateau_mask
+    )
+    return (difference / scale) ** 2
+
+
+def soft_minimum_voltage_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    scale=1.0,
+    temperature_mV=1.0,
+    **_,
+):
+    """Compare smooth minimum voltages, e.g. recovery AHP depth."""
+
+    def soft_minimum(voltage):
+        logits = -voltage / temperature_mV
+        masked_logits = jnp.where(mask, logits, -jnp.inf)
+        reference = jnp.max(masked_logits, axis=-1, keepdims=True)
+        count = jnp.maximum(jnp.sum(mask, axis=-1), 1.0)
+        mean_exponential = (
+            jnp.sum(
+                jnp.where(mask, jnp.exp(masked_logits - reference), 0.0),
+                axis=-1,
+            )
+            / count
+        )
+        return -temperature_mV * (
+            jnp.squeeze(reference, axis=-1) + jnp.log(mean_exponential)
+        )
+
+    difference = soft_minimum(predicted) - soft_minimum(observed)
     return (difference / scale) ** 2
 
 

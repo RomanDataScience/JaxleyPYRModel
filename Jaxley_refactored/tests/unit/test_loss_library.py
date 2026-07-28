@@ -27,6 +27,16 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
             "resting_voltage",
             "hyperpolarizing_steady_state",
         ),
+        "LSU_1.yaml": (
+            "hyperpolarizing_waveform_mse",
+            "depolarizing_firing_rate",
+            "depolarizing_voltage_plateau",
+            "depolarizing_spike_waveform",
+            "depolarizing_spike_derivative",
+            "depolarizing_recovery_waveform",
+            "depolarizing_recovery_derivative",
+            "depolarizing_ahp_depth",
+        ),
     }
     for filename, labels in expected.items():
         config = load_config(PROJECT / "configs/losses" / filename)
@@ -47,6 +57,9 @@ def test_registered_waveform_losses_are_finite_and_differentiable():
         "correlation_loss",
         "resting_voltage_error",
         "steady_state_error",
+        "soft_firing_rate_error",
+        "subthreshold_mean_error",
+        "soft_minimum_voltage_error",
     ):
         term = registry.get(name)
 
@@ -59,6 +72,8 @@ def test_registered_waveform_losses_are_finite_and_differentiable():
                     dt_ms=0.05,
                     scale=2.0,
                     delta=1.0,
+                    threshold_mV=-20.0,
+                    temperature_mV=2.0,
                 )
             )
 
@@ -80,6 +95,26 @@ def test_pseudo_huber_is_less_sensitive_to_a_large_outlier_than_mse():
         predicted, observed, mask, dt_ms=0.05, scale=1.0, delta=1.0
     )
     assert float(huber[0]) < float(mse[0])
+
+
+def test_soft_firing_rate_error_prefers_matching_spike_count():
+    registry = default_loss_registry()
+    term = registry.get("soft_firing_rate_error")
+    observed = jnp.asarray([[-65.0, -65.0, 20.0, -65.0, -65.0, 20.0, -65.0]])
+    matching = observed
+    missing_spike = jnp.asarray([[-65.0, -65.0, 20.0, -65.0, -65.0, -65.0, -65.0]])
+    mask = jnp.ones_like(observed, dtype=bool)
+    kwargs = {
+        "dt_ms": 1.0,
+        "scale": 5.0,
+        "threshold_mV": -20.0,
+        "temperature_mV": 2.0,
+    }
+
+    matching_loss = term(matching, observed, mask, **kwargs)
+    missing_loss = term(missing_spike, observed, mask, **kwargs)
+
+    assert float(matching_loss[0]) < float(missing_loss[0])
 
 
 def test_protocol_filtered_component_is_normalized_across_shape_buckets():

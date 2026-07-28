@@ -586,6 +586,9 @@ _LOSS_KINDS = {
     "correlation_loss",
     "resting_voltage_error",
     "steady_state_error",
+    "soft_firing_rate_error",
+    "subthreshold_mean_error",
+    "soft_minimum_voltage_error",
 }
 _LOSS_WINDOWS = {"score", "full_trace", "baseline", "stimulus", "recovery", "stimulus_end"}
 
@@ -600,6 +603,8 @@ class LossComponentSpec:
     protocols: tuple[str, ...] = ()
     scale: float = 1.0
     delta: float = 1.0
+    threshold_mV: float = -20.0
+    temperature_mV: float = 2.0
     label: str = ""
 
     @classmethod
@@ -616,7 +621,10 @@ class LossComponentSpec:
                 "scale",
                 "scale_mV",
                 "scale_mV_per_ms",
+                "scale_hz",
                 "delta",
+                "threshold_mV",
+                "temperature_mV",
                 "label",
             },
             where,
@@ -629,7 +637,7 @@ class LossComponentSpec:
             raise ConfigError(f"Unsupported loss window: {window}")
         scale_keys = [
             key
-            for key in ("scale", "scale_mV", "scale_mV_per_ms")
+            for key in ("scale", "scale_mV", "scale_mV_per_ms", "scale_hz")
             if key in data
         ]
         if len(scale_keys) > 1:
@@ -645,6 +653,10 @@ class LossComponentSpec:
             protocols=_strings(data.get("protocols"), f"{where}.protocols"),
             scale=_positive(scale, f"{where}.scale"),
             delta=_positive(data.get("delta", 1.0), f"{where}.delta"),
+            threshold_mV=float(data.get("threshold_mV", -20.0)),
+            temperature_mV=_positive(
+                data.get("temperature_mV", 2.0), f"{where}.temperature_mV"
+            ),
             label=str(data.get("label", kind)),
         )
 

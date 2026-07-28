@@ -86,6 +86,8 @@ class BucketObjective:
                 dt_ms=self.dt_ms,
                 scale=term.spec.scale,
                 delta=term.spec.delta,
+                threshold_mV=term.spec.threshold_mV,
+                temperature_mV=term.spec.temperature_mV,
             )
             contribution = (
                 term.spec.weight

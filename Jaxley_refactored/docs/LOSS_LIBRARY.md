@@ -17,6 +17,9 @@ are summed before one update to the shared parameter vector.
 | `correlation_loss` | One minus masked waveform correlation | No scale required |
 | `resting_voltage_error` | Squared error between window means | `baseline` window |
 | `steady_state_error` | Squared error between window means | `stimulus_end` window |
+| `soft_firing_rate_error` | Squared difference between smooth upward-crossing rates | `threshold_mV`, `temperature_mV`, `scale_hz` |
+| `subthreshold_mean_error` | Squared inter-spike mean-voltage error using an experimental subthreshold mask | `threshold_mV`, `scale_mV` |
+| `soft_minimum_voltage_error` | Squared difference between smooth minimum voltages | `temperature_mV`, `scale_mV` |
 
 `masked_voltage_mse` remains an alias for backward compatibility.
 
@@ -62,6 +65,10 @@ selected traces, so their weights do not accidentally depend on trace count.
 `metrics.jsonl` reports both the total objective under `loss` and each weighted
 contribution under `component_losses`. `rmse_mV` always remains the common
 score-window voltage RMSE, independent of the training objective.
+
+`configs/losses/LSU_1.yaml` combines hyperpolarizing score-window MSE with
+smooth depolarizing firing-rate, plateau, spike-shape, recovery-trajectory, and
+after-hyperpolarization terms. It inherits Adam with backtracking.
 
 Use a 100-step smoke test with any loss configuration:
 

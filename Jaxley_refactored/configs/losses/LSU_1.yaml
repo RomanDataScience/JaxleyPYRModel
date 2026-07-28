@@ -1,0 +1,82 @@
+extends: ../optimizers/adam_backtracking.yaml
+
+# LSU_1 gives equal total component weight to the hyperpolarizing and
+# depolarizing objectives. Every term is continuous in the simulated voltage.
+fit:
+  objective:
+    components:
+      # Hyperpolarizing pulse: retain score-window voltage MSE.
+      - kind: voltage_mse
+        label: hyperpolarizing_waveform_mse
+        weight: 1.0
+        protocols: [hyperpolarizing_pulse]
+        window: score
+        scale_mV: 1.0
+
+      # Depolarizing pulse: smooth firing-frequency surrogate.
+      - kind: soft_firing_rate_error
+        label: depolarizing_firing_rate
+        weight: 0.25
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        temperature_mV: 2.0
+        scale_hz: 5.0
+
+      # Inter-spike voltage plateau, excluding experimental spike samples.
+      - kind: subthreshold_mean_error
+        label: depolarizing_voltage_plateau
+        weight: 0.15
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        scale_mV: 5.0
+
+      # Spike waveform and slope.
+      - kind: pseudo_huber
+        label: depolarizing_spike_waveform
+        weight: 0.20
+        protocols: [depolarizing_step]
+        window: stimulus
+        scale_mV: 5.0
+        delta: 1.0
+
+      - kind: derivative_mse
+        label: depolarizing_spike_derivative
+        weight: 0.10
+        protocols: [depolarizing_step]
+        window: stimulus
+        scale_mV_per_ms: 20.0
+
+      # Full post-step trajectory and its slow slope back toward baseline.
+      - kind: pseudo_huber
+        label: depolarizing_recovery_waveform
+        weight: 0.15
+        protocols: [depolarizing_step]
+        window: recovery
+        scale_mV: 3.0
+        delta: 1.0
+
+      - kind: derivative_mse
+        label: depolarizing_recovery_derivative
+        weight: 0.05
+        protocols: [depolarizing_step]
+        window: recovery
+        scale_mV_per_ms: 1.0
+
+      # Smooth recovery minimum captures after-hyperpolarization depth.
+      - kind: soft_minimum_voltage_error
+        label: depolarizing_ahp_depth
+        weight: 0.10
+        protocols: [depolarizing_step]
+        window: recovery
+        temperature_mV: 1.0
+        scale_mV: 3.0
+
+    aggregation: protocol_mean
+    protocol_weights:
+      depolarizing_step: 0.5
+      hyperpolarizing_pulse: 0.5
+
+output:
+  run_name: auto
