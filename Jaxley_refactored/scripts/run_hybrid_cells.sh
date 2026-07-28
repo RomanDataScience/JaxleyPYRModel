@@ -75,6 +75,10 @@ if [[ ! -f "${MANIFEST}" ]]; then
   echo "Manifest does not exist: ${MANIFEST}" >&2
   exit 2
 fi
+# The per-cell launcher changes into the project directory. Resolve user-supplied
+# relative paths now so they remain valid after that directory change.
+CONFIG=$(cd -- "$(dirname -- "${CONFIG}")" && pwd)/$(basename -- "${CONFIG}")
+MANIFEST=$(cd -- "$(dirname -- "${MANIFEST}")" && pwd)/$(basename -- "${MANIFEST}")
 case "${SEED}" in
   ''|*[!0-9]*)
     echo "--seed must be a non-negative integer" >&2

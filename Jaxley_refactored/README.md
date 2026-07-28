@@ -74,6 +74,27 @@ bash scripts/run_hybrid_fitting.sh \
   --seed 1234
 ```
 
+The multi-cell launcher discovers valid cell IDs from the trace manifest:
+
+```bash
+# Show the available selectors.
+bash scripts/run_hybrid_cells.sh --list-cells
+
+# Run one cell.
+bash scripts/run_hybrid_cells.sh --cells m20260331b --seed 1234
+
+# Run selected cells, sequentially.
+bash scripts/run_hybrid_cells.sh \
+  --cells m20240527cd,m20260331b \
+  --seed 1234
+
+# Run every manifest cell. Use parallelism only when CPU RAM permits it.
+bash scripts/run_hybrid_cells.sh --cells all --max-parallel-cells 2
+```
+
+The default is `--cells all --max-parallel-cells 1`, so complete hybrid
+pipelines run one at a time and do not compete for memory.
+
 Use `configs/search/LSU_1_cma_adam_smoke.yaml` only for short end-to-end
 correctness checks; it is not a scientific optimization budget.
 
