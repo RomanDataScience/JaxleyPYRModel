@@ -37,19 +37,7 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
             "resting_voltage",
             "hyperpolarizing_steady_state",
         ),
-        "LSU_1.yaml": (
-            "hyperpolarizing_waveform_mse",
-            "depolarizing_firing_rate",
-            "depolarizing_waveform_mse",
-            "depolarizing_voltage_plateau",
-            "depolarizing_dblo",
-            "depolarizing_spike_waveform",
-            "depolarizing_spike_derivative",
-            "depolarizing_spike_height",
-            "depolarizing_recovery_waveform",
-            "depolarizing_recovery_derivative",
-            "depolarizing_ahp_depth",
-        ),
+        "LSU_1.yaml": ("waveform_mse",),
     }
     for filename, labels in expected.items():
         config = load_config(PROJECT / "configs/losses" / filename)
@@ -59,59 +47,17 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert len(lsu.fit.penalties) == 1
     assert lsu.fit.penalties[0].label == "outside_step_spikes"
     assert lsu.fit.penalties[0].factor_per_spike == 1.1
-    components = {component.label: component for component in lsu.fit.components}
-    assert components["depolarizing_firing_rate"].weight == 4.0
-    assert components["depolarizing_waveform_mse"].kind == "voltage_mse"
-    assert components["depolarizing_waveform_mse"].weight == 0.5
-    assert components["depolarizing_waveform_mse"].protocols == (
-        "depolarizing_step",
-    )
-    assert components["depolarizing_waveform_mse"].window == "score"
-    assert components["depolarizing_waveform_mse"].scale == 5.0
-    assert components["depolarizing_spike_waveform"].weight == 0.25
-    assert components["depolarizing_spike_derivative"].weight == 0.25
-    assert components["depolarizing_spike_height"].weight == 0.32
-    assert components["depolarizing_voltage_plateau"].weight == 0.15
-    assert components["depolarizing_dblo"].kind == "soft_dblo_error"
-    assert components["depolarizing_dblo"].weight == 2.0
-    assert components["depolarizing_dblo"].scale == 5.0
-    assert components["depolarizing_dblo"].temperature_mV == 1.0
-    assert components["depolarizing_recovery_waveform"].weight == 0.5
-    assert components["depolarizing_recovery_derivative"].weight == 0.2
-    assert components["hyperpolarizing_waveform_mse"].weight == 1.17
-    assert components["hyperpolarizing_waveform_mse"].scale == 5.0
-    assert components["hyperpolarizing_waveform_mse"].protocols == (
+    assert len(lsu.fit.components) == 1
+    component = lsu.fit.components[0]
+    assert component.label == "waveform_mse"
+    assert component.kind == "voltage_mse"
+    assert component.weight == 1.0
+    assert component.protocols == (
         "depolarizing_step",
         "hyperpolarizing_pulse",
     )
-
-    # At a residual of one configured scale, squared terms contribute 1 and
-    # pseudo-Huber terms contribute sqrt(2) - 1. Account for the current
-    # 0.8/0.2 protocol allocation when checking the intended priority order.
-    pseudo_huber_at_one_scale = np.sqrt(2.0) - 1.0
-    effective = {
-        "firing_rate": 0.8 * 4.0,
-        "dblo": 0.8 * 2.0,
-        "spike_shape": 0.8
-        * (
-            0.25 * pseudo_huber_at_one_scale
-            + 0.25
-            + 0.32
-        ),
-        "recovery": 0.8
-        * (0.5 * pseudo_huber_at_one_scale + 0.2 + 0.1),
-        "plateau": 0.8 * 0.15,
-        "depolarizing_waveform": 0.8 * 0.5,
-        "shared_waveform": 1.17,
-    }
-    secondary_maximum = max(
-        value
-        for label, value in effective.items()
-        if label not in {"firing_rate", "dblo"}
-    )
-    assert effective["firing_rate"] == 3.2
-    assert effective["dblo"] == 1.6
-    assert effective["firing_rate"] > effective["dblo"] > secondary_maximum
+    assert component.window == "score"
+    assert component.scale == 5.0
 
 
 def test_every_lsu_variant_inherits_the_same_reweighted_objective():

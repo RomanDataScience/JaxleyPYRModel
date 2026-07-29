@@ -138,15 +138,11 @@ contribution under `component_losses`. When penalties are configured,
 remains the common score-window voltage RMSE, independent of the training
 objective.
 
-`configs/losses/LSU_1.yaml` combines shared score-window MSE with
-smooth depolarizing firing rate, explicit DBLO, full score-window depolarizing
-MSE, plateau, spike-shape, recovery-trajectory, and after-hyperpolarization
-terms. Firing rate has raw weight `4.0` and DBLO has raw weight `2.0`, giving
-pre-metric coefficients of `3.2` and `1.6` under the current depolarizing
-allocation. The additional depolarizing waveform MSE has raw weight `0.5` and
-retains direct sensitivity to conspicuous pointwise trace mismatches. Raw
-weights differ because protocol allocations, normalization scales, and loss
-primitives affect final contributions. LSU_1 inherits Adam with backtracking.
+`configs/losses/LSU_1.yaml` uses a single score-window point-by-point voltage
+MSE for both protocols. Depolarizing and hyperpolarizing protocol allocations
+are `0.8` and `0.2`. The complete base loss is multiplied by `1.1` raised to
+the continuous number of spikes outside the stimulus intervals. LSU_1
+inherits Adam with backtracking.
 
 See
 [`configs/losses/README_LSU_1.md`](../configs/losses/README_LSU_1.md)

@@ -12,9 +12,8 @@ dataset:
   score_windows:
     post_ms: 500.0
 
-# LSU_1 makes depolarizing firing rate and DBLO the two primary targets while
-# retaining secondary full-trace, plateau, spike-shape, recovery, AHP, and
-# hyperpolarizing constraints. Every term is continuous in simulated voltage.
+# LSU_1 uses only point-by-point voltage MSE between simulated and experimental
+# traces, plus a continuous multiplier for spikes outside the current step.
 fit:
   objective:
     # Preserve the global 0.8/0.2 protocol allocation for protocol-specific
@@ -34,113 +33,13 @@ fit:
         temperature_mV: 2.0
 
     components:
-      # Historical label: this score-window voltage MSE applies to BOTH
-      # protocols. Effective coefficients are 1.17 * 0.8 = 0.936 for
-      # depolarizing and 1.17 * 0.2 = 0.234 for hyperpolarizing traces.
+      # Mean squared point-by-point voltage difference over each score window.
       - kind: voltage_mse
-        label: hyperpolarizing_waveform_mse
-        weight: 1.17
-        protocols: [hyperpolarizing_pulse]
+        label: waveform_mse
+        weight: 1.0
+        protocols: [depolarizing_step, hyperpolarizing_pulse]
         window: score
         scale_mV: 5.0
-
-      # Primary target 1: depolarizing firing frequency. Its pre-metric
-      # effective coefficient is 0.8 * 4.0 = 3.2.
-      - kind: soft_firing_rate_error
-        label: depolarizing_firing_rate
-        weight: 4.0
-        protocols: [depolarizing_step]
-        window: stimulus
-        threshold_mV: -20.0
-        temperature_mV: 2.0
-        scale_hz: 5.0
-
-      # Direct pointwise difference over the complete scored depolarizing
-      # trace, including baseline, stimulus, and post-step recovery. This stays
-      # secondary because MSE is deliberately sensitive to spike timing.
-      - kind: voltage_mse
-        label: depolarizing_waveform_mse
-        weight: 0.2
-        protocols: [depolarizing_step]
-        window: score
-        scale_mV: 5.0
-
-      # Broad inter-spike plateau mean, excluding experimental spike samples.
-      # This remains a secondary complement to the primary DBLO target.
-      - kind: subthreshold_mean_error
-        label: depolarizing_voltage_plateau
-        weight: 0.15
-        protocols: [depolarizing_step]
-        window: stimulus
-        threshold_mV: -20.0
-        scale_mV: 5.0
-
-      # Paper-defined depolarization baseline offset (DBLO): mean smooth
-      # minimum from each observed spike peak to the next observed threshold,
-      # minus the pre-step resting voltage. The recordings are already
-      # liquid-junction-potential corrected. Fixed experimental intervals make
-      # the term continuous in simulated voltage. Its pre-metric effective
-      # coefficient is 0.8 * 2.0 = 1.6.
-      - kind: soft_dblo_error
-        label: depolarizing_dblo
-        weight: 2.0
-        protocols: [depolarizing_step]
-        window: stimulus
-        threshold_mV: -20.0
-        temperature_mV: 1.0
-        scale_mV: 5.0
-
-      # Spike waveform and slope.
-      - kind: pseudo_huber
-        label: depolarizing_spike_waveform
-        weight: 0.25
-        protocols: [depolarizing_step]
-        window: stimulus
-        scale_mV: 5.0
-        delta: 1.0
-
-      - kind: derivative_mse
-        label: depolarizing_spike_derivative
-        weight: 0.25
-        protocols: [depolarizing_step]
-        window: stimulus
-        scale_mV_per_ms: 20.0
-
-      # Smooth peak-voltage matching emphasizes action-potential height.
-      - kind: soft_maximum_voltage_error
-        label: depolarizing_spike_height
-        weight: 0.32
-        protocols: [depolarizing_step]
-        window: stimulus
-        temperature_mV: 1.0
-        scale_mV: 5.0
-
-      # Full post-step trajectory and its slow slope back toward baseline.
-      # These weights keep recovery as a strong secondary target beneath the
-      # primary firing-rate and DBLO terms.
-      - kind: pseudo_huber
-        label: depolarizing_recovery_waveform
-        weight: 0.5
-        protocols: [depolarizing_step]
-        window: recovery
-        scale_mV: 3.0
-        delta: 1.0
-
-      - kind: derivative_mse
-        label: depolarizing_recovery_derivative
-        weight: 0.2
-        protocols: [depolarizing_step]
-        window: recovery
-        scale_mV_per_ms: 1.0
-
-      # Smooth recovery minimum captures after-hyperpolarization depth.
-      - kind: soft_minimum_voltage_error
-        label: depolarizing_ahp_depth
-        weight: 0.10
-        protocols: [depolarizing_step]
-        window: recovery
-        temperature_mV: 1.0
-        scale_mV: 3.0
 
     aggregation: protocol_mean
     # With two training traces per protocol, these totals assign 0.4 to each
