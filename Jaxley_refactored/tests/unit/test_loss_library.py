@@ -37,7 +37,7 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
             "resting_voltage",
             "hyperpolarizing_steady_state",
         ),
-        "LSU_1.yaml": ("waveform_mse",),
+        "LSU_1.yaml": ("waveform_mse", "depolarizing_firing_rate"),
     }
     for filename, labels in expected.items():
         config = load_config(PROJECT / "configs/losses" / filename)
@@ -47,7 +47,7 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert len(lsu.fit.penalties) == 1
     assert lsu.fit.penalties[0].label == "outside_step_spikes"
     assert lsu.fit.penalties[0].factor_per_spike == 1.1
-    assert len(lsu.fit.components) == 1
+    assert len(lsu.fit.components) == 2
     component = lsu.fit.components[0]
     assert component.label == "waveform_mse"
     assert component.kind == "voltage_mse"
@@ -58,6 +58,15 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     )
     assert component.window == "score"
     assert component.scale == 5.0
+    firing_rate = lsu.fit.components[1]
+    assert firing_rate.label == "depolarizing_firing_rate"
+    assert firing_rate.kind == "soft_firing_rate_error"
+    assert firing_rate.weight == 4.0
+    assert firing_rate.protocols == ("depolarizing_step",)
+    assert firing_rate.window == "stimulus"
+    assert firing_rate.threshold_mV == -20.0
+    assert firing_rate.temperature_mV == 2.0
+    assert firing_rate.scale == 5.0
 
 
 def test_every_lsu_variant_inherits_the_same_reweighted_objective():

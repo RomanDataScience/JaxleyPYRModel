@@ -138,11 +138,12 @@ contribution under `component_losses`. When penalties are configured,
 remains the common score-window voltage RMSE, independent of the training
 objective.
 
-`configs/losses/LSU_1.yaml` uses a single score-window point-by-point voltage
-MSE for both protocols. Depolarizing and hyperpolarizing protocol allocations
-are `0.8` and `0.2`. The complete base loss is multiplied by `1.1` raised to
-the continuous number of spikes outside the stimulus intervals. LSU_1
-inherits Adam with backtracking.
+`configs/losses/LSU_1.yaml` uses score-window point-by-point voltage MSE for
+both protocols plus a differentiable firing-rate error during the depolarizing
+step. Depolarizing and hyperpolarizing protocol allocations are `0.8` and
+`0.2`. The complete base loss is multiplied by `1.1` raised to the continuous
+number of spikes outside the stimulus intervals. LSU_1 inherits Adam with
+backtracking.
 
 See
 [`configs/losses/README_LSU_1.md`](../configs/losses/README_LSU_1.md)

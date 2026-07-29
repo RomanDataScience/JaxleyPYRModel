@@ -12,8 +12,8 @@ dataset:
   score_windows:
     post_ms: 500.0
 
-# LSU_1 uses only point-by-point voltage MSE between simulated and experimental
-# traces, plus a continuous multiplier for spikes outside the current step.
+# LSU_1 uses point-by-point voltage MSE and a differentiable depolarizing
+# firing-rate error, plus a continuous multiplier for spikes outside the step.
 fit:
   objective:
     # Preserve the global 0.8/0.2 protocol allocation for protocol-specific
@@ -40,6 +40,16 @@ fit:
         protocols: [depolarizing_step, hyperpolarizing_pulse]
         window: score
         scale_mV: 5.0
+
+      # Smooth firing-frequency comparison during the depolarizing current step.
+      - kind: soft_firing_rate_error
+        label: depolarizing_firing_rate
+        weight: 4.0
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        temperature_mV: 2.0
+        scale_hz: 5.0
 
     aggregation: protocol_mean
     # With two training traces per protocol, these totals assign 0.4 to each
