@@ -5,8 +5,8 @@ search:
   global:
     algorithm: cma_es
     # An empty subset means every parameter selected by model.parameters.fit.
-    # LSU_1 inherits the 40 conductance and passive parameters in the canonical
-    # Combe catalog, matching the parameter vector used by the local pipeline.
+    # LSU_1 inherits all 44 conductance, passive, and kinetic parameters in the
+    # canonical Combe catalog, matching the local-pipeline parameter vector.
     parameter_names: []
     population_size: 40
     generations: 100

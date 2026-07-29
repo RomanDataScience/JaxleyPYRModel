@@ -11,7 +11,8 @@ Implemented now:
 - validated YAML configuration and inheritance;
 - live-HOC, checksum-protected HOC artifact, and caller-supplied SWC providers;
 - channel/dependency and spatial-profile registries;
-- canonical 40-parameter catalog with exact HOC frozen-grid updates;
+- canonical 44-parameter catalog (40 legacy plus four kinetic time scales) with
+  exact HOC frozen-grid updates;
 - all-trace manifest loading, resampling, weighting, and static-shape buckets;
 - trace-specific initial states with `jit(vmap(...))` and serial kernels;
 - masked multi-bucket loss, projected Adam, atomic latest/best checkpoints;
@@ -202,10 +203,11 @@ forms, which permits drift.
 - Produces two plots per epoch by default (`:418-441`).
 - Writes results only after training and cannot resume (`:460-531`).
 
-The default selects all 40 bounded parameters: 28 conductance-related and 12
-passive. Eight `CombeParameters` values are not selectable. Several selected
-parameters are confounded, including `gna * scale_Na_conduct` and
-`gkv2 * gkv2scale`.
+The initial default selected 40 bounded parameters: 28 conductance-related and
+12 passive. The current catalog appends four shared kinetic time scales, for 44
+total. Eight other `CombeParameters` values remain intentionally unselectable.
+Several selected parameters are confounded, including
+`gna * scale_Na_conduct` and `gkv2 * gkv2scale`.
 
 Seven conductances start exactly at zero. The current bounded sigmoid path moves
 them to tiny positive values near sigmoid saturation. The new catalog must
@@ -812,7 +814,7 @@ reporting code into the training loss.
 
 ### 9.4 Parameter identifiability
 
-Forty free values from eight somatic traces are likely underconstrained, and
+Forty-four free values from somatic traces are likely underconstrained, and
 some values appear only as products. Provide presets:
 
 - `legacy_joint_40`: compatibility/characterization only.

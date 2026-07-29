@@ -15,6 +15,7 @@ class Kd(Channel):
             f"{prefix}_vhalfh": -67.0,
             f"{prefix}_kh": 7.3,
             f"{prefix}_q10": 2.3,
+            f"{prefix}_deactivation_tau_scale": 1.0,
             "eK": -100.0,
             "celsius": 34.0,
         }
@@ -42,5 +43,5 @@ class Kd(Channel):
         prefix = channel_prefix(self)
         arg_m = (v - params[f"{prefix}_vhalfm"]) / params[f"{prefix}_km"]
         arg_h = (v - params[f"{prefix}_vhalfh"]) / params[f"{prefix}_kh"]
-        return inv_sigmoid_arg(arg_m), 0.6, sigmoid_arg(arg_h), 1500.0
-
+        mtau = 0.6 * params[f"{prefix}_deactivation_tau_scale"]
+        return inv_sigmoid_arg(arg_m), mtau, sigmoid_arg(arg_h), 1500.0

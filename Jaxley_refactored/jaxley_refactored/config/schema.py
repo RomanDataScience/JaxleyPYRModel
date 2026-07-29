@@ -200,7 +200,7 @@ class MechanismSpec:
 class ParameterSelection:
     """How the parameter catalog is filtered for a fit."""
 
-    include_tags: tuple[str, ...] = ("conductance", "passive")
+    include_tags: tuple[str, ...] = ("conductance", "passive", "kinetics")
     include: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
     value_overrides: Mapping[str, float] = field(default_factory=dict)
@@ -224,7 +224,7 @@ class ParameterSelection:
         }
         return cls(
             include_tags=_strings(
-                fit.get("include_tags", ("conductance", "passive")),
+                fit.get("include_tags", ("conductance", "passive", "kinetics")),
                 "model.parameters.fit.include_tags",
             ),
             include=_strings(fit.get("include"), "model.parameters.fit.include"),

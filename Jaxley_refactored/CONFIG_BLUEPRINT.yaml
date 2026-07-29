@@ -65,7 +65,7 @@ model:
     # 1.0 keeps canonical bounds; values above 1 widen fitted bounds.
     bound_expansion_factor: 1.0
     fit:
-      include_tags: [conductance, passive]
+      include_tags: [conductance, passive, kinetics]
       include: []
       exclude: []
 

@@ -164,7 +164,7 @@ parameters under realistic noise is not ready for biological interpretation.
 
 ### Initial parameter subset
 
-Do not begin with full-covariance CMA-ES over all 40 parameters. Start with a
+Do not begin with full-covariance CMA-ES over all 44 parameters. Start with a
 mechanistically relevant subset of approximately 12–20 active parameters:
 
 - sodium: `AXNa`, `gna`, `gnadend`, `scale_Na_conduct`, `nap_gnabar`;
@@ -173,6 +173,9 @@ mechanistically relevant subset of approximately 12–20 active parameters:
 - A-type potassium: `soma_kap`, `axon_kap`, `basal_kap`, `soma_kad`;
 - slow/recovery currents as needed: `soma_hbar`, `KirGbar`, `soma_km`,
   `mykca_init`, `soma_kca`;
+- channel kinetics when supported by sensitivity analysis:
+  `kd_deactivation_tau_scale`, `nat_fast_inactivation_tau_scale`,
+  `nat_slow_recovery_tau_scale`, `h_tau_scale`;
 - selected passive values only if passive fitting has not already been staged:
   `RmSoma`, `Epas`, and `CmSoma`.
 

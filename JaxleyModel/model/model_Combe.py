@@ -119,6 +119,10 @@ class CombeParameters:
     icand_can: float = 0.0
     nap_gnabar: float = 0.0
     gip3: float = 1.85
+    kd_deactivation_tau_scale: float = 1.0
+    nat_fast_inactivation_tau_scale: float = 1.0
+    nat_slow_recovery_tau_scale: float = 1.0
+    h_tau_scale: float = 1.0
 
 
 COMBE_PARAMS = CombeParameters()
@@ -167,10 +171,17 @@ PASSIVE_PARAMETER_KEYS = (
     "SpineFactorBasal",
     "SpineFactorTuft",
 )
+KINETIC_PARAMETER_KEYS = (
+    "kd_deactivation_tau_scale",
+    "nat_fast_inactivation_tau_scale",
+    "nat_slow_recovery_tau_scale",
+    "h_tau_scale",
+)
 
 params = {
     "conductances": {key: getattr(COMBE_PARAMS, key) for key in CONDUCTANCE_PARAMETER_KEYS},
     "passive": {key: getattr(COMBE_PARAMS, key) for key in PASSIVE_PARAMETER_KEYS},
+    "kinetics": {key: getattr(COMBE_PARAMS, key) for key in KINETIC_PARAMETER_KEYS},
 }
 
 bounds = {
@@ -214,6 +225,10 @@ bounds = {
     "scale_Na_conduct": [1.0, 30.0],
     "icangbar": [0.0, 0.2],
     "nap_gnabar": [0.0, 0.001],
+    "kd_deactivation_tau_scale": [0.25, 4.0],
+    "nat_fast_inactivation_tau_scale": [0.5, 2.0],
+    "nat_slow_recovery_tau_scale": [0.5, 2.0],
+    "h_tau_scale": [0.5, 2.0],
 }
 
 
@@ -617,7 +632,25 @@ def set_soma_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_on(cell, soma, "na16a_persist", p.psoma)
     set_on(cell, soma, "na16a_slowdown", p.slowsoma)
     set_on(cell, soma, "na16a_C1O1v2", p.proximalv)
+    set_on(
+        cell,
+        soma,
+        "na16a_fast_inactivation_tau_scale",
+        p.nat_fast_inactivation_tau_scale,
+    )
+    set_on(
+        cell,
+        soma,
+        "na16a_slow_recovery_tau_scale",
+        p.nat_slow_recovery_tau_scale,
+    )
     set_on(cell, soma, "kd_gbar", p.gkdrsoma)
+    set_on(
+        cell,
+        soma,
+        "kd_deactivation_tau_scale",
+        p.kd_deactivation_tau_scale,
+    )
     set_on(cell, soma, "Kv2like_gbar", p.gkv2soma)
     set_on(cell, soma, "nap_gnabar", p.nap_gnabar)
     set_on(cell, soma, "nap_K", 4.5)
@@ -625,6 +658,7 @@ def set_soma_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_on(cell, soma, "h_gbar", p.soma_hbar)
     set_on(cell, soma, "h_K", 8.8)
     set_on(cell, soma, "h_vhalf", -82.0)
+    set_on(cell, soma, "h_tau_scale", p.h_tau_scale)
     set_on(cell, soma, "kap_gkabar", p.soma_kap)
     set_on(cell, soma, "km_gbar", p.soma_km)
     set_on(cell, soma, "cal_gcalbar", 0.1 * p.soma_caL)
@@ -667,6 +701,7 @@ def set_apical_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_on(cell, apical, "mykca_gkbar", np.where((dist < 200.0) & (dist > 50.0), 2.0 * p.mykca_init, 0.5 * p.mykca_init))
     set_on(cell, apical, "h_gbar", p.soma_hbar * (1.0 + (6.0 / 5.0) * capped_h_dist / 100.0))
     set_on(cell, apical, "h_vhalf", np.where(capped_h_dist > 100.0, -81.0 - 8.0 * (ndist - 100.0) / 200.0, -81.0))
+    set_on(cell, apical, "h_tau_scale", p.h_tau_scale)
     set_on(cell, apical, "kap_gkabar", np.where(capped_h_dist > 100.0, 0.0, p.soma_kap * (1.0 + capped_h_dist / 100.0)))
     set_on(cell, apical, "kad_gkabar", np.where(capped_h_dist > 100.0, p.soma_kad * (1.0 + capped_h_dist / 100.0), 0.0))
     set_on(cell, apical, "Kv2like_gbar", np.where(capped_h_dist > 100.0, p.gkv2 * p.gkv2scale, p.gkv2))
@@ -675,7 +710,25 @@ def set_apical_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_on(cell, apical, "na16a_slowdown", p.slownotsoma)
     set_on(cell, apical, "na16a_dist", apical_na16a_dist(dist))
     set_on(cell, apical, "na16a_C1O1v2", apical_na16a_c1o1v2(dist, p))
+    set_on(
+        cell,
+        apical,
+        "na16a_fast_inactivation_tau_scale",
+        p.nat_fast_inactivation_tau_scale,
+    )
+    set_on(
+        cell,
+        apical,
+        "na16a_slow_recovery_tau_scale",
+        p.nat_slow_recovery_tau_scale,
+    )
     set_on(cell, apical, "kd_gbar", p.gkdrapical)
+    set_on(
+        cell,
+        apical,
+        "kd_deactivation_tau_scale",
+        p.kd_deactivation_tau_scale,
+    )
     set_on(cell, apical, "km_gbar", p.soma_km)
     set_on(cell, apical, "kir_gbar", np.where(dist > 100.0, p.KirGbar, p.KirGbar * dist / 100.0))
     set_on(cell, apical, "kir_ek", -95.0)
@@ -685,7 +738,19 @@ def set_apical_channels(cell, p: CombeParameters = COMBE_PARAMS):
 def set_axon_channels(cell, p: CombeParameters = COMBE_PARAMS):
     axon = group_mask(cell, "axon")
     set_on(cell, axon, "nax_gbar", p.gna * p.AXNa)
+    set_on(
+        cell,
+        axon,
+        "nax_fast_inactivation_tau_scale",
+        p.nat_fast_inactivation_tau_scale,
+    )
     set_on(cell, axon, "kd_gbar", p.axongkdr)
+    set_on(
+        cell,
+        axon,
+        "kd_deactivation_tau_scale",
+        p.kd_deactivation_tau_scale,
+    )
     set_on(cell, axon, "km_gbar", 3.0 * p.soma_km)
     set_on(cell, axon, "kap_gkabar", p.axon_kap)
     set_on(cell, axon, "Kv2like_gbar", p.gkv2axon)
@@ -696,12 +761,25 @@ def set_basal_channels(cell, p: CombeParameters = COMBE_PARAMS):
     basal = group_mask(cell, "basal")
     dist = cell.nodes["dist_from_soma"].to_numpy(dtype=float)
     set_on(cell, basal, "na3dend_gbar", p.gnadend)
+    set_on(
+        cell,
+        basal,
+        "na3dend_fast_inactivation_tau_scale",
+        p.nat_fast_inactivation_tau_scale,
+    )
     set_on(cell, basal, "nap_gnabar", p.nap_gnabar)
     set_on(cell, basal, "nap_K", 4.5)
     set_on(cell, basal, "nap_vhalf", -60.4)
     set_on(cell, basal, "kap_gkabar", p.basal_kap)
     set_on(cell, basal, "h_gbar", p.soma_hbar)
+    set_on(cell, basal, "h_tau_scale", p.h_tau_scale)
     set_on(cell, basal, "kd_gbar", p.gkdrdend)
+    set_on(
+        cell,
+        basal,
+        "kd_deactivation_tau_scale",
+        p.kd_deactivation_tau_scale,
+    )
     set_on(cell, basal, "Kv2like_gbar", p.gkv2 * p.gkv2scale)
     set_on(cell, basal, "kir_gbar", np.where(dist > 40.0, p.KirGbar, p.KirGbar * dist / 40.0))
     set_on(cell, basal, "kir_ek", -95.0)
@@ -721,7 +799,7 @@ def _passive_sigmoid_jax(distance, soma_value, tuft_value, half_distance, slope)
 EXACT_HOC_UPDATE_MODE = "exact_hoc_frozen_grid"
 RULE_UPDATE_MODE = "rule_based_final_centers"
 SUPPORTED_FIT_PARAMETER_KEYS = frozenset(
-    (*CONDUCTANCE_PARAMETER_KEYS, *PASSIVE_PARAMETER_KEYS)
+    (*CONDUCTANCE_PARAMETER_KEYS, *PASSIVE_PARAMETER_KEYS, *KINETIC_PARAMETER_KEYS)
 )
 
 
@@ -748,7 +826,10 @@ def _apical_na16a_c1o1v2_jax(distance, p):
 
 
 def _reference_parameters(cell):
-    return dict(getattr(cell, "_combe_reference_parameters", asdict(COMBE_PARAMS)))
+    return {
+        **asdict(COMBE_PARAMS),
+        **dict(getattr(cell, "_combe_reference_parameters", {})),
+    }
 
 
 def _parameter_update_mode(cell):
@@ -1064,6 +1145,91 @@ def _conductance_fit_profiles(cell, p, update_mode):
     )
 
 
+def _kinetic_fit_profiles(cell, p):
+    """Return shared kinetic-scale profiles for each active channel placement."""
+
+    return (
+        _fit_profile(
+            cell.soma,
+            "kd_deactivation_tau_scale",
+            p["kd_deactivation_tau_scale"],
+            "kd_deactivation_tau_scale",
+        ),
+        _fit_profile(
+            cell.apical,
+            "kd_deactivation_tau_scale",
+            p["kd_deactivation_tau_scale"],
+            "kd_deactivation_tau_scale",
+        ),
+        _fit_profile(
+            cell.axon,
+            "kd_deactivation_tau_scale",
+            p["kd_deactivation_tau_scale"],
+            "kd_deactivation_tau_scale",
+        ),
+        _fit_profile(
+            cell.basal,
+            "kd_deactivation_tau_scale",
+            p["kd_deactivation_tau_scale"],
+            "kd_deactivation_tau_scale",
+        ),
+        _fit_profile(
+            cell.soma,
+            "na16a_fast_inactivation_tau_scale",
+            p["nat_fast_inactivation_tau_scale"],
+            "nat_fast_inactivation_tau_scale",
+        ),
+        _fit_profile(
+            cell.apical,
+            "na16a_fast_inactivation_tau_scale",
+            p["nat_fast_inactivation_tau_scale"],
+            "nat_fast_inactivation_tau_scale",
+        ),
+        _fit_profile(
+            cell.axon,
+            "nax_fast_inactivation_tau_scale",
+            p["nat_fast_inactivation_tau_scale"],
+            "nat_fast_inactivation_tau_scale",
+        ),
+        _fit_profile(
+            cell.basal,
+            "na3dend_fast_inactivation_tau_scale",
+            p["nat_fast_inactivation_tau_scale"],
+            "nat_fast_inactivation_tau_scale",
+        ),
+        _fit_profile(
+            cell.soma,
+            "na16a_slow_recovery_tau_scale",
+            p["nat_slow_recovery_tau_scale"],
+            "nat_slow_recovery_tau_scale",
+        ),
+        _fit_profile(
+            cell.apical,
+            "na16a_slow_recovery_tau_scale",
+            p["nat_slow_recovery_tau_scale"],
+            "nat_slow_recovery_tau_scale",
+        ),
+        _fit_profile(
+            cell.soma,
+            "h_tau_scale",
+            p["h_tau_scale"],
+            "h_tau_scale",
+        ),
+        _fit_profile(
+            cell.apical,
+            "h_tau_scale",
+            p["h_tau_scale"],
+            "h_tau_scale",
+        ),
+        _fit_profile(
+            cell.basal,
+            "h_tau_scale",
+            p["h_tau_scale"],
+            "h_tau_scale",
+        ),
+    )
+
+
 def set_fitted_passive_parameters(
     cell,
     p,
@@ -1106,6 +1272,27 @@ def set_fitted_conductance_parameters(
     )
 
 
+def set_fitted_kinetic_parameters(
+    cell,
+    p,
+    state=None,
+    *,
+    selected_keys=KINETIC_PARAMETER_KEYS,
+    reference=None,
+    update_mode=None,
+):
+    selected_keys = frozenset(selected_keys)
+    reference = reference or _reference_parameters(cell)
+    update_mode = update_mode or _parameter_update_mode(cell)
+    return _write_selected_profiles(
+        _kinetic_fit_profiles(cell, p),
+        _kinetic_fit_profiles(cell, reference),
+        selected_keys,
+        update_mode,
+        state,
+    )
+
+
 def set_fitted_parameters(cell, keys, values, state=None):
     keys = tuple(keys)
     if len(keys) != len(values):
@@ -1135,6 +1322,14 @@ def set_fitted_parameters(cell, keys, values, state=None):
         update_mode=update_mode,
     )
     state = set_fitted_conductance_parameters(
+        cell,
+        p,
+        state,
+        selected_keys=selected_keys,
+        reference=reference,
+        update_mode=update_mode,
+    )
+    state = set_fitted_kinetic_parameters(
         cell,
         p,
         state,

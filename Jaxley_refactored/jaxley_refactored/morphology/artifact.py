@@ -154,9 +154,10 @@ class HocArtifactProvider:
                     continue
                 cell.nodes[column] = values
 
-        cell._combe_reference_parameters = manifest.get(
-            "reference_parameters", self.backend.reference_parameters
-        )
+        cell._combe_reference_parameters = {
+            **self.backend.reference_parameters,
+            **manifest.get("reference_parameters", {}),
+        }
         cell._combe_parameter_update_mode = manifest.get(
             "parameter_update_mode", "exact_hoc_frozen_grid"
         )
@@ -172,4 +173,3 @@ class HocArtifactProvider:
                 "neuron_required": False,
             },
         )
-

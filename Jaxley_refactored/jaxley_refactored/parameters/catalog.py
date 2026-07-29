@@ -163,6 +163,10 @@ _VALUES = {
     "CmSoma": (1.0, (0.3, 5.0)),
     "SpineFactorBasal": (3.5, (1.0, 6.0)),
     "SpineFactorTuft": (3.5, (1.0, 6.0)),
+    "kd_deactivation_tau_scale": (1.0, (0.25, 4.0)),
+    "nat_fast_inactivation_tau_scale": (1.0, (0.5, 2.0)),
+    "nat_slow_recovery_tau_scale": (1.0, (0.5, 2.0)),
+    "h_tau_scale": (1.0, (0.5, 2.0)),
 }
 
 _PASSIVE = {
@@ -178,6 +182,12 @@ _PASSIVE = {
     "CmSoma",
     "SpineFactorBasal",
     "SpineFactorTuft",
+}
+_KINETIC = {
+    "kd_deactivation_tau_scale",
+    "nat_fast_inactivation_tau_scale",
+    "nat_slow_recovery_tau_scale",
+    "h_tau_scale",
 }
 
 _TARGETS = {
@@ -221,21 +231,48 @@ _TARGETS = {
     "CmSoma": ("all.capacitance",),
     "SpineFactorBasal": ("basal.capacitance", "basal.Leak_gLeak"),
     "SpineFactorTuft": ("apical.capacitance", "apical.Leak_gLeak"),
+    "kd_deactivation_tau_scale": (
+        "soma.kd_deactivation_tau_scale",
+        "apical.kd_deactivation_tau_scale",
+        "axon.kd_deactivation_tau_scale",
+        "basal.kd_deactivation_tau_scale",
+    ),
+    "nat_fast_inactivation_tau_scale": (
+        "soma.na16a_fast_inactivation_tau_scale",
+        "apical.na16a_fast_inactivation_tau_scale",
+        "axon.nax_fast_inactivation_tau_scale",
+        "basal.na3dend_fast_inactivation_tau_scale",
+    ),
+    "nat_slow_recovery_tau_scale": (
+        "soma.na16a_slow_recovery_tau_scale",
+        "apical.na16a_slow_recovery_tau_scale",
+    ),
+    "h_tau_scale": (
+        "soma.h_tau_scale",
+        "apical.h_tau_scale",
+        "basal.h_tau_scale",
+    ),
 }
 
 
 def combe2023_catalog() -> ParameterCatalog:
-    """Return the canonical 40-parameter catalog in stable legacy order."""
+    """Return 40 legacy Combe parameters plus four kinetic time scales."""
     specs = []
     for name, (default, limits) in _VALUES.items():
-        passive = name in _PASSIVE
+        tags = (
+            ("passive",)
+            if name in _PASSIVE
+            else ("kinetics",)
+            if name in _KINETIC
+            else ("conductance",)
+        )
         specs.append(
             ParameterSpec(
                 name=name,
                 default=default,
                 bounds=limits,
                 units=_units(name),
-                tags=("passive",) if passive else ("conductance",),
+                tags=tags,
                 targets=_TARGETS[name],
             )
         )
@@ -253,6 +290,10 @@ def _units(name: str) -> str:
         return "mV"
     if name == "CmSoma":
         return "uF/cm2"
-    if name.startswith("Spine") or name in {"AXNa", "gkv2scale", "scale_Na_conduct"}:
+    if (
+        name.startswith("Spine")
+        or name.endswith("_tau_scale")
+        or name in {"AXNa", "gkv2scale", "scale_Na_conduct"}
+    ):
         return "dimensionless"
     return "S/cm2"

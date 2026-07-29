@@ -27,6 +27,7 @@ class Nax(Channel):
             f"{prefix}_Rd": 0.03,
             f"{prefix}_thinf": -50.0,
             f"{prefix}_qinf": 1.0,
+            f"{prefix}_fast_inactivation_tau_scale": 1.0,
             "eNa": 50.0,
             "celsius": 34.0,
         }
@@ -61,6 +62,6 @@ class Nax(Channel):
         a = trap0(v, params[f"{prefix}_thi1"], params[f"{prefix}_Rd"], params[f"{prefix}_qd"])
         b = trap0(-v, -params[f"{prefix}_thi2"], params[f"{prefix}_Rg"], params[f"{prefix}_qg"])
         htau = jnp.maximum(1.0 / (a + b) / qt, params[f"{prefix}_hmin"])
+        htau = htau * params[f"{prefix}_fast_inactivation_tau_scale"]
         hinf = sigmoid_arg((v - params[f"{prefix}_thinf"]) / params[f"{prefix}_qinf"])
         return minf, mtau, hinf, htau
-

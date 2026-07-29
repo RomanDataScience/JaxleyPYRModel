@@ -15,6 +15,7 @@ class H(Channel):
             f"{prefix}_vhalf": -81.0,
             f"{prefix}_K": 8.5,
             f"{prefix}_eh": -10.0,
+            f"{prefix}_tau_scale": 1.0,
         }
         self.channel_states = {f"{prefix}_n": 0.0}
         self.current_name = "i_H"
@@ -37,6 +38,6 @@ class H(Channel):
         prefix = channel_prefix(self)
         taun = 2.0 / (safe_exp((v + 186.32) / -29.91) + safe_exp((v + 21.84) / 13.77))
         taun = jnp.maximum(taun, 5.0)
+        taun = taun * params[f"{prefix}_tau_scale"]
         ninf = 1.0 - 1.0 / (1.0 + safe_exp((params[f"{prefix}_vhalf"] - v) / params[f"{prefix}_K"]))
         return ninf, taun
-

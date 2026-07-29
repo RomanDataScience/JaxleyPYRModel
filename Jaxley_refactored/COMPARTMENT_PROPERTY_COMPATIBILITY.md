@@ -1,6 +1,7 @@
 # HOC-compatible compartment-property updates
 
-Status: implemented in `JaxleyModel/model/model_Combe.py` on 2026-07-27.
+Status: implemented in `JaxleyModel/model/model_Combe.py`; kinetic-scale
+coverage added on 2026-07-29.
 
 ## Resolved issue
 
@@ -91,7 +92,7 @@ validation oracle when that structural behavior is required.
 
 ## Selective dependency behavior
 
-The current 40 fitted keys now have explicit target dependencies. Examples:
+All 44 fitted keys now have explicit target dependencies. Examples:
 
 - `soma_hbar` writes only soma, apical, and basal `h_gbar`.
 - `RmSoma` writes only regional `Leak_gLeak`.
@@ -99,6 +100,9 @@ The current 40 fitted keys now have explicit target dependencies. Examples:
 - `gna` writes only somatic `na16a_gbar` and axonal `nax_gbar`.
 - `gkv2scale` writes only apical and basal `Kv2like_gbar`.
 - `Epas` writes only `Leak_eLeak`.
+- `nat_fast_inactivation_tau_scale` writes the sodium inactivation scale in
+  soma, apical, axon, and basal channel variants.
+- `h_tau_scale` writes only soma, apical, and basal HCN time scales.
 
 The fitter no longer overwrites `na16a_dist` or `na16a_C1O1v2`; neither is
 controlled by the current fit-key catalog.
@@ -118,19 +122,19 @@ MPLCONFIGDIR=/tmp/jaxley-mpl \
 Current result:
 
 ```text
-50 passed
+59 passed
 ```
 
 The suite covers:
 
 - Empty-update identity.
-- Bitwise identity for all 40 reference values.
-- Exhaustive target isolation and a real property change for all 40 knobs.
+- Bitwise identity for all 44 reference values.
+- Exhaustive target isolation and a real property change for all 44 knobs.
 - Exported HOC endpoint semantics and sectionwise profiles.
 - Simultaneous nonlinear passive updates.
 - Coupled conductance products.
 - Activation of zero-default conductances.
-- JIT compilation and finite gradients.
+- JIT compilation and finite gradients, including every kinetic scale.
 - SWC final-center rule behavior.
 - Invalid request validation.
 

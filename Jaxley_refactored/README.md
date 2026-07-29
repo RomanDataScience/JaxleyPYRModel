@@ -175,10 +175,13 @@ The main executable configuration is
   reference path.
 - `runtime`: CPU/GPU, precision, JIT, solver, rematerialization, and memory.
 
-A distribution override uses the same canonical 40-parameter catalog as
-fitting. If the coefficient is selected for fitting, the override changes its
-initial value. If it is excluded, the override remains fixed during fitting.
-This keeps one implementation of every Combe profile.
+A distribution override uses the same canonical 44-parameter catalog as
+fitting: the original 28 conductance and 12 passive parameters, followed by
+four shared kinetic time scales. If the coefficient is selected for fitting,
+the override changes its initial value. If it is excluded, the override remains
+fixed during fitting. This keeps one implementation of every Combe profile.
+See [docs/KINETIC_PARAMETERS.md](docs/KINETIC_PARAMETERS.md) for the kinetic
+equations, regional targets, bounds, and interpretation caveats.
 
 Changing morphology, discretization, enabled mechanisms, or profile family is
 a static change and causes a new model signature/JAX compilation. Parameter

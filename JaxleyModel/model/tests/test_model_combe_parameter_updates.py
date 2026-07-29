@@ -16,6 +16,7 @@ from JaxleyModel.model.model_Combe import (
     COMBE_PARAMS,
     CONDUCTANCE_PARAMETER_KEYS,
     EXACT_HOC_UPDATE_MODE,
+    KINETIC_PARAMETER_KEYS,
     PASSIVE_PARAMETER_KEYS,
     RULE_UPDATE_MODE,
     Combe2023,
@@ -102,6 +103,27 @@ EXPECTED_TARGETS = {
     ),
     "icangbar": (("icand_gbar", "soma"), ("icand_gbar", "apical")),
     "nap_gnabar": (("nap_gnabar", "soma"), ("nap_gnabar", "basal")),
+    "kd_deactivation_tau_scale": (
+        ("kd_deactivation_tau_scale", "soma"),
+        ("kd_deactivation_tau_scale", "apical"),
+        ("kd_deactivation_tau_scale", "axon"),
+        ("kd_deactivation_tau_scale", "basal"),
+    ),
+    "nat_fast_inactivation_tau_scale": (
+        ("na16a_fast_inactivation_tau_scale", "soma"),
+        ("na16a_fast_inactivation_tau_scale", "apical"),
+        ("nax_fast_inactivation_tau_scale", "axon"),
+        ("na3dend_fast_inactivation_tau_scale", "basal"),
+    ),
+    "nat_slow_recovery_tau_scale": (
+        ("na16a_slow_recovery_tau_scale", "soma"),
+        ("na16a_slow_recovery_tau_scale", "apical"),
+    ),
+    "h_tau_scale": (
+        ("h_tau_scale", "soma"),
+        ("h_tau_scale", "apical"),
+        ("h_tau_scale", "basal"),
+    ),
 }
 
 # Materialize generator-valued entries once so parametrized tests are repeatable.
@@ -148,7 +170,11 @@ def test_empty_update_is_a_true_noop(hoc_cell):
 
 
 def test_reference_values_are_bitwise_identity(hoc_cell):
-    keys = CONDUCTANCE_PARAMETER_KEYS + PASSIVE_PARAMETER_KEYS
+    keys = (
+        CONDUCTANCE_PARAMETER_KEYS
+        + PASSIVE_PARAMETER_KEYS
+        + KINETIC_PARAMETER_KEYS
+    )
     values = jnp.asarray([getattr(COMBE_PARAMS, key) for key in keys])
 
     updates = set_fitted_parameters(hoc_cell, keys, values)
@@ -308,6 +334,41 @@ def test_parameter_updates_remain_jittable_and_differentiable(hoc_cell):
     assert jnp.isfinite(value)
     assert jnp.isfinite(gradient)
     assert gradient > 0.0
+
+
+@pytest.mark.parametrize("key", KINETIC_PARAMETER_KEYS)
+def test_kinetic_parameter_updates_are_jittable_and_differentiable(hoc_cell, key):
+    @jax.jit
+    def total_scale(value):
+        updates = set_fitted_parameters(hoc_cell, (key,), jnp.asarray([value]))
+        return sum(jnp.sum(update["val"]) for update in updates)
+
+    value = total_scale(getattr(COMBE_PARAMS, key))
+    gradient = jax.grad(total_scale)(getattr(COMBE_PARAMS, key))
+    assert jnp.isfinite(value)
+    assert jnp.isfinite(gradient)
+    assert gradient > 0.0
+
+
+def test_old_reference_metadata_gets_new_kinetic_defaults(hoc_cell):
+    original = hoc_cell._combe_reference_parameters
+    hoc_cell._combe_reference_parameters = {
+        key: value
+        for key, value in original.items()
+        if key not in KINETIC_PARAMETER_KEYS
+    }
+    try:
+        updates = set_fitted_parameters(
+            hoc_cell,
+            ("h_tau_scale",),
+            jnp.asarray([1.5]),
+        )
+    finally:
+        hoc_cell._combe_reference_parameters = original
+
+    assert updates
+    assert all(update["key"] == "h_tau_scale" for update in updates)
+    assert all(np.asarray(update["val"]).min() > 1.0 for update in updates)
 
 
 def test_rule_mode_uses_final_compartment_centers():

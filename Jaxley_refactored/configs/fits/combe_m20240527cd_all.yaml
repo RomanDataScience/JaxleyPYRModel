@@ -28,7 +28,9 @@ model:
     catalog: combe2023
     value_overrides: {}
     fit:
-      include_tags: [conductance, passive]
+      # The canonical 44-D fit contains 28 conductance, 12 passive, and four
+      # shared channel-kinetic time-scale parameters.
+      include_tags: [conductance, passive, kinetics]
       include: []
       exclude: []
 
