@@ -8,9 +8,9 @@ search:
     # LSU_1 inherits the 40 conductance and passive parameters in the canonical
     # Combe catalog, matching the parameter vector used by the local pipeline.
     parameter_names: []
-    population_size: 30
-    generations: 50
-    sigma0: 0.15
+    population_size: 40
+    generations: 100
+    sigma0: 0.25
     boundary_policy: resample
     invalid_loss: 1.0e12
     checkpoint_every_generations: 1
@@ -35,8 +35,8 @@ search:
     global_rank_by: training_loss
     local_rank_by: training_loss
     final_rank_by: validation_primary_endpoint
-    keep_after_global: 4
-    keep_after_exploration: 2
+    keep_after_global: 10
+    keep_after_exploration: 10
 
   reporting:
     cma_plot_every_generations: 1
