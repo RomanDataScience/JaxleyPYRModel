@@ -28,7 +28,7 @@ fit:
       - kind: voltage_mse
         label: hyperpolarizing_waveform_mse
         weight: 1.17
-        protocols: [hyperpolarizing_pulse]
+        protocols: [depolarizing_step, hyperpolarizing_pulse]
         window: score
         scale_mV: 5.0
 
