@@ -58,6 +58,8 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     components = {component.label: component for component in lsu.fit.components}
     assert components["depolarizing_firing_rate"].weight == 1.0
     assert components["depolarizing_voltage_plateau"].weight == 0.5
+    assert components["depolarizing_recovery_waveform"].weight == 0.5
+    assert components["depolarizing_recovery_derivative"].weight == 0.2
 
 
 def test_registered_waveform_losses_are_finite_and_differentiable():

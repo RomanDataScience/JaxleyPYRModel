@@ -109,7 +109,9 @@ objective.
 smooth depolarizing firing-rate, plateau, spike-shape, recovery-trajectory, and
 after-hyperpolarization terms. Its plateau term has weight `0.5`, half the
 firing-rate term's weight, so plateau matching is a strong secondary target.
-It inherits Adam with backtracking.
+The post-step recovery trajectory and derivative have weights `0.5` and `0.2`,
+respectively, emphasizing both decay shape and return rate. It inherits Adam
+with backtracking.
 
 Use a 100-step smoke test with any loss configuration:
 
