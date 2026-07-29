@@ -124,6 +124,41 @@ class SegmentedTraceLoader:
 
         epoch_start = float(row["epoch_start_ms"]) - float(row["segment_start_ms"])
         epoch_stop = float(row["epoch_stop_ms"]) - float(row["segment_start_ms"])
+        simulation_metadata: dict[str, object] = {}
+        simulation_post_ms = spec.simulation_post_ms_by_protocol.get(
+            protocol, spec.simulation_post_ms
+        )
+        if simulation_post_ms is not None:
+            source_n_steps = len(time)
+            requested_stop = epoch_stop + simulation_post_ms
+            tolerance = max(1e-9, dt * 1e-6)
+            if float(time[-1]) + dt + tolerance < requested_stop:
+                available_post = float(time[-1] - epoch_stop)
+                raise ValueError(
+                    f"{spec.cell_id}/{row['trace']}/{protocol}: requested "
+                    f"{simulation_post_ms:g} ms after stimulus, but only "
+                    f"{available_post:g} ms are available."
+                )
+            retained_steps = int(
+                np.searchsorted(time, requested_stop + tolerance, side="right")
+            )
+            retained_steps = min(source_n_steps, retained_steps)
+            if retained_steps <= 1:
+                raise ValueError(
+                    f"{spec.cell_id}/{row['trace']}/{protocol}: "
+                    "simulation window retains fewer than two samples."
+                )
+            voltage = voltage[:retained_steps]
+            current = current[:retained_steps]
+            time = time[:retained_steps]
+            simulation_metadata = {
+                "simulation_post_stimulus_ms": simulation_post_ms,
+                "simulation_requested_stop_ms": requested_stop,
+                "simulation_actual_stop_ms": float(time[-1]),
+                "simulation_actual_post_stimulus_ms": float(time[-1] - epoch_stop),
+                "simulation_window_truncated": retained_steps < source_n_steps,
+                "source_n_steps": source_n_steps,
+            }
         score_start = max(float(time[0]), epoch_start - spec.score_pre_ms)
         score_stop = min(float(time[-1]), epoch_stop + spec.score_post_ms)
         mask = (time >= score_start) & (time <= score_stop)
@@ -153,6 +188,7 @@ class SegmentedTraceLoader:
                 "epoch_stop_ms": epoch_stop,
                 "was_clipped": row["was_clipped"].lower() == "true",
                 "epoch_current_delta_pA": float(row["epoch_current_delta_pA"]),
+                **simulation_metadata,
             },
             checksums={kind: file_sha256(path) for kind, path in paths.items()},
         )

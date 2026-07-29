@@ -29,9 +29,9 @@ DEFAULT_EPOCH_BIN_MS = 1.0
 DEFAULT_MIN_DEPOL_MS = 50.0
 DEFAULT_MIN_HYPER_MS = 20.0
 DEFAULT_DEPOL_PRE_MS = 200.0
-DEFAULT_DEPOL_POST_MS = 1000.0
+DEFAULT_DEPOL_POST_MS = 500.0
 DEFAULT_HYPER_PRE_MS = 500.0
-DEFAULT_HYPER_POST_MS = 500.0
+DEFAULT_HYPER_POST_MS = 150.0
 
 FLOAT_RE = re.compile(rb"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?")
 
@@ -352,7 +352,7 @@ def analyze_trace(
         size=size,
         dt_ms=dt_ms,
         start_anchor_index=int(depol_epoch["start_index"]),
-        stop_anchor_index=int(depol_epoch["start_index"]),
+        stop_anchor_index=int(depol_epoch["stop_index"]),
         pre_ms=depol_pre_ms,
         post_ms=depol_post_ms,
     )

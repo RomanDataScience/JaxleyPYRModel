@@ -21,6 +21,54 @@ def test_default_config_resolves_paths_and_is_stable():
     assert stable_hash(asdict(config)) == stable_hash(asdict(config))
 
 
+def test_optional_post_stimulus_simulation_window_is_validated():
+    default = AppConfig.from_mapping({})
+    assert default.dataset.simulation_post_ms is None
+    assert default.dataset.simulation_post_ms_by_protocol == {}
+
+    configured = AppConfig.from_mapping(
+        {
+            "dataset": {
+                "simulation_window": {
+                    "post_stimulus_ms": 500.0,
+                    "post_stimulus_ms_by_protocol": {
+                        "hyperpolarizing_pulse": 150.0,
+                    },
+                }
+            }
+        }
+    )
+    assert configured.dataset.simulation_post_ms == 500.0
+    assert configured.dataset.simulation_post_ms_by_protocol == {
+        "hyperpolarizing_pulse": 150.0,
+    }
+    assert stable_hash(asdict(configured)) != stable_hash(asdict(default))
+
+    with pytest.raises(ConfigError, match="post_stimulus_ms"):
+        AppConfig.from_mapping(
+            {
+                "dataset": {
+                    "simulation_window": {
+                        "post_stimulus_ms": 0.0,
+                    }
+                }
+            }
+        )
+
+    with pytest.raises(ConfigError, match="hyperpolarizing_pulse"):
+        AppConfig.from_mapping(
+            {
+                "dataset": {
+                    "simulation_window": {
+                        "post_stimulus_ms_by_protocol": {
+                            "hyperpolarizing_pulse": -1.0,
+                        }
+                    }
+                }
+            }
+        )
+
+
 def test_unknown_root_key_is_rejected():
     with pytest.raises(ConfigError, match="Unknown configuration key"):
         AppConfig.from_mapping({"schema_version": 1, "typo": True})

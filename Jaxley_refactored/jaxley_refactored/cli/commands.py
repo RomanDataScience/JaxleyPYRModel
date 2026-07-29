@@ -492,6 +492,14 @@ def _hybrid_fit(config, args) -> int:
             "validation_input_checksums": {
                 record.trace_key: record.checksums for record in validation_records
             },
+            "training_trace_shapes": {
+                record.trace_key: len(record.time_ms)
+                for record in training_records
+            },
+            "validation_trace_shapes": {
+                record.trace_key: len(record.time_ms)
+                for record in validation_records
+            },
             **collect_provenance(Path(__file__).resolve().parents[3], device),
         },
     )

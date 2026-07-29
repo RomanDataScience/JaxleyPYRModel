@@ -10,7 +10,7 @@ search:
     parameter_names: []
     population_size: 40
     generations: 100
-    sigma0: 0.25
+    sigma0: 0.15
     boundary_policy: resample
     invalid_loss: 1.0e12
     checkpoint_every_generations: 1

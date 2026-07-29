@@ -170,6 +170,10 @@ The main executable configuration is
 - `model.distributions.overrides`: change spatial-profile coefficients.
 - `model.parameters.fit`: select fitted values by tags or names.
 - `dataset.selection`: choose cells, traces, and segment types.
+- `dataset.simulation_window`: optionally end simulations a fixed time after
+  stimulus offset, with `post_stimulus_ms_by_protocol` overrides when protocols
+  need different horizons. The loader fails explicitly if a recording does not
+  contain the requested interval.
 - `fit.objective`: choose trace/protocol aggregation and weights.
 - `fit.batching.strategy`: `vmap` for throughput or `serial` as a lower-memory
   reference path.

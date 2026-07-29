@@ -80,6 +80,10 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert components["depolarizing_recovery_derivative"].weight == 0.2
     assert components["hyperpolarizing_waveform_mse"].weight == 1.17
     assert components["hyperpolarizing_waveform_mse"].scale == 5.0
+    assert components["hyperpolarizing_waveform_mse"].protocols == (
+        "depolarizing_step",
+        "hyperpolarizing_pulse",
+    )
 
     # At a residual of one configured scale, squared terms contribute 1 and
     # pseudo-Huber terms contribute sqrt(2) - 1. Account for the 0.7/0.3
@@ -121,6 +125,13 @@ def test_every_lsu_variant_inherits_the_same_reweighted_objective():
     )
     configs = tuple(load_config(path) for path in paths)
     reference = configs[0].fit
+    assert all(
+        config.dataset.simulation_post_ms == 500.0
+        and config.dataset.simulation_post_ms_by_protocol
+        == {"hyperpolarizing_pulse": 150.0}
+        and config.dataset.score_post_ms == 500.0
+        for config in configs
+    )
 
     for config in configs[1:]:
         assert config.fit.components == reference.components

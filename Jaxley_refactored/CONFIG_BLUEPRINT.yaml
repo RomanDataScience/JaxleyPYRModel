@@ -109,6 +109,11 @@ dataset:
     target_dt_ms: 0.05
     voltage_method: linear
     current_method: zero_order_hold
+  # Optional trace cutoff. Omit to simulate the complete segmented recording.
+  simulation_window:
+    post_stimulus_ms: 500.0
+    post_stimulus_ms_by_protocol:
+      hyperpolarizing_pulse: 150.0
   score_windows:
     source: manifest_epoch
     pre_ms: 100.0

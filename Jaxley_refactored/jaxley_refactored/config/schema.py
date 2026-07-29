@@ -399,6 +399,10 @@ class DatasetSpec:
     current_scale_to_nA: float = 1e-3
     score_pre_ms: float = 100.0
     score_post_ms: float = 800.0
+    simulation_post_ms: float | None = None
+    simulation_post_ms_by_protocol: Mapping[str, float] = field(
+        default_factory=dict
+    )
 
     @classmethod
     def from_mapping(cls, value: Any) -> "DatasetSpec":
@@ -415,6 +419,7 @@ class DatasetSpec:
                 "validation",
                 "resampling",
                 "score_windows",
+                "simulation_window",
             },
             "dataset",
         )
@@ -429,6 +434,23 @@ class DatasetSpec:
         units = _mapping(data.get("units"), "dataset.units")
         resampling = _mapping(data.get("resampling"), "dataset.resampling")
         windows = _mapping(data.get("score_windows"), "dataset.score_windows")
+        simulation_window = _mapping(
+            data.get("simulation_window"), "dataset.simulation_window"
+        )
+        _strict(
+            simulation_window,
+            {"post_stimulus_ms", "post_stimulus_ms_by_protocol"},
+            "dataset.simulation_window",
+        )
+        post_by_protocol = _mapping(
+            simulation_window.get("post_stimulus_ms_by_protocol"),
+            "dataset.simulation_window.post_stimulus_ms_by_protocol",
+        )
+        if any(not str(protocol) for protocol in post_by_protocol):
+            raise ConfigError(
+                "dataset.simulation_window.post_stimulus_ms_by_protocol "
+                "cannot contain an empty protocol name."
+            )
         current_unit = str(units.get("current_on_disk", "pA"))
         scales = {"pA": 1e-3, "nA": 1.0}
         if current_unit not in scales:
@@ -466,6 +488,22 @@ class DatasetSpec:
             current_scale_to_nA=scales[current_unit],
             score_pre_ms=float(windows.get("pre_ms", 100.0)),
             score_post_ms=float(windows.get("post_ms", 800.0)),
+            simulation_post_ms=(
+                None
+                if "post_stimulus_ms" not in simulation_window
+                else _positive(
+                    simulation_window["post_stimulus_ms"],
+                    "dataset.simulation_window.post_stimulus_ms",
+                )
+            ),
+            simulation_post_ms_by_protocol={
+                str(protocol): _positive(
+                    duration,
+                    "dataset.simulation_window."
+                    f"post_stimulus_ms_by_protocol.{protocol}",
+                )
+                for protocol, duration in post_by_protocol.items()
+            },
         )
 
 

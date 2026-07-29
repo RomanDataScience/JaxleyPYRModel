@@ -1,5 +1,16 @@
 extends: ../optimizers/adam_backtracking.yaml
 
+# Simulate depolarizing records through 500 ms after stimulus offset. The
+# hyperpolarizing offset is at trace-local 550 ms, so its 150-ms override ends
+# both selected hyperpolarizing records at 700 ms.
+dataset:
+  simulation_window:
+    post_stimulus_ms: 500.0
+    post_stimulus_ms_by_protocol:
+      hyperpolarizing_pulse: 150.0
+  score_windows:
+    post_ms: 500.0
+
 # LSU_1 makes depolarizing firing rate and DBLO the two primary targets while
 # retaining secondary full-trace, plateau, spike-shape, recovery, AHP, and
 # hyperpolarizing constraints. Every term is continuous in simulated voltage.
