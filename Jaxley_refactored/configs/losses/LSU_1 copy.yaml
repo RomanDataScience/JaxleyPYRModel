@@ -22,14 +22,13 @@ fit:
         temperature_mV: 2.0
 
     components:
-      # Hyperpolarizing pulse: the full score window retains both pulse decay
-      # and post-pulse repolarization as a lower-priority waveform target.
+      # Hyperpolarizing pulse: retain score-window voltage MSE.
       - kind: voltage_mse
         label: hyperpolarizing_waveform_mse
-        weight: 0.5
+        weight: 1.0
         protocols: [hyperpolarizing_pulse]
         window: score
-        scale_mV: 5.0
+        scale_mV: 1.0
 
       # Depolarizing pulse: smooth firing-frequency surrogate.
       - kind: soft_firing_rate_error
