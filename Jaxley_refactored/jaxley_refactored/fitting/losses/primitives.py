@@ -86,6 +86,24 @@ def mean_voltage_error(predicted, observed, mask, *, scale=1.0, **_):
     return (difference / scale) ** 2
 
 
+def _soft_upward_crossings(
+    voltage,
+    *,
+    threshold_mV=-20.0,
+    temperature_mV=2.0,
+):
+    """Count positive rises in smooth threshold occupancy.
+
+    Summing positive occupancy increments gives approximately one event for a
+    complete below-to-above threshold excursion. Unlike multiplying adjacent
+    occupancies, a stationary near-threshold plateau contributes zero instead
+    of accumulating a fractional event at every sample.
+    """
+
+    above = jnn.sigmoid((voltage - threshold_mV) / temperature_mV)
+    return jnn.relu(above[..., 1:] - above[..., :-1])
+
+
 def soft_firing_rate_error(
     predicted,
     observed,
@@ -97,12 +115,15 @@ def soft_firing_rate_error(
     temperature_mV=2.0,
     **_,
 ):
-    """Squared error between differentiable upward-crossing rate surrogates."""
+    """Squared error between continuous upward-crossing rate surrogates."""
 
     def soft_rate(voltage):
-        above = jnn.sigmoid((voltage - threshold_mV) / temperature_mV)
         pair_mask = mask[..., 1:] & mask[..., :-1]
-        soft_crossings = above[..., 1:] * (1.0 - above[..., :-1])
+        soft_crossings = _soft_upward_crossings(
+            voltage,
+            threshold_mV=threshold_mV,
+            temperature_mV=temperature_mV,
+        )
         duration_s = jnp.maximum(jnp.sum(pair_mask, axis=-1) * dt_ms * 1e-3, 1e-9)
         return jnp.sum(pair_mask * soft_crossings, axis=-1) / duration_s
 
@@ -125,8 +146,11 @@ def soft_upward_crossing_count(
     remains inside.
     """
 
-    above = jnn.sigmoid((voltage - threshold_mV) / temperature_mV)
-    soft_crossings = above[..., 1:] * (1.0 - above[..., :-1])
+    soft_crossings = _soft_upward_crossings(
+        voltage,
+        threshold_mV=threshold_mV,
+        temperature_mV=temperature_mV,
+    )
     destinations = jnp.asarray(
         event_destination_mask[..., 1:], dtype=voltage.dtype
     )

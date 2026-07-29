@@ -17,7 +17,7 @@ are summed before one update to the shared parameter vector.
 | `correlation_loss` | One minus masked waveform correlation | No scale required |
 | `resting_voltage_error` | Squared error between window means | `baseline` window |
 | `steady_state_error` | Squared error between window means | `stimulus_end` window |
-| `soft_firing_rate_error` | Squared difference between smooth upward-crossing rates | `threshold_mV`, `temperature_mV`, `scale_hz` |
+| `soft_firing_rate_error` | Squared difference between positive smooth-threshold occupancy rates | `threshold_mV`, `temperature_mV`, `scale_hz` |
 | `subthreshold_mean_error` | Squared inter-spike mean-voltage error using an experimental subthreshold mask | `threshold_mV`, `scale_mV` |
 | `soft_dblo_error` | Squared error in depolarization baseline offset: mean interspike minimum minus pre-step rest | `threshold_mV`, `temperature_mV`, `scale_mV` |
 | `soft_minimum_voltage_error` | Squared difference between smooth minimum voltages | `temperature_mV`, `scale_mV` |
@@ -43,6 +43,16 @@ defined DBLO and contributes finite zero to this component; the LSU_1
 firing-rate term remains responsible for spike count. The LSU_1 recordings are
 assumed to be liquid-junction-potential corrected before loading.
 
+### Continuous firing-rate surrogate
+
+The firing-rate term first maps voltage to a smooth threshold occupancy,
+`p(t) = sigmoid((V(t) - threshold)/temperature)`, and sums only positive
+increments, `relu(p(t+1) - p(t))`. A complete below-to-above excursion
+therefore contributes approximately one event, while a stationary voltage near
+threshold contributes zero. This avoids allowing a depolarized non-spiking
+plateau to imitate repeated spikes. The construction is continuous, piecewise
+differentiable, and compatible with JAX automatic differentiation.
+
 ## Named windows
 
 - `score`: the previous fitter's stimulus window, from 100 ms before onset to
@@ -57,11 +67,10 @@ assumed to be liquid-junction-potential corrected before loading.
 
 ## Multiplicative penalties
 
-`soft_outside_stimulus_spike_multiplier` uses the same continuous upward
-threshold-crossing surrogate as the firing-rate term, without duration
-normalization. A crossing is assigned according to its destination sample, so a
-crossing at the first recovery sample is outside while one at stimulus onset is
-inside.
+`soft_outside_stimulus_spike_multiplier` uses the same positive-occupancy-rise
+surrogate as the firing-rate term, without duration normalization. A crossing
+is assigned according to its destination sample, so a crossing at the first
+recovery sample is outside while one at stimulus onset is inside.
 
 Across all selected traces, the configured penalty is:
 
@@ -72,7 +81,7 @@ penalized_loss = base_loss * factor_per_spike ** total_soft_outside_spikes
 The LSU_1 factor is `1.1`. One isolated outside spike therefore approaches a
 multiplier of `1.1`, and two approach `1.21`. Fractional counts preserve useful
 gradients near threshold. A high `maximum_multiplier` is only a numerical guard
-against pathological long traces sitting near the threshold.
+against pathological traces with very many threshold excursions.
 
 ## Configuration
 
@@ -125,16 +134,15 @@ remains the common score-window voltage RMSE, independent of the training
 objective.
 
 `configs/losses/LSU_1.yaml` combines hyperpolarizing score-window MSE with
-smooth depolarizing firing-rate, plateau, spike-shape, recovery-trajectory, and
-after-hyperpolarization terms. Its depolarized-baseline group allocates raw
-weight `0.15` to the broad subthreshold plateau and `0.35` to explicit DBLO, so
-the two still have approximately `0.35` combined influence after the `0.7`
-depolarizing protocol allocation. At one normalized-error scale, firing rate
-has approximately `0.70` influence, while spike shape, post-step recovery,
-depolarized baseline, and hyperpolarizing dynamics each have approximately
-`0.35`. The raw component weights differ because the configured protocol
-allocations and loss primitives also affect their final contributions. It
-inherits Adam with backtracking.
+smooth depolarizing firing rate, explicit DBLO, full score-window depolarizing
+MSE, plateau, spike-shape, recovery-trajectory, and after-hyperpolarization
+terms. Firing rate and DBLO each have raw weight `4.0`, giving each an effective
+one-scale coefficient of `0.7 * 4.0 = 2.8`. Every major secondary group is
+approximately `0.35`, so each primary target is weighted about eight times more
+strongly. The additional depolarizing waveform MSE has raw weight `0.5` and
+retains direct sensitivity to conspicuous pointwise trace mismatches. The raw
+weights differ because protocol allocations and loss primitives also affect
+their final contributions. LSU_1 inherits Adam with backtracking.
 
 Use a 100-step smoke test with any loss configuration:
 

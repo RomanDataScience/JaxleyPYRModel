@@ -40,6 +40,7 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
         "LSU_1.yaml": (
             "hyperpolarizing_waveform_mse",
             "depolarizing_firing_rate",
+            "depolarizing_waveform_mse",
             "depolarizing_voltage_plateau",
             "depolarizing_dblo",
             "depolarizing_spike_waveform",
@@ -59,13 +60,20 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert lsu.fit.penalties[0].label == "outside_step_spikes"
     assert lsu.fit.penalties[0].factor_per_spike == 1.1
     components = {component.label: component for component in lsu.fit.components}
-    assert components["depolarizing_firing_rate"].weight == 1.0
+    assert components["depolarizing_firing_rate"].weight == 4.0
+    assert components["depolarizing_waveform_mse"].kind == "voltage_mse"
+    assert components["depolarizing_waveform_mse"].weight == 0.5
+    assert components["depolarizing_waveform_mse"].protocols == (
+        "depolarizing_step",
+    )
+    assert components["depolarizing_waveform_mse"].window == "score"
+    assert components["depolarizing_waveform_mse"].scale == 5.0
     assert components["depolarizing_spike_waveform"].weight == 0.13
     assert components["depolarizing_spike_derivative"].weight == 0.13
     assert components["depolarizing_spike_height"].weight == 0.32
     assert components["depolarizing_voltage_plateau"].weight == 0.15
     assert components["depolarizing_dblo"].kind == "soft_dblo_error"
-    assert components["depolarizing_dblo"].weight == 0.35
+    assert components["depolarizing_dblo"].weight == 4.0
     assert components["depolarizing_dblo"].scale == 5.0
     assert components["depolarizing_dblo"].temperature_mV == 1.0
     assert components["depolarizing_recovery_waveform"].weight == 0.5
@@ -75,9 +83,12 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
 
     # At a residual of one configured scale, squared terms contribute 1 and
     # pseudo-Huber terms contribute sqrt(2) - 1. Account for the 0.7/0.3
-    # protocol allocations when checking the intended feature-group balance.
+    # protocol allocations when checking that firing rate and DBLO dominate
+    # every secondary feature group.
     pseudo_huber_at_one_scale = np.sqrt(2.0) - 1.0
     effective = {
+        "firing_rate": 0.7 * 4.0,
+        "dblo": 0.7 * 4.0,
         "spike_shape": 0.7
         * (
             0.13 * pseudo_huber_at_one_scale
@@ -86,10 +97,39 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
         ),
         "recovery": 0.7
         * (0.5 * pseudo_huber_at_one_scale + 0.2 + 0.1),
-        "depolarized_baseline": 0.7 * (0.15 + 0.35),
+        "plateau": 0.7 * 0.15,
+        "depolarizing_waveform": 0.7 * 0.5,
         "hyperpolarization": 0.3 * 1.17,
     }
-    np.testing.assert_allclose(tuple(effective.values()), 0.35, atol=0.006)
+    secondary_maximum = max(
+        value
+        for label, value in effective.items()
+        if label not in {"firing_rate", "dblo"}
+    )
+    assert effective["firing_rate"] > 7.5 * secondary_maximum
+    assert effective["dblo"] > 7.5 * secondary_maximum
+    assert effective["firing_rate"] == effective["dblo"]
+
+
+def test_every_lsu_variant_inherits_the_same_reweighted_objective():
+    paths = (
+        PROJECT / "configs/losses/LSU_1.yaml",
+        PROJECT / "configs/losses/LSU_1_wide_bounds.yaml",
+        PROJECT / "configs/losses/LSU_1_wide_bounds_adam.yaml",
+        PROJECT / "configs/search/LSU_1_cma_adam.yaml",
+        PROJECT / "configs/search/LSU_1_cma_adam_smoke.yaml",
+    )
+    configs = tuple(load_config(path) for path in paths)
+    reference = configs[0].fit
+
+    for config in configs[1:]:
+        assert config.fit.components == reference.components
+        assert config.fit.penalties == reference.penalties
+        assert config.fit.protocol_weights == reference.protocol_weights
+        assert (
+            config.fit.renormalize_protocol_filtered_components
+            == reference.renormalize_protocol_filtered_components
+        )
 
 
 def test_registered_waveform_losses_are_finite_and_differentiable():
@@ -169,6 +209,37 @@ def test_soft_firing_rate_error_prefers_matching_spike_count():
     missing_loss = term(missing_spike, observed, mask, **kwargs)
 
     assert float(matching_loss[0]) < float(missing_loss[0])
+
+
+def test_soft_firing_rate_does_not_count_a_stationary_near_threshold_plateau():
+    registry = default_loss_registry()
+    term = registry.get("soft_firing_rate_error")
+    observed = jnp.asarray(
+        [[-65.0, 20.0, -65.0, -65.0, 20.0, -65.0, -65.0]]
+    )
+    plateau = jnp.full_like(observed, -30.0)
+    mask = jnp.ones_like(observed, dtype=bool)
+    kwargs = {
+        "dt_ms": 1.0,
+        "scale": 5.0,
+        "threshold_mV": -20.0,
+        "temperature_mV": 2.0,
+    }
+
+    matching_loss = term(observed, observed, mask, **kwargs)
+    plateau_loss = term(plateau, observed, mask, **kwargs)
+
+    np.testing.assert_allclose(matching_loss, [0.0], atol=1e-12)
+    assert float(plateau_loss[0]) > 0.0
+
+    def scalar(offset):
+        rising = plateau.at[0, 3].add(offset)
+        return jnp.sum(term(rising, observed, mask, **kwargs))
+
+    value, gradient = jax.value_and_grad(scalar)(jnp.asarray(2.0))
+    assert np.isfinite(float(value))
+    assert np.isfinite(float(gradient))
+    assert float(gradient) != 0.0
 
 
 def test_observed_interspike_masks_follow_peak_to_next_threshold_definition():
@@ -280,17 +351,22 @@ def test_outside_spike_multiplier_is_continuous_and_counts_crossing_destination(
         [[True, True, True, False, False, False, False, True, True, True]]
     )
     flat = jnp.full((1, 10), low)
+    near_threshold_plateau = jnp.full((1, 10), -20.0)
     inside = flat.at[0, 3].set(high)
     one_outside = flat.at[0, 7].set(high)
     two_outside = one_outside.at[0, 1].set(high)
     kwargs = {"threshold_mV": -20.0, "temperature_mV": 0.1}
 
     flat_count = soft_upward_crossing_count(flat, outside, **kwargs)[0]
+    plateau_count = soft_upward_crossing_count(
+        near_threshold_plateau, outside, **kwargs
+    )[0]
     inside_count = soft_upward_crossing_count(inside, outside, **kwargs)[0]
     one_count = soft_upward_crossing_count(one_outside, outside, **kwargs)[0]
     two_count = soft_upward_crossing_count(two_outside, outside, **kwargs)[0]
 
     assert np.isclose(float(flat_count), 0.0, atol=1e-8)
+    assert np.isclose(float(plateau_count), 0.0, atol=1e-8)
     assert np.isclose(float(inside_count), 0.0, atol=1e-8)
     assert np.isclose(float(one_count), 1.0, atol=1e-6)
     assert np.isclose(float(two_count), 2.0, atol=1e-6)

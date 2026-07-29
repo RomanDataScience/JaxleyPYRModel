@@ -1,8 +1,8 @@
 extends: ../optimizers/adam_backtracking.yaml
 
-# LSU_1 prioritizes matching depolarizing firing rate while retaining secondary
-# waveform, plateau, spike-shape, recovery, and AHP constraints. Every term is
-# continuous in the simulated voltage.
+# LSU_1 makes depolarizing firing rate and DBLO the two primary targets while
+# retaining secondary full-trace, plateau, spike-shape, recovery, AHP, and
+# hyperpolarizing constraints. Every term is continuous in simulated voltage.
 fit:
   objective:
     # Preserve the global 0.7/0.3 protocol allocation for protocol-specific
@@ -32,19 +32,30 @@ fit:
         window: score
         scale_mV: 5.0
 
-      # Depolarizing pulse: smooth firing-frequency surrogate.
+      # Primary target 1: depolarizing firing frequency. The one-scale effective
+      # weight is 0.7 * 4.0 = 2.8, about eight times any secondary feature
+      # group below.
       - kind: soft_firing_rate_error
         label: depolarizing_firing_rate
-        # Dominant individual depolarizing term.
-        weight: 1.0
+        weight: 4.0
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
         temperature_mV: 2.0
         scale_hz: 5.0
 
+      # Direct pointwise difference over the complete scored depolarizing
+      # trace, including baseline, stimulus, and post-step recovery. This stays
+      # secondary because MSE is deliberately sensitive to spike timing.
+      - kind: voltage_mse
+        label: depolarizing_waveform_mse
+        weight: 0.5
+        protocols: [depolarizing_step]
+        window: score
+        scale_mV: 5.0
+
       # Broad inter-spike plateau mean, excluding experimental spike samples.
-      # It shares the depolarized-baseline budget with the explicit DBLO term.
+      # This remains a secondary complement to the primary DBLO target.
       - kind: subthreshold_mean_error
         label: depolarizing_voltage_plateau
         weight: 0.15
@@ -57,12 +68,12 @@ fit:
       # minimum from each observed spike peak to the next observed threshold,
       # minus the pre-step resting voltage. The recordings are already
       # liquid-junction-potential corrected. Fixed experimental intervals make
-      # the term continuous in simulated voltage. Together with the broad
-      # plateau term, its effective feature-group influence is about 0.35:
-      # 0.7 * (0.15 + 0.35).
+      # the term continuous in simulated voltage. Its one-scale effective
+      # weight is 0.7 * 4.0 = 2.8, about eight times any secondary feature
+      # group.
       - kind: soft_dblo_error
         label: depolarizing_dblo
-        weight: 0.35
+        weight: 4.0
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -95,8 +106,8 @@ fit:
         scale_mV: 5.0
 
       # Full post-step trajectory and its slow slope back toward baseline.
-      # These weights make recovery a strong secondary target while keeping
-      # firing rate as the dominant individual component.
+      # These weights keep recovery as a strong secondary target beneath the
+      # primary firing-rate and DBLO terms.
       - kind: pseudo_huber
         label: depolarizing_recovery_waveform
         weight: 0.5
