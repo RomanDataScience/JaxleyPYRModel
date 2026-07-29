@@ -26,7 +26,7 @@ fit:
       - kind: voltage_mse
         label: hyperpolarizing_waveform_mse
         weight: 1.0
-        protocols: [hyperpolarizing_pulse]
+        protocols: [hyperpolarizing_pulse, depolarizing_step]
         window: score
         scale_mV: 1.0
 
@@ -46,7 +46,7 @@ fit:
       # target without displacing firing rate as the dominant individual term.
       - kind: subthreshold_mean_error
         label: depolarizing_voltage_plateau
-        weight: 0.5
+        weight: 0.4
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -63,7 +63,7 @@ fit:
 
       - kind: derivative_mse
         label: depolarizing_spike_derivative
-        weight: 0.10
+        weight: 0.20
         protocols: [depolarizing_step]
         window: stimulus
         scale_mV_per_ms: 20.0
