@@ -129,9 +129,9 @@ fit:
 Labels must be unique. Protocol-filtered components are normalized over the
 selected traces, so their weights do not accidentally depend on trace count.
 Set `renormalize_protocol_filtered_components: false` to retain the global
-protocol weights for those components. LSU_1 uses this mode, giving its two
-depolarizing traces weights of `0.35` each and its two hyperpolarizing traces
-weights of `0.15` each.
+protocol weights for those components. LSU_1 uses this mode. With its current
+`0.8/0.2` protocol allocation, the two depolarizing traces receive `0.4` each
+and the two hyperpolarizing traces receive `0.1` each.
 
 `metrics.jsonl` reports both the total objective under `loss` and each weighted
 contribution under `component_losses`. When penalties are configured,
@@ -140,16 +140,19 @@ contribution under `component_losses`. When penalties are configured,
 remains the common score-window voltage RMSE, independent of the training
 objective.
 
-`configs/losses/LSU_1.yaml` combines hyperpolarizing score-window MSE with
+`configs/losses/LSU_1.yaml` combines shared score-window MSE with
 smooth depolarizing firing rate, explicit DBLO, full score-window depolarizing
 MSE, plateau, spike-shape, recovery-trajectory, and after-hyperpolarization
-terms. Firing rate and DBLO each have raw weight `4.0`, giving each an effective
-one-scale coefficient of `0.7 * 4.0 = 2.8`. Every major secondary group is
-approximately `0.35`, so each primary target is weighted about eight times more
-strongly. The additional depolarizing waveform MSE has raw weight `0.5` and
-retains direct sensitivity to conspicuous pointwise trace mismatches. The raw
-weights differ because protocol allocations and loss primitives also affect
-their final contributions. LSU_1 inherits Adam with backtracking.
+terms. Firing rate has raw weight `4.0` and DBLO has raw weight `2.0`, giving
+pre-metric coefficients of `3.2` and `1.6` under the current depolarizing
+allocation. The additional depolarizing waveform MSE has raw weight `0.5` and
+retains direct sensitivity to conspicuous pointwise trace mismatches. Raw
+weights differ because protocol allocations, normalization scales, and loss
+primitives affect final contributions. LSU_1 inherits Adam with backtracking.
+
+See
+[`configs/losses/README_LSU_1.md`](../configs/losses/README_LSU_1.md)
+for the complete component-by-component reference.
 
 Use a 100-step smoke test with any loss configuration:
 

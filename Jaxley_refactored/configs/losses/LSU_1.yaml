@@ -1,4 +1,5 @@
 extends: ../optimizers/adam_backtracking.yaml
+# Detailed reference: configs/losses/README_LSU_1.md
 
 # Simulate depolarizing records through 500 ms after stimulus offset. The
 # hyperpolarizing offset is at trace-local 550 ms, so its 150-ms override ends
@@ -16,7 +17,7 @@ dataset:
 # hyperpolarizing constraints. Every term is continuous in simulated voltage.
 fit:
   objective:
-    # Preserve the global 0.7/0.3 protocol allocation for protocol-specific
+    # Preserve the global 0.8/0.2 protocol allocation for protocol-specific
     # components instead of converting each component to a conditional mean.
     renormalize_protocol_filtered_components: false
 
@@ -33,9 +34,9 @@ fit:
         temperature_mV: 2.0
 
     components:
-      # Hyperpolarizing pulse: the full score window retains both pulse decay
-      # and post-pulse repolarization. Its raw weight compensates for the 0.3
-      # protocol allocation, giving about 0.35 influence at one scale of error.
+      # Historical label: this score-window voltage MSE applies to BOTH
+      # protocols. Effective coefficients are 1.17 * 0.8 = 0.936 for
+      # depolarizing and 1.17 * 0.2 = 0.234 for hyperpolarizing traces.
       - kind: voltage_mse
         label: hyperpolarizing_waveform_mse
         weight: 1.17
@@ -43,9 +44,8 @@ fit:
         window: score
         scale_mV: 5.0
 
-      # Primary target 1: depolarizing firing frequency. The one-scale effective
-      # weight is 0.7 * 4.0 = 2.8, about eight times any secondary feature
-      # group below.
+      # Primary target 1: depolarizing firing frequency. Its pre-metric
+      # effective coefficient is 0.8 * 4.0 = 3.2.
       - kind: soft_firing_rate_error
         label: depolarizing_firing_rate
         weight: 4.0
@@ -79,12 +79,11 @@ fit:
       # minimum from each observed spike peak to the next observed threshold,
       # minus the pre-step resting voltage. The recordings are already
       # liquid-junction-potential corrected. Fixed experimental intervals make
-      # the term continuous in simulated voltage. Its one-scale effective
-      # weight is 0.7 * 4.0 = 2.8, about eight times any secondary feature
-      # group.
+      # the term continuous in simulated voltage. Its pre-metric effective
+      # coefficient is 0.8 * 2.0 = 1.6.
       - kind: soft_dblo_error
         label: depolarizing_dblo
-        weight: 4.0
+        weight: 2.0
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -94,7 +93,7 @@ fit:
       # Spike waveform and slope.
       - kind: pseudo_huber
         label: depolarizing_spike_waveform
-        weight: 0.13
+        weight: 0.25
         protocols: [depolarizing_step]
         window: stimulus
         scale_mV: 5.0
@@ -102,7 +101,7 @@ fit:
 
       - kind: derivative_mse
         label: depolarizing_spike_derivative
-        weight: 0.13
+        weight: 0.25
         protocols: [depolarizing_step]
         window: stimulus
         scale_mV_per_ms: 20.0
@@ -144,11 +143,11 @@ fit:
         scale_mV: 3.0
 
     aggregation: protocol_mean
-    # With two training traces per protocol, these protocol totals assign 0.35
-    # to each depolarizing trace and 0.15 to each hyperpolarizing trace.
+    # With two training traces per protocol, these totals assign 0.4 to each
+    # depolarizing trace and 0.1 to each hyperpolarizing trace.
     protocol_weights:
-      depolarizing_step: 0.7
-      hyperpolarizing_pulse: 0.3
+      depolarizing_step: 0.8
+      hyperpolarizing_pulse: 0.2
 
 output:
   run_name: auto
