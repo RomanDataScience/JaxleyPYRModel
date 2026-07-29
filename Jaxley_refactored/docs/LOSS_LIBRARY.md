@@ -19,10 +19,29 @@ are summed before one update to the shared parameter vector.
 | `steady_state_error` | Squared error between window means | `stimulus_end` window |
 | `soft_firing_rate_error` | Squared difference between smooth upward-crossing rates | `threshold_mV`, `temperature_mV`, `scale_hz` |
 | `subthreshold_mean_error` | Squared inter-spike mean-voltage error using an experimental subthreshold mask | `threshold_mV`, `scale_mV` |
+| `soft_dblo_error` | Squared error in depolarization baseline offset: mean interspike minimum minus pre-step rest | `threshold_mV`, `temperature_mV`, `scale_mV` |
 | `soft_minimum_voltage_error` | Squared difference between smooth minimum voltages | `temperature_mV`, `scale_mV` |
 | `soft_maximum_voltage_error` | Squared difference between smooth maximum voltages | `temperature_mV`, `scale_mV` |
 
 `masked_voltage_mse` remains an alias for backward compatibility.
+
+### Explicit DBLO metric
+
+`soft_dblo_error` follows the paper-level definition
+`DBLO = DBL - E_rest`, where DBL is the mean of the minimum voltage between
+consecutive spikes and `E_rest` is the pre-step mean voltage. Upward threshold
+crossings and spike peaks are detected once from the experimental trace. Each
+fixed interval runs from one observed spike peak to immediately before the next
+observed upward threshold crossing.
+
+Within those fixed intervals, hard minima are replaced by normalized smooth
+minima controlled by `temperature_mV`. The same smooth definition is applied
+to simulated and experimental voltage. Consequently, the loss is continuous
+and differentiable with respect to the simulation, while an exact trace match
+still gives zero. A trace with fewer than two observed in-step spikes has no
+defined DBLO and contributes finite zero to this component; the LSU_1
+firing-rate term remains responsible for spike count. The LSU_1 recordings are
+assumed to be liquid-junction-potential corrected before loading.
 
 ## Named windows
 
@@ -107,9 +126,12 @@ objective.
 
 `configs/losses/LSU_1.yaml` combines hyperpolarizing score-window MSE with
 smooth depolarizing firing-rate, plateau, spike-shape, recovery-trajectory, and
-after-hyperpolarization terms. At one normalized-error scale, firing rate has
-approximately `0.70` influence, while spike shape, post-step recovery,
-depolarized plateau, and hyperpolarizing dynamics each have approximately
+after-hyperpolarization terms. Its depolarized-baseline group allocates raw
+weight `0.15` to the broad subthreshold plateau and `0.35` to explicit DBLO, so
+the two still have approximately `0.35` combined influence after the `0.7`
+depolarizing protocol allocation. At one normalized-error scale, firing rate
+has approximately `0.70` influence, while spike shape, post-step recovery,
+depolarized baseline, and hyperpolarizing dynamics each have approximately
 `0.35`. The raw component weights differ because the configured protocol
 allocations and loss primitives also affect their final contributions. It
 inherits Adam with backtracking.

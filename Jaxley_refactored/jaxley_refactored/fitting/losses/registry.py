@@ -40,6 +40,7 @@ def default_loss_registry() -> LossRegistry:
     registry.register("steady_state_error", primitives.mean_voltage_error)
     registry.register("soft_firing_rate_error", primitives.soft_firing_rate_error)
     registry.register("subthreshold_mean_error", primitives.subthreshold_mean_error)
+    registry.register("soft_dblo_error", primitives.soft_dblo_error)
     registry.register(
         "soft_minimum_voltage_error", primitives.soft_minimum_voltage_error
     )

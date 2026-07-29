@@ -43,15 +43,30 @@ fit:
         temperature_mV: 2.0
         scale_hz: 5.0
 
-      # Inter-spike voltage plateau, excluding experimental spike samples.
-      # Combined with the 0.7 depolarizing protocol allocation, this gives
-      # about 0.35 influence at one scale of error.
+      # Broad inter-spike plateau mean, excluding experimental spike samples.
+      # It shares the depolarized-baseline budget with the explicit DBLO term.
       - kind: subthreshold_mean_error
         label: depolarizing_voltage_plateau
-        weight: 0.5
+        weight: 0.15
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
+        scale_mV: 5.0
+
+      # Paper-defined depolarization baseline offset (DBLO): mean smooth
+      # minimum from each observed spike peak to the next observed threshold,
+      # minus the pre-step resting voltage. The recordings are already
+      # liquid-junction-potential corrected. Fixed experimental intervals make
+      # the term continuous in simulated voltage. Together with the broad
+      # plateau term, its effective feature-group influence is about 0.35:
+      # 0.7 * (0.15 + 0.35).
+      - kind: soft_dblo_error
+        label: depolarizing_dblo
+        weight: 0.35
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        temperature_mV: 1.0
         scale_mV: 5.0
 
       # Spike waveform and slope.

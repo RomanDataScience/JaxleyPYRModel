@@ -636,6 +636,7 @@ _LOSS_KINDS = {
     "steady_state_error",
     "soft_firing_rate_error",
     "subthreshold_mean_error",
+    "soft_dblo_error",
     "soft_minimum_voltage_error",
     "soft_maximum_voltage_error",
 }

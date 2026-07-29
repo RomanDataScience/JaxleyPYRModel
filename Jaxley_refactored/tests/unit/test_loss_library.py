@@ -17,6 +17,8 @@ from jaxley_refactored.fitting.losses import (
     apply_multiplicative_penalties,
     component_denominators,
     default_loss_registry,
+    observed_interspike_masks,
+    soft_dblo_error,
     soft_upward_crossing_count,
 )
 from jaxley_refactored.fitting.trainer import Trainer
@@ -39,6 +41,7 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
             "hyperpolarizing_waveform_mse",
             "depolarizing_firing_rate",
             "depolarizing_voltage_plateau",
+            "depolarizing_dblo",
             "depolarizing_spike_waveform",
             "depolarizing_spike_derivative",
             "depolarizing_spike_height",
@@ -60,7 +63,11 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert components["depolarizing_spike_waveform"].weight == 0.13
     assert components["depolarizing_spike_derivative"].weight == 0.13
     assert components["depolarizing_spike_height"].weight == 0.32
-    assert components["depolarizing_voltage_plateau"].weight == 0.5
+    assert components["depolarizing_voltage_plateau"].weight == 0.15
+    assert components["depolarizing_dblo"].kind == "soft_dblo_error"
+    assert components["depolarizing_dblo"].weight == 0.35
+    assert components["depolarizing_dblo"].scale == 5.0
+    assert components["depolarizing_dblo"].temperature_mV == 1.0
     assert components["depolarizing_recovery_waveform"].weight == 0.5
     assert components["depolarizing_recovery_derivative"].weight == 0.2
     assert components["hyperpolarizing_waveform_mse"].weight == 1.17
@@ -79,7 +86,7 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
         ),
         "recovery": 0.7
         * (0.5 * pseudo_huber_at_one_scale + 0.2 + 0.1),
-        "plateau": 0.7 * 0.5,
+        "depolarized_baseline": 0.7 * (0.15 + 0.35),
         "hyperpolarization": 0.3 * 1.17,
     }
     np.testing.assert_allclose(tuple(effective.values()), 0.35, atol=0.006)
@@ -101,6 +108,7 @@ def test_registered_waveform_losses_are_finite_and_differentiable():
         "steady_state_error",
         "soft_firing_rate_error",
         "subthreshold_mean_error",
+        "soft_dblo_error",
         "soft_minimum_voltage_error",
         "soft_maximum_voltage_error",
     ):
@@ -117,6 +125,9 @@ def test_registered_waveform_losses_are_finite_and_differentiable():
                     delta=1.0,
                     threshold_mV=-20.0,
                     temperature_mV=2.0,
+                    baseline_mask=mask,
+                    interspike_masks=mask[:, None, :],
+                    interspike_valid=jnp.ones((1, 1), dtype=bool),
                 )
             )
 
@@ -158,6 +169,108 @@ def test_soft_firing_rate_error_prefers_matching_spike_count():
     missing_loss = term(missing_spike, observed, mask, **kwargs)
 
     assert float(matching_loss[0]) < float(missing_loss[0])
+
+
+def test_observed_interspike_masks_follow_peak_to_next_threshold_definition():
+    observed = np.asarray(
+        [
+            [
+                -65.0,
+                -65.0,
+                5.0,
+                30.0,
+                -50.0,
+                0.0,
+                25.0,
+                -55.0,
+                10.0,
+                20.0,
+                -65.0,
+                5.0,
+            ],
+            [-65.0] * 12,
+        ]
+    )
+    stimulus = np.zeros_like(observed, dtype=bool)
+    stimulus[:, 2:10] = True
+
+    masks, valid = observed_interspike_masks(
+        observed, stimulus, threshold_mV=-20.0
+    )
+
+    assert masks.shape == (2, 2, 12)
+    np.testing.assert_array_equal(valid[0], [True, True])
+    np.testing.assert_array_equal(valid[1], [False, False])
+    np.testing.assert_array_equal(np.flatnonzero(masks[0, 0]), [3, 4])
+    np.testing.assert_array_equal(np.flatnonzero(masks[0, 1]), [6, 7])
+    assert not masks[..., 10:].any()
+
+
+def test_soft_dblo_matches_mean_interspike_minimum_minus_rest_and_is_smooth():
+    observed = jnp.asarray(
+        [[-70.0, -70.0, 20.0, -50.0, 20.0, -40.0, -65.0, -65.0]]
+    )
+    predicted = observed.at[0, 3].set(-45.0).at[0, 5].set(-35.0)
+    stimulus = jnp.asarray(
+        [[False, False, True, True, True, True, True, True]]
+    )
+    baseline = jnp.asarray(
+        [[True, True, False, False, False, False, False, False]]
+    )
+    intervals = jnp.zeros((1, 2, observed.shape[-1]), dtype=bool)
+    intervals = intervals.at[0, 0, 3].set(True).at[0, 1, 5].set(True)
+    valid = jnp.asarray([[True, True]])
+    kwargs = {
+        "baseline_mask": baseline,
+        "interspike_masks": intervals,
+        "interspike_valid": valid,
+        "scale": 5.0,
+        "temperature_mV": 1.0,
+    }
+
+    exact = soft_dblo_error(observed, observed, stimulus, **kwargs)
+    shifted_troughs = soft_dblo_error(predicted, observed, stimulus, **kwargs)
+    common_offset = soft_dblo_error(predicted + 7.0, observed, stimulus, **kwargs)
+
+    np.testing.assert_allclose(exact, [0.0], atol=1e-12)
+    np.testing.assert_allclose(shifted_troughs, [1.0], rtol=1e-6)
+    np.testing.assert_allclose(common_offset, shifted_troughs, rtol=1e-6)
+
+    def scalar(voltage):
+        return jnp.sum(soft_dblo_error(voltage, observed, stimulus, **kwargs))
+
+    value, gradient = jax.jit(jax.value_and_grad(scalar))(predicted)
+    assert np.isfinite(float(value))
+    assert np.isfinite(np.asarray(gradient)).all()
+    assert not np.allclose(np.asarray(gradient), 0.0)
+    np.testing.assert_allclose(np.sum(gradient), 0.0, atol=1e-6)
+
+
+def test_soft_dblo_is_finite_zero_without_two_observed_spikes():
+    observed = jnp.asarray([[-70.0, -70.0, -60.0, -55.0]])
+    predicted = observed + 10.0
+    stimulus = jnp.asarray([[False, False, True, True]])
+    baseline = jnp.asarray([[True, True, False, False]])
+    intervals = jnp.zeros((1, 1, 4), dtype=bool)
+    valid = jnp.asarray([[False]])
+
+    def scalar(voltage):
+        return jnp.sum(
+            soft_dblo_error(
+                voltage,
+                observed,
+                stimulus,
+                baseline_mask=baseline,
+                interspike_masks=intervals,
+                interspike_valid=valid,
+                scale=5.0,
+                temperature_mV=1.0,
+            )
+        )
+
+    value, gradient = jax.value_and_grad(scalar)(predicted)
+    assert float(value) == 0.0
+    np.testing.assert_array_equal(gradient, jnp.zeros_like(predicted))
 
 
 def test_outside_spike_multiplier_is_continuous_and_counts_crossing_destination():

@@ -12,6 +12,25 @@ def _masked_mean(values, mask):
     return jnp.sum(mask * values, axis=-1) / denominator
 
 
+def _soft_masked_minimum(values, mask, temperature_mV):
+    """Numerically stable smooth minimum over the final masked axis."""
+
+    mask = jnp.asarray(mask, dtype=bool)
+    logits = -values / temperature_mV
+    masked_logits = jnp.where(mask, logits, -jnp.inf)
+    reference = jnp.max(masked_logits, axis=-1, keepdims=True)
+    valid = jnp.any(mask, axis=-1)
+    reference = jnp.where(valid[..., None], reference, 0.0)
+    count = jnp.maximum(jnp.sum(mask, axis=-1), 1.0)
+    shifted_logits = jnp.where(mask, logits - reference, -jnp.inf)
+    mean_exponential = jnp.sum(jnp.exp(shifted_logits), axis=-1) / count
+    mean_exponential = jnp.where(valid, mean_exponential, 1.0)
+    result = -temperature_mV * (
+        jnp.squeeze(reference, axis=-1) + jnp.log(mean_exponential)
+    )
+    return jnp.where(valid, result, 0.0)
+
+
 def masked_mse(predicted, observed, mask, *, scale=1.0, **_):
     return _masked_mean(((predicted - observed) / scale) ** 2, mask)
 
@@ -143,28 +162,60 @@ def soft_minimum_voltage_error(
 ):
     """Compare smooth minimum voltages, e.g. recovery AHP depth."""
 
-    def soft_minimum(voltage):
-        logits = -voltage / temperature_mV
-        masked_logits = jnp.where(mask, logits, -jnp.inf)
-        reference = jnp.max(masked_logits, axis=-1, keepdims=True)
-        valid = jnp.any(mask, axis=-1)
-        reference = jnp.where(valid[:, None], reference, 0.0)
-        count = jnp.maximum(jnp.sum(mask, axis=-1), 1.0)
-        mean_exponential = (
-            jnp.sum(
-                jnp.where(mask, jnp.exp(masked_logits - reference), 0.0),
-                axis=-1,
-            )
-            / count
-        )
-        mean_exponential = jnp.where(valid, mean_exponential, 1.0)
-        result = -temperature_mV * (
-            jnp.squeeze(reference, axis=-1) + jnp.log(mean_exponential)
-        )
-        return jnp.where(valid, result, 0.0)
-
-    difference = soft_minimum(predicted) - soft_minimum(observed)
+    difference = _soft_masked_minimum(
+        predicted, mask, temperature_mV
+    ) - _soft_masked_minimum(observed, mask, temperature_mV)
     return (difference / scale) ** 2
+
+
+def soft_dblo_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    baseline_mask,
+    interspike_masks,
+    interspike_valid,
+    scale=1.0,
+    temperature_mV=1.0,
+    **_,
+):
+    """Compare smooth depolarization baseline offsets (DBLO).
+
+    For each trace, DBL is the mean smooth minimum over fixed experimental
+    interspike intervals. DBLO subtracts the mean pre-step resting voltage.
+    The interval topology is derived from the observation before tracing, so
+    this primitive remains continuous in the simulated voltage.
+    """
+
+    interval_masks = (
+        jnp.asarray(interspike_masks, dtype=bool)
+        & jnp.asarray(mask, dtype=bool)[:, None, :]
+    )
+    valid_intervals = (
+        jnp.asarray(interspike_valid, dtype=bool)
+        & jnp.any(interval_masks, axis=-1)
+    )
+    valid_float = valid_intervals.astype(predicted.dtype)
+    interval_count = jnp.maximum(jnp.sum(valid_float, axis=-1), 1.0)
+
+    def dblo(voltage):
+        troughs = _soft_masked_minimum(
+            voltage[:, None, :], interval_masks, temperature_mV
+        )
+        depolarization_baseline = (
+            jnp.sum(valid_float * troughs, axis=-1) / interval_count
+        )
+        resting_voltage = _masked_mean(voltage, baseline_mask)
+        return depolarization_baseline - resting_voltage
+
+    valid_trace = (
+        jnp.any(valid_intervals, axis=-1)
+        & jnp.any(jnp.asarray(baseline_mask, dtype=bool), axis=-1)
+    )
+    difference = dblo(predicted) - dblo(observed)
+    loss = (difference / scale) ** 2
+    return jnp.where(valid_trace, loss, 0.0)
 
 
 def soft_maximum_voltage_error(
