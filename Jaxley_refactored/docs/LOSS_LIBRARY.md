@@ -66,11 +66,9 @@ differentiable, and compatible with JAX automatic differentiation.
 - `stimulus_end`: the final 5 ms of the stimulus.
 
 LSU_1 simulates depolarizing records through 500 ms after stimulus offset.
-Hyperpolarizing records use a protocol override of 150 ms after their
-trace-local 550-ms offset, so they end at 700 ms. The loader fails rather than
-silently shortening a requested window. Consequently, the current
-`m20240527cd` hyperpolarizing segments—which end at about 650 ms—must be
-re-extracted from longer source data before they can use the 700-ms endpoint.
+Hyperpolarizing records use a protocol override of 100 ms after their
+trace-local 550-ms offset, so they end at 650 ms for both cells. The loader
+fails rather than silently shortening a requested window.
 
 ## Multiplicative penalties
 

@@ -127,7 +127,7 @@ def test_every_lsu_variant_inherits_the_same_reweighted_objective():
     assert all(
         config.dataset.simulation_post_ms == 500.0
         and config.dataset.simulation_post_ms_by_protocol
-        == {"hyperpolarizing_pulse": 150.0}
+        == {"hyperpolarizing_pulse": 100.0}
         and config.dataset.score_post_ms == 500.0
         for config in configs
     )

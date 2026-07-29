@@ -40,10 +40,11 @@ For the timing currently configured for cell `m20260331b`:
 | Protocol | Current step | Simulation end | Post-step interval |
 |---|---:|---:|---:|
 | Depolarizing | 200–500 ms | 1000 ms | 500 ms |
-| Hyperpolarizing | 500–550 ms | 700 ms | 150 ms |
+| Hyperpolarizing | 500–550 ms | 650 ms | 100 ms |
 
 `LSU_1.yaml` requests 500 ms after a stimulus by default and overrides the
-hyperpolarizing protocol to 150 ms, making its endpoint 700 ms. The `score`
+hyperpolarizing protocol to 100 ms, making its endpoint 650 ms for both cells.
+The `score`
 window begins 100 ms before stimulus onset and runs to the simulation endpoint.
 Other window names used below are:
 
@@ -366,4 +367,3 @@ the same multiplier so their sum remains consistent with the total loss.
 - `LSU_1_wide_bounds_adam.yaml`: exploratory Adam without backtracking.
 - `configs/search/LSU_1_cma_adam.yaml`: CMA-ES global search followed by Adam,
   while retaining this loss definition.
-

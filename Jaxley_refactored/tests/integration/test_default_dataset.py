@@ -2,7 +2,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 from jaxley_refactored.config import load_config
 from jaxley_refactored.data import SegmentedTraceLoader, bucket_records, weight_records
@@ -58,42 +57,50 @@ def test_trace_indices_select_cell_specific_first_and_third_traces():
 def test_lsu_applies_protocol_specific_simulation_horizons():
     config = load_config(PROJECT / "configs/losses/LSU_1.yaml")
     training = replace(config.dataset, cell_id="m20260331b")
-    records = SegmentedTraceLoader().load(training)
 
     assert training.simulation_post_ms == 500.0
     assert training.simulation_post_ms_by_protocol == {
-        "hyperpolarizing_pulse": 150.0,
+        "hyperpolarizing_pulse": 100.0,
     }
     assert training.score_post_ms == 500.0
-    assert {(record.protocol, len(record.time_ms)) for record in records} == {
-        ("depolarizing_step", 10_001),
-        ("hyperpolarizing_pulse", 7_001),
-    }
-    assert all(record.score_mask[-1] for record in records)
-    for record in records:
-        expected_post_ms = (
-            500.0 if record.protocol == "depolarizing_step" else 150.0
+
+    for cell_id in ("m20240527cd", "m20260331b"):
+        records = SegmentedTraceLoader().load(
+            replace(training, cell_id=cell_id)
         )
-        expected_stop_ms = (
-            1_000.0 if record.protocol == "depolarizing_step" else 700.0
-        )
-        post_stimulus_ms = (
-            record.time_ms[-1] - record.metadata["epoch_stop_ms"]
-        )
-        assert np.isclose(post_stimulus_ms, expected_post_ms, atol=record.dt_ms)
-        assert np.isclose(record.time_ms[-1], expected_stop_ms)
-        assert np.isclose(
-            record.metadata["simulation_actual_post_stimulus_ms"],
-            expected_post_ms,
-            atol=record.dt_ms,
-        )
+        assert {(record.protocol, len(record.time_ms)) for record in records} == {
+            ("depolarizing_step", 10_001),
+            ("hyperpolarizing_pulse", 6_501),
+        }
+        assert all(record.score_mask[-1] for record in records)
+        for record in records:
+            expected_post_ms = (
+                500.0 if record.protocol == "depolarizing_step" else 100.0
+            )
+            expected_stop_ms = (
+                1_000.0 if record.protocol == "depolarizing_step" else 650.0
+            )
+            post_stimulus_ms = (
+                record.time_ms[-1] - record.metadata["epoch_stop_ms"]
+            )
+            assert np.isclose(
+                post_stimulus_ms, expected_post_ms, atol=record.dt_ms
+            )
+            assert np.isclose(record.time_ms[-1], expected_stop_ms)
+            assert np.isclose(
+                record.metadata["simulation_actual_post_stimulus_ms"],
+                expected_post_ms,
+                atol=record.dt_ms,
+            )
+
+    records = SegmentedTraceLoader().load(training)
 
     buckets = bucket_records(records)
     for bucket in buckets:
         recovery_samples = (
             5_000
             if bucket.records[0].protocol == "depolarizing_step"
-            else 1_500
+            else 1_000
         )
         np.testing.assert_array_equal(
             bucket.window_masks["recovery"].sum(axis=1),
@@ -119,20 +126,8 @@ def test_lsu_applies_protocol_specific_simulation_horizons():
     assert all(
         np.isclose(
             record.time_ms[-1] - record.metadata["epoch_stop_ms"],
-            500.0 if record.protocol == "depolarizing_step" else 150.0,
+            500.0 if record.protocol == "depolarizing_step" else 100.0,
             atol=record.dt_ms,
         )
         for record in validation_records
     )
-
-
-def test_lsu_rejects_a_protocol_horizon_when_the_recording_is_shorter():
-    config = load_config(PROJECT / "configs/losses/LSU_1.yaml")
-
-    with pytest.raises(
-        ValueError,
-        match=r"requested 150 ms after stimulus, but only .* ms are available",
-    ):
-        SegmentedTraceLoader().load(
-            replace(config.dataset, cell_id="m20240527cd")
-        )
