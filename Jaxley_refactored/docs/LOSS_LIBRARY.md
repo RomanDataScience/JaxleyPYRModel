@@ -107,14 +107,12 @@ objective.
 
 `configs/losses/LSU_1.yaml` combines hyperpolarizing score-window MSE with
 smooth depolarizing firing-rate, plateau, spike-shape, recovery-trajectory, and
-after-hyperpolarization terms. Its plateau term has weight `0.4`, so plateau
-matching remains a secondary target below firing rate, spike shape, and
-post-step recovery.
-The post-step recovery trajectory and derivative have weights `0.5` and `0.2`,
-respectively, emphasizing both decay shape and return rate. The hyperpolarizing
-score-window term has weight `0.5` and a `5 mV` scale, retaining pulse decay and
-repolarization at the lowest requested priority. It inherits Adam with
-backtracking.
+after-hyperpolarization terms. At one normalized-error scale, firing rate has
+approximately `0.70` influence, while spike shape, post-step recovery,
+depolarized plateau, and hyperpolarizing dynamics each have approximately
+`0.35`. The raw component weights differ because the configured protocol
+allocations and loss primitives also affect their final contributions. It
+inherits Adam with backtracking.
 
 Use a 100-step smoke test with any loss configuration:
 

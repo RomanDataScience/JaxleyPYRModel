@@ -23,10 +23,11 @@ fit:
 
     components:
       # Hyperpolarizing pulse: the full score window retains both pulse decay
-      # and post-pulse repolarization as a lower-priority waveform target.
+      # and post-pulse repolarization. Its raw weight compensates for the 0.3
+      # protocol allocation, giving about 0.35 influence at one scale of error.
       - kind: voltage_mse
         label: hyperpolarizing_waveform_mse
-        weight: 0.5
+        weight: 1.17
         protocols: [hyperpolarizing_pulse]
         window: score
         scale_mV: 5.0
@@ -43,11 +44,11 @@ fit:
         scale_hz: 5.0
 
       # Inter-spike voltage plateau, excluding experimental spike samples.
-      # Half the firing-rate weight makes plateau matching a strong secondary
-      # target without displacing firing rate as the dominant individual term.
+      # Combined with the 0.7 depolarizing protocol allocation, this gives
+      # about 0.35 influence at one scale of error.
       - kind: subthreshold_mean_error
         label: depolarizing_voltage_plateau
-        weight: 0.4
+        weight: 0.5
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -56,7 +57,7 @@ fit:
       # Spike waveform and slope.
       - kind: pseudo_huber
         label: depolarizing_spike_waveform
-        weight: 0.20
+        weight: 0.13
         protocols: [depolarizing_step]
         window: stimulus
         scale_mV: 5.0
@@ -64,7 +65,7 @@ fit:
 
       - kind: derivative_mse
         label: depolarizing_spike_derivative
-        weight: 0.20
+        weight: 0.13
         protocols: [depolarizing_step]
         window: stimulus
         scale_mV_per_ms: 20.0
@@ -72,7 +73,7 @@ fit:
       # Smooth peak-voltage matching emphasizes action-potential height.
       - kind: soft_maximum_voltage_error
         label: depolarizing_spike_height
-        weight: 0.5
+        weight: 0.32
         protocols: [depolarizing_step]
         window: stimulus
         temperature_mV: 1.0

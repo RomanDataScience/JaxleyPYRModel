@@ -57,11 +57,32 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert lsu.fit.penalties[0].factor_per_spike == 1.1
     components = {component.label: component for component in lsu.fit.components}
     assert components["depolarizing_firing_rate"].weight == 1.0
-    assert components["depolarizing_voltage_plateau"].weight == 0.4
+    assert components["depolarizing_spike_waveform"].weight == 0.13
+    assert components["depolarizing_spike_derivative"].weight == 0.13
+    assert components["depolarizing_spike_height"].weight == 0.32
+    assert components["depolarizing_voltage_plateau"].weight == 0.5
     assert components["depolarizing_recovery_waveform"].weight == 0.5
     assert components["depolarizing_recovery_derivative"].weight == 0.2
-    assert components["hyperpolarizing_waveform_mse"].weight == 0.5
+    assert components["hyperpolarizing_waveform_mse"].weight == 1.17
     assert components["hyperpolarizing_waveform_mse"].scale == 5.0
+
+    # At a residual of one configured scale, squared terms contribute 1 and
+    # pseudo-Huber terms contribute sqrt(2) - 1. Account for the 0.7/0.3
+    # protocol allocations when checking the intended feature-group balance.
+    pseudo_huber_at_one_scale = np.sqrt(2.0) - 1.0
+    effective = {
+        "spike_shape": 0.7
+        * (
+            0.13 * pseudo_huber_at_one_scale
+            + 0.13
+            + 0.32
+        ),
+        "recovery": 0.7
+        * (0.5 * pseudo_huber_at_one_scale + 0.2 + 0.1),
+        "plateau": 0.7 * 0.5,
+        "hyperpolarization": 0.3 * 1.17,
+    }
+    np.testing.assert_allclose(tuple(effective.values()), 0.35, atol=0.006)
 
 
 def test_registered_waveform_losses_are_finite_and_differentiable():
