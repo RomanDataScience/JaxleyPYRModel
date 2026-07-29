@@ -55,6 +55,9 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert len(lsu.fit.penalties) == 1
     assert lsu.fit.penalties[0].label == "outside_step_spikes"
     assert lsu.fit.penalties[0].factor_per_spike == 1.1
+    components = {component.label: component for component in lsu.fit.components}
+    assert components["depolarizing_firing_rate"].weight == 1.0
+    assert components["depolarizing_voltage_plateau"].weight == 0.5
 
 
 def test_registered_waveform_losses_are_finite_and_differentiable():

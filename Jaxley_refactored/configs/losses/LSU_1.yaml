@@ -42,9 +42,11 @@ fit:
         scale_hz: 5.0
 
       # Inter-spike voltage plateau, excluding experimental spike samples.
+      # Half the firing-rate weight makes plateau matching a strong secondary
+      # target without displacing firing rate as the dominant individual term.
       - kind: subthreshold_mean_error
         label: depolarizing_voltage_plateau
-        weight: 0.25
+        weight: 0.5
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0

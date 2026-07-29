@@ -107,7 +107,9 @@ objective.
 
 `configs/losses/LSU_1.yaml` combines hyperpolarizing score-window MSE with
 smooth depolarizing firing-rate, plateau, spike-shape, recovery-trajectory, and
-after-hyperpolarization terms. It inherits Adam with backtracking.
+after-hyperpolarization terms. Its plateau term has weight `0.5`, half the
+firing-rate term's weight, so plateau matching is a strong secondary target.
+It inherits Adam with backtracking.
 
 Use a 100-step smoke test with any loss configuration:
 
