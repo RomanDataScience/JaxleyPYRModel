@@ -40,7 +40,7 @@ fit:
       - kind: voltage_mse
         label: hyperpolarizing_waveform_mse
         weight: 1.17
-        protocols: [depolarizing_step, hyperpolarizing_pulse]
+        protocols: [hyperpolarizing_pulse]
         window: score
         scale_mV: 5.0
 
@@ -60,7 +60,7 @@ fit:
       # secondary because MSE is deliberately sensitive to spike timing.
       - kind: voltage_mse
         label: depolarizing_waveform_mse
-        weight: 0.5
+        weight: 0.2
         protocols: [depolarizing_step]
         window: score
         scale_mV: 5.0
