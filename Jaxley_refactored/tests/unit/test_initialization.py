@@ -81,6 +81,7 @@ def test_hybrid_config_does_not_change_legacy_fit_default():
     assert hybrid.search.strategy == "hybrid"
     assert config_as_dict(hybrid)["search"]["strategy"] == "hybrid"
     assert hybrid.search.global_search.population_size == 40
+    assert hybrid.search.global_search.parent_fraction == 0.30
     assert hybrid.search.global_search.generations == 100
     assert hybrid.search.local_exploration.backtracking is False
     assert hybrid.search.local_refinement.backtracking is True
@@ -99,6 +100,7 @@ def test_hyperpolarizing_hybrid_inherits_isolated_loss_and_full_budget():
 
     assert hybrid.search.strategy == "hybrid"
     assert hybrid.search.global_search.population_size == 40
+    assert hybrid.search.global_search.parent_fraction == 0.30
     assert hybrid.search.global_search.generations == 100
     assert hybrid.search.local_exploration.epochs == 50
     assert hybrid.search.local_exploration.backtracking is False

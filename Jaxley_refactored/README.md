@@ -67,6 +67,10 @@ The existing `fit` command remains the standard local optimizer. The additive
 hybrid pipeline runs bounded CMA-ES, fixed-step Adam exploration, backtracking
 Adam refinement, and validation on the second/fourth traces:
 
+Each 40-candidate CMA generation recombines its best 12 candidates
+(`parent_fraction: 0.30`). After the global stage, the best 10 candidates
+overall continue into Adam.
+
 ```bash
 bash scripts/run_hybrid_fitting.sh \
   --config configs/search/LSU_1_cma_adam.yaml \

@@ -307,6 +307,7 @@ search:
     seed: runtime
     parameter_names: [AXNa, gna, gnadend, scale_Na_conduct, ...]
     population_size: 16
+    parent_fraction: 0.30
     generations: 20
     sigma0: 0.15
     boundary_policy: resample

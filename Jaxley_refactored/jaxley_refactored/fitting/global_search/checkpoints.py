@@ -25,9 +25,11 @@ class CMACheckpoint:
         np.savez_compressed(temporary, **optimizer.arrays())
         temporary.replace(self.directory / "latest.npz")
         metadata = {
-            "version": 1,
+            "version": 2,
             "compatibility_hash": self.compatibility_hash,
             "population_size": optimizer.population_size,
+            "parent_fraction": optimizer.parent_fraction,
+            "mu": optimizer.mu,
             "rng_state": optimizer.rng.bit_generator.state,
         }
         with tempfile.NamedTemporaryFile(
@@ -38,20 +40,45 @@ class CMACheckpoint:
             temporary = Path(handle.name)
         temporary.replace(self.directory / "latest.json")
 
-    def load(self, *, seed: int) -> CMAES | None:
+    def load(
+        self,
+        *,
+        seed: int,
+        expected_parent_fraction: float | None = None,
+    ) -> CMAES | None:
         array_path = self.directory / "latest.npz"
         metadata_path = self.directory / "latest.json"
         if not array_path.is_file() or not metadata_path.is_file():
             return None
         with metadata_path.open(encoding="utf-8") as handle:
             metadata = json.load(handle)
+        version = int(metadata.get("version", 1))
+        if version not in {1, 2}:
+            raise ValueError(f"Unsupported CMA checkpoint version: {version}.")
         if metadata.get("compatibility_hash") != self.compatibility_hash:
             raise ValueError("CMA checkpoint is incompatible with this hybrid run.")
+        parent_fraction = float(metadata.get("parent_fraction", 0.5))
+        if (
+            expected_parent_fraction is not None
+            and not np.isclose(
+                parent_fraction,
+                expected_parent_fraction,
+                rtol=0.0,
+                atol=1e-12,
+            )
+        ):
+            raise ValueError(
+                "CMA checkpoint parent_fraction is incompatible with this run."
+            )
         with np.load(array_path, allow_pickle=False) as arrays:
             copied = {name: arrays[name].copy() for name in arrays.files}
-        return CMAES.from_arrays(
+        optimizer = CMAES.from_arrays(
             copied,
             seed=seed,
             population_size=int(metadata["population_size"]),
+            parent_fraction=parent_fraction,
             rng_state=metadata["rng_state"],
         )
+        if "mu" in metadata and int(metadata["mu"]) != optimizer.mu:
+            raise ValueError("CMA checkpoint parent count is inconsistent.")
+        return optimizer

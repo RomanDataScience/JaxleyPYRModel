@@ -15,6 +15,8 @@ search:
     # Empty means all 44 fitted conductance, passive, and kinetic parameters.
     parameter_names: []
     population_size: 40
+    # Recombine the 12 best candidates (30% of 40) in each generation.
+    parent_fraction: 0.30
     generations: 100
     sigma0: 0.15
     boundary_policy: resample

@@ -68,13 +68,17 @@ def run_hybrid(
     cma_checkpoint = CMACheckpoint(
         cma_directory / "checkpoints", compatibility_hash
     )
-    cma = cma_checkpoint.load(seed=config.runtime.seed)
+    cma = cma_checkpoint.load(
+        seed=config.runtime.seed,
+        expected_parent_fraction=search.global_search.parent_fraction,
+    )
     if cma is None:
         cma = CMAES(
             base[subset],
             sigma=search.global_search.sigma0,
             seed=config.runtime.seed,
             population_size=search.global_search.population_size,
+            parent_fraction=search.global_search.parent_fraction,
         )
 
     candidate_path = cma_directory / "candidates.jsonl"

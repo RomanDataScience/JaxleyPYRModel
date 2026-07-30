@@ -1086,6 +1086,7 @@ class CMAESSpec:
     population_size: int = 0
     generations: int = 10
     sigma0: float = 0.15
+    parent_fraction: float = 0.5
     elites: int = 4
     invalid_loss: float = 1e12
     checkpoint_every_generations: int = 1
@@ -1098,7 +1099,7 @@ class CMAESSpec:
             {
                 "algorithm", "seed", "parameter_names", "population_size",
                 "generations", "sigma0", "boundary_policy", "invalid_loss",
-                "elites", "checkpoint_every_generations",
+                "parent_fraction", "elites", "checkpoint_every_generations",
             },
             "search.global",
         )
@@ -1108,10 +1109,15 @@ class CMAESSpec:
             raise ConfigError("Only resample CMA boundary handling is supported.")
         population = int(data.get("population_size", 0))
         generations = int(data.get("generations", 10))
+        parent_fraction = float(data.get("parent_fraction", 0.5))
         elites = int(data.get("elites", 4))
         checkpoint_every = int(data.get("checkpoint_every_generations", 1))
         if population < 0 or population == 1:
             raise ConfigError("search.global.population_size must be 0 or at least 2.")
+        if not math.isfinite(parent_fraction) or not 0.0 < parent_fraction <= 1.0:
+            raise ConfigError(
+                "search.global.parent_fraction must be in the interval (0, 1]."
+            )
         if generations <= 0 or elites <= 0 or checkpoint_every <= 0:
             raise ConfigError("CMA generations, elites, and checkpoint interval must be positive.")
         if population and elites > population:
@@ -1121,6 +1127,7 @@ class CMAESSpec:
             population_size=population,
             generations=generations,
             sigma0=_positive(data.get("sigma0", 0.15), "search.global.sigma0"),
+            parent_fraction=parent_fraction,
             elites=elites,
             invalid_loss=_positive(data.get("invalid_loss", 1e12), "search.global.invalid_loss"),
             checkpoint_every_generations=checkpoint_every,

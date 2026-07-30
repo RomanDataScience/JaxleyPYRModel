@@ -29,6 +29,7 @@ class CMAES:
         sigma: float,
         seed: int,
         population_size: int = 0,
+        parent_fraction: float = 0.5,
         state: CMAState | None = None,
         rng_state: dict | None = None,
     ):
@@ -39,7 +40,20 @@ class CMAES:
         self.population_size = population_size or (
             4 + int(math.floor(3.0 * math.log(self.dimension)))
         )
-        self.mu = self.population_size // 2
+        if self.population_size < 2:
+            raise ValueError("CMA population_size must be at least 2.")
+        self.parent_fraction = float(parent_fraction)
+        if (
+            not math.isfinite(self.parent_fraction)
+            or not 0.0 < self.parent_fraction <= 1.0
+        ):
+            raise ValueError("CMA parent_fraction must be in the interval (0, 1].")
+        # Use the largest whole parent set no larger than the requested
+        # fraction, while retaining at least one parent for small smoke runs.
+        self.mu = max(
+            1,
+            int(math.floor(self.population_size * self.parent_fraction)),
+        )
         raw_weights = np.log(self.mu + 0.5) - np.log(np.arange(1, self.mu + 1))
         self.weights = raw_weights / raw_weights.sum()
         self.mu_eff = 1.0 / np.sum(self.weights**2)
@@ -161,7 +175,15 @@ class CMAES:
         }
 
     @classmethod
-    def from_arrays(cls, arrays, *, seed, population_size, rng_state):
+    def from_arrays(
+        cls,
+        arrays,
+        *,
+        seed,
+        population_size,
+        parent_fraction=0.5,
+        rng_state,
+    ):
         state = CMAState(
             mean=np.asarray(arrays["mean"]),
             sigma=float(arrays["sigma"]),
@@ -176,6 +198,7 @@ class CMAES:
             sigma=state.sigma,
             seed=seed,
             population_size=population_size,
+            parent_fraction=parent_fraction,
             state=state,
             rng_state=rng_state,
         )

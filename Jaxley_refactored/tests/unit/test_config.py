@@ -100,6 +100,34 @@ def test_backtracking_optimizer_configuration_is_validated():
         )
 
 
+def test_cma_parent_fraction_defaults_and_validation():
+    default = AppConfig.from_mapping(
+        {"search": {"strategy": "hybrid"}}
+    )
+    assert default.search.global_search.parent_fraction == 0.5
+
+    configured = AppConfig.from_mapping(
+        {
+            "search": {
+                "strategy": "hybrid",
+                "global": {"parent_fraction": 0.30},
+            }
+        }
+    )
+    assert configured.search.global_search.parent_fraction == 0.30
+
+    for invalid in (0.0, -0.1, 1.1, float("nan"), float("inf")):
+        with pytest.raises(ConfigError, match="parent_fraction"):
+            AppConfig.from_mapping(
+                {
+                    "search": {
+                        "strategy": "hybrid",
+                        "global": {"parent_fraction": invalid},
+                    }
+                }
+            )
+
+
 def test_hyperpolarizing_only_config_has_isolated_data_loss_and_output():
     config = load_config(
         PROJECT / "configs/losses/hyperpolarizing_only.yaml"
