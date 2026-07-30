@@ -43,11 +43,27 @@ def default_loss_registry() -> LossRegistry:
         "mean_window_difference_error", primitives.mean_window_difference_error
     )
     registry.register("soft_firing_rate_error", primitives.soft_firing_rate_error)
+    registry.register(
+        "soft_forbidden_spike_count_error",
+        primitives.soft_forbidden_spike_count_error,
+    )
     registry.register("subthreshold_mean_error", primitives.subthreshold_mean_error)
     registry.register("soft_dblo_error", primitives.soft_dblo_error)
     registry.register(
         "soft_interspike_minimum_voltage_error",
         primitives.soft_interspike_minimum_voltage_error,
+    )
+    registry.register(
+        "soft_interspike_trough_shape_error",
+        primitives.soft_interspike_trough_shape_error,
+    )
+    registry.register(
+        "soft_mean_spike_peak_voltage_error",
+        primitives.soft_mean_spike_peak_voltage_error,
+    )
+    registry.register("soft_ahp_depth_error", primitives.soft_ahp_depth_error)
+    registry.register(
+        "soft_ahp_deficit_error", primitives.soft_ahp_deficit_error
     )
     registry.register(
         "soft_minimum_voltage_error", primitives.soft_minimum_voltage_error

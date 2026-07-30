@@ -675,13 +675,26 @@ _LOSS_KINDS = {
     "mean_window_difference_error",
     "experimental_voltage_band_mse",
     "soft_firing_rate_error",
+    "soft_forbidden_spike_count_error",
     "subthreshold_mean_error",
     "soft_dblo_error",
     "soft_interspike_minimum_voltage_error",
+    "soft_interspike_trough_shape_error",
+    "soft_mean_spike_peak_voltage_error",
+    "soft_ahp_depth_error",
+    "soft_ahp_deficit_error",
     "soft_minimum_voltage_error",
     "soft_maximum_voltage_error",
 }
-_LOSS_WINDOWS = {"score", "full_trace", "baseline", "stimulus", "recovery", "stimulus_end"}
+_LOSS_WINDOWS = {
+    "score",
+    "full_trace",
+    "baseline",
+    "stimulus",
+    "outside_stimulus",
+    "recovery",
+    "stimulus_end",
+}
 _LOSS_PENALTY_KINDS = {"soft_outside_stimulus_spike_multiplier"}
 
 
@@ -703,6 +716,7 @@ class LossComponentSpec:
     second_window_end_ms: float = 700.0
     voltage_band_lower_mV: float = -50.0
     voltage_band_upper_mV: float = -40.0
+    spike_window_half_width_ms: float = 3.0
     label: str = ""
 
     @classmethod
@@ -729,6 +743,7 @@ class LossComponentSpec:
                 "second_window_end_ms",
                 "voltage_band_lower_mV",
                 "voltage_band_upper_mV",
+                "spike_window_half_width_ms",
                 "label",
             },
             where,
@@ -771,6 +786,10 @@ class LossComponentSpec:
             raise ConfigError(
                 f"{where} voltage band must have finite ordered boundaries."
             )
+        spike_half_width = _positive(
+            data.get("spike_window_half_width_ms", 3.0),
+            f"{where}.spike_window_half_width_ms",
+        )
         return cls(
             kind=kind,
             weight=weight,
@@ -788,6 +807,7 @@ class LossComponentSpec:
             second_window_end_ms=second_end,
             voltage_band_lower_mV=band_lower,
             voltage_band_upper_mV=band_upper,
+            spike_window_half_width_ms=spike_half_width,
             label=str(data.get("label", kind)),
         )
 
@@ -800,6 +820,7 @@ class LossPenaltySpec:
     factor_per_spike: float = 1.1
     maximum_multiplier: float = 1e12
     protocols: tuple[str, ...] = ()
+    window: str = "outside_stimulus"
     threshold_mV: float = -20.0
     temperature_mV: float = 2.0
     label: str = ""
@@ -815,6 +836,7 @@ class LossPenaltySpec:
                 "factor_per_spike",
                 "maximum_multiplier",
                 "protocols",
+                "window",
                 "threshold_mV",
                 "temperature_mV",
                 "label",
@@ -837,11 +859,15 @@ class LossPenaltySpec:
         threshold = float(data.get("threshold_mV", -20.0))
         if not math.isfinite(threshold):
             raise ConfigError(f"{where}.threshold_mV must be finite.")
+        window = str(data.get("window", "outside_stimulus"))
+        if window not in _LOSS_WINDOWS:
+            raise ConfigError(f"Unsupported loss penalty window: {window}")
         return cls(
             kind=kind,
             factor_per_spike=factor,
             maximum_multiplier=maximum,
             protocols=_strings(data.get("protocols"), f"{where}.protocols"),
+            window=window,
             threshold_mV=threshold,
             temperature_mV=_positive(
                 data.get("temperature_mV", 2.0), f"{where}.temperature_mV"

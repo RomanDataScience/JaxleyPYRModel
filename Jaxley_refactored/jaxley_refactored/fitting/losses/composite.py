@@ -74,6 +74,64 @@ def observed_interspike_masks(
     return masks, valid
 
 
+def observed_spike_peak_masks(
+    observed_mV: np.ndarray,
+    window_mask: np.ndarray,
+    *,
+    threshold_mV: float,
+    dt_ms: float,
+    half_width_ms: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build fixed windows around every observed in-window spike peak."""
+
+    observed = np.asarray(observed_mV, dtype=float)
+    window = np.asarray(window_mask, dtype=bool)
+    if observed.ndim != 2 or window.shape != observed.shape:
+        raise ValueError(
+            "observed_mV and window_mask must be same-shape [trace, time] arrays."
+        )
+    peaks_by_trace: list[list[int]] = []
+    for voltage, selected in zip(observed, window, strict=True):
+        crossings = np.flatnonzero(
+            (voltage[:-1] < threshold_mV)
+            & (voltage[1:] >= threshold_mV)
+            & selected[1:]
+        ) + 1
+        peaks = []
+        for index, crossing in enumerate(crossings):
+            stop = (
+                int(crossings[index + 1])
+                if index + 1 < len(crossings)
+                else len(voltage)
+            )
+            selected_indices = np.flatnonzero(selected[crossing:stop])
+            if selected_indices.size:
+                local_stop = crossing + int(selected_indices[-1]) + 1
+                peaks.append(
+                    crossing
+                    + int(np.argmax(voltage[crossing:local_stop]))
+                )
+        peaks_by_trace.append(peaks)
+
+    peak_count = max(1, max((len(peaks) for peaks in peaks_by_trace), default=0))
+    masks = np.zeros(
+        (observed.shape[0], peak_count, observed.shape[1]), dtype=bool
+    )
+    valid = np.zeros((observed.shape[0], peak_count), dtype=bool)
+    half_steps = max(1, int(round(half_width_ms / dt_ms)))
+    for trace_index, peaks in enumerate(peaks_by_trace):
+        for peak_index, peak in enumerate(peaks):
+            start = max(0, peak - half_steps)
+            stop = min(observed.shape[1], peak + half_steps + 1)
+            masks[trace_index, peak_index, start:stop] = window[
+                trace_index, start:stop
+            ]
+            valid[trace_index, peak_index] = bool(
+                np.any(masks[trace_index, peak_index])
+            )
+    return masks, valid
+
+
 def component_denominators(
     components: Iterable[LossComponentSpec],
     buckets: Iterable[TraceBucket],
@@ -118,12 +176,14 @@ class BoundTerm:
     interspike_masks: object | None
     interspike_valid: object | None
     comparison_mask: object | None
+    spike_masks: object | None
+    spike_valid: object | None
 
 
 @dataclass(frozen=True)
 class BoundPenalty:
     spec: LossPenaltySpec
-    outside_stimulus_mask: object
+    event_mask: object
     protocol_selector: object
 
 
@@ -206,6 +266,13 @@ class BucketObjective:
             interspike_masks = None
             interspike_valid = None
             comparison_mask = None
+            spike_masks = None
+            spike_valid = None
+            if component.kind in {
+                "soft_ahp_depth_error",
+                "soft_ahp_deficit_error",
+            }:
+                baseline_mask = jnp.asarray(bucket.window_masks["baseline"])
             if component.kind == "mean_window_difference_error":
                 component_mask = np.zeros_like(bucket.observed_mV, dtype=bool)
                 second_mask = np.zeros_like(bucket.observed_mV, dtype=bool)
@@ -235,6 +302,7 @@ class BucketObjective:
             if component.kind in {
                 "soft_dblo_error",
                 "soft_interspike_minimum_voltage_error",
+                "soft_interspike_trough_shape_error",
             }:
                 if component.kind == "soft_dblo_error":
                     baseline_mask = jnp.asarray(bucket.window_masks["baseline"])
@@ -243,7 +311,10 @@ class BucketObjective:
                     component_mask,
                     threshold_mV=component.threshold_mV,
                 )
-                if component.kind == "soft_interspike_minimum_voltage_error":
+                if component.kind in {
+                    "soft_interspike_minimum_voltage_error",
+                    "soft_interspike_trough_shape_error",
+                }:
                     # This metric is explicitly after the preceding spike:
                     # exclude the observed peak that starts each interval.
                     starts = np.argmax(interval_masks, axis=-1)
@@ -256,6 +327,16 @@ class BucketObjective:
                     interval_valid = np.any(interval_masks, axis=-1)
                 interspike_masks = jnp.asarray(interval_masks)
                 interspike_valid = jnp.asarray(interval_valid)
+            if component.kind == "soft_mean_spike_peak_voltage_error":
+                peak_masks, peak_valid = observed_spike_peak_masks(
+                    bucket.observed_mV,
+                    component_mask,
+                    threshold_mV=component.threshold_mV,
+                    dt_ms=bucket.dt_ms,
+                    half_width_ms=component.spike_window_half_width_ms,
+                )
+                spike_masks = jnp.asarray(peak_masks)
+                spike_valid = jnp.asarray(peak_valid)
             terms.append(
                 BoundTerm(
                     spec=component,
@@ -267,6 +348,8 @@ class BucketObjective:
                     interspike_masks=interspike_masks,
                     interspike_valid=interspike_valid,
                     comparison_mask=comparison_mask,
+                    spike_masks=spike_masks,
+                    spike_valid=spike_valid,
                 )
             )
         self.terms = tuple(terms)
@@ -282,9 +365,7 @@ class BucketObjective:
             bound_penalties.append(
                 BoundPenalty(
                     spec=penalty,
-                    outside_stimulus_mask=jnp.asarray(
-                        bucket.window_masks["outside_stimulus"]
-                    ),
+                    event_mask=jnp.asarray(bucket.window_masks[penalty.window]),
                     protocol_selector=jnp.asarray(protocol_selector),
                 )
             )
@@ -299,6 +380,7 @@ class BucketObjective:
             if term.spec.kind in {
                 "soft_dblo_error",
                 "soft_interspike_minimum_voltage_error",
+                "soft_interspike_trough_shape_error",
             }:
                 interspike_context = {
                     "interspike_masks": term.interspike_masks,
@@ -308,6 +390,20 @@ class BucketObjective:
                     interspike_context["baseline_mask"] = term.baseline_mask
             if term.spec.kind == "mean_window_difference_error":
                 interspike_context["comparison_mask"] = term.comparison_mask
+            if term.spec.kind == "soft_mean_spike_peak_voltage_error":
+                interspike_context.update(
+                    {
+                        "spike_masks": term.spike_masks,
+                        "spike_valid": term.spike_valid,
+                    }
+                )
+            if term.spec.kind in {
+                "soft_ahp_depth_error",
+                "soft_ahp_deficit_error",
+            }:
+                interspike_context["baseline_mask"] = jnp.asarray(
+                    term.baseline_mask
+                )
             per_trace = term.function(
                 predicted,
                 observed,
@@ -335,7 +431,7 @@ class BucketObjective:
         for penalty in self.penalties:
             per_trace = primitives.soft_upward_crossing_count(
                 predicted,
-                penalty.outside_stimulus_mask,
+                penalty.event_mask,
                 threshold_mV=penalty.spec.threshold_mV,
                 temperature_mV=penalty.spec.temperature_mV,
             )

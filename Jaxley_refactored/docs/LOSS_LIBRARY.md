@@ -20,9 +20,14 @@ are summed before one update to the shared parameter vector.
 | `steady_state_error` | Squared error between window means | `stimulus_end` window |
 | `mean_window_difference_error` | Squared error between simulated and experimental differences of two configurable time-window means | Window boundaries and `scale_mV` |
 | `soft_firing_rate_error` | Squared difference between positive smooth-threshold occupancy rates | `threshold_mV`, `temperature_mV`, `scale_hz` |
+| `soft_forbidden_spike_count_error` | Squared smooth crossing count in a forbidden window | `threshold_mV`, `temperature_mV`, `scale` |
 | `subthreshold_mean_error` | Squared inter-spike mean-voltage error using an experimental subthreshold mask | `threshold_mV`, `scale_mV` |
 | `soft_dblo_error` | Squared error in depolarization baseline offset: mean interspike minimum minus pre-step rest | `threshold_mV`, `temperature_mV`, `scale_mV` |
-| `soft_interspike_minimum_voltage_error` | Squared error in the absolute mean of interspike minimum voltages | `threshold_mV`, `temperature_mV`, `scale_mV` |
+| `soft_interspike_minimum_voltage_error` | Mean per-interval squared error in absolute interspike minima | `threshold_mV`, `temperature_mV`, `scale_mV` |
+| `soft_interspike_trough_shape_error` | Per-interval trough phase, width, and asymmetry error | `threshold_mV`, `temperature_mV`, `scale` |
+| `soft_mean_spike_peak_voltage_error` | Mean per-spike peak error in fixed observed peak windows | `spike_window_half_width_ms`, `temperature_mV`, `scale_mV` |
+| `soft_ahp_depth_error` | Recovery minimum depth relative to pre-step baseline | `temperature_mV`, `scale_mV` |
+| `soft_ahp_deficit_error` | Mean smooth below-baseline recovery deficit | `temperature_mV`, `scale_mV` |
 | `soft_minimum_voltage_error` | Squared difference between smooth minimum voltages | `temperature_mV`, `scale_mV` |
 | `soft_maximum_voltage_error` | Squared difference between smooth maximum voltages | `temperature_mV`, `scale_mV` |
 
@@ -72,8 +77,9 @@ differentiable, and compatible with JAX automatic differentiation.
 `soft_interspike_minimum_voltage_error` uses the same fixed experimental
 peak-to-next-threshold intervals as DBLO. These intervals span consecutive
 spikes after the first spike peak and end before the last spike's upward
-threshold crossing. A smooth minimum is computed in each interval and those
-minima are averaged.
+threshold crossing. A smooth minimum is computed in each interval. Squared
+errors are averaged over intervals, preventing high and low trough errors from
+canceling.
 
 The simulated and experimental absolute mean voltages are compared directly;
 resting voltage is not subtracted. This makes the metric distinct from DBLO
@@ -104,6 +110,9 @@ surrogate as the firing-rate term, without duration normalization. A crossing
 is assigned according to its destination sample, so a crossing at the first
 recovery sample is outside while one at stimulus onset is inside.
 
+The optional penalty `window` defaults to `outside_stimulus`; LSU_1 also uses
+`full_trace` for its hyperpolarizing no-spike multiplier.
+
 Across all selected traces, the configured penalty is:
 
 ```text
@@ -122,10 +131,11 @@ fit:
   objective:
     penalties:
       - kind: soft_outside_stimulus_spike_multiplier
-        label: outside_step_spikes
+        label: depolarizing_outside_step_spikes
         factor_per_spike: 1.1
         maximum_multiplier: 1.0e12
-        protocols: [depolarizing_step, hyperpolarizing_pulse]
+        protocols: [depolarizing_step]
+        window: outside_stimulus
         threshold_mV: -20.0
         temperature_mV: 2.0
 
@@ -167,11 +177,12 @@ objective.
 
 `configs/losses/LSU_1.yaml` restricts score-window point-by-point voltage MSE
 to the hyperpolarizing protocol. Depolarizing traces instead use
-differentiable firing rate, absolute mean interspike-minimum voltage, spike
-waveform/slope/height, and post-step recovery trajectory/slope/AHP metrics.
-Protocol allocations are `0.8` and `0.2`. The complete base loss is multiplied
-by `1.1` raised to the continuous number of spikes outside the stimulus
-intervals. LSU_1 inherits Adam with backtracking.
+differentiable firing rate, absolute interspike minima, trough geometry,
+per-spike height, and baseline-relative AHP/recovery metrics. Additive soft
+counts forbid depolarizing spikes outside the step and hyperpolarizing spikes
+over the full trace; matching multiplicative safeguards use the same windows.
+Protocol allocations are `0.8` and `0.2`. LSU_1 inherits Adam with
+backtracking.
 
 See
 [`configs/losses/README_LSU_1.md`](../configs/losses/README_LSU_1.md)

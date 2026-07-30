@@ -177,6 +177,28 @@ def soft_upward_crossing_count(
     return jnp.sum(destinations * soft_crossings, axis=-1)
 
 
+def soft_forbidden_spike_count_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    scale=1.0,
+    threshold_mV=-20.0,
+    temperature_mV=2.0,
+    **_,
+):
+    """Penalize every smooth upward crossing in a forbidden window."""
+
+    del observed
+    count = soft_upward_crossing_count(
+        predicted,
+        mask,
+        threshold_mV=threshold_mV,
+        temperature_mV=temperature_mV,
+    )
+    return (count / scale) ** 2
+
+
 def subthreshold_mean_error(
     predicted,
     observed,
@@ -292,17 +314,175 @@ def soft_interspike_minimum_voltage_error(
     valid_float = valid_intervals.astype(predicted.dtype)
     interval_count = jnp.maximum(jnp.sum(valid_float, axis=-1), 1.0)
 
-    def mean_interspike_minimum(voltage):
+    def interspike_minima(voltage):
         minima = _soft_masked_minimum(
             voltage[:, None, :], interval_masks, temperature_mV
         )
-        return jnp.sum(valid_float * minima, axis=-1) / interval_count
+        return minima
 
-    difference = mean_interspike_minimum(
-        predicted
-    ) - mean_interspike_minimum(observed)
-    loss = (difference / scale) ** 2
+    difference = (
+        interspike_minima(predicted) - interspike_minima(observed)
+    ) / scale
+    loss = jnp.sum(valid_float * difference**2, axis=-1) / interval_count
     return jnp.where(jnp.any(valid_intervals, axis=-1), loss, 0.0)
+
+
+def soft_interspike_trough_shape_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    interspike_masks,
+    interspike_valid,
+    scale=1.0,
+    temperature_mV=1.0,
+    **_,
+):
+    """Compare trough position, rounded width, and asymmetry within each ISI."""
+
+    interval_masks = (
+        jnp.asarray(interspike_masks, dtype=bool)
+        & jnp.asarray(mask, dtype=bool)[:, None, :]
+    )
+    valid_intervals = (
+        jnp.asarray(interspike_valid, dtype=bool)
+        & jnp.any(interval_masks, axis=-1)
+    )
+    valid_float = valid_intervals.astype(predicted.dtype)
+    interval_count = jnp.maximum(jnp.sum(valid_float, axis=-1), 1.0)
+
+    sample_index = jnp.arange(predicted.shape[-1], dtype=predicted.dtype)
+    first = jnp.min(
+        jnp.where(interval_masks, sample_index, jnp.inf), axis=-1
+    )
+    last = jnp.max(
+        jnp.where(interval_masks, sample_index, -jnp.inf), axis=-1
+    )
+    first = jnp.where(valid_intervals, first, 0.0)
+    last = jnp.where(valid_intervals, last, 1.0)
+    span = jnp.maximum(last - first, 1.0)
+    phase = (sample_index[None, None, :] - first[..., None]) / span[..., None]
+
+    def features(voltage):
+        logits = -voltage[:, None, :] / temperature_mV
+        logits = jnp.where(interval_masks, logits, -jnp.inf)
+        reference = jnp.max(logits, axis=-1, keepdims=True)
+        reference = jnp.where(valid_intervals[..., None], reference, 0.0)
+        unnormalized = jnp.where(
+            interval_masks, jnp.exp(logits - reference), 0.0
+        )
+        probabilities = unnormalized / jnp.maximum(
+            jnp.sum(unnormalized, axis=-1, keepdims=True), 1e-12
+        )
+        center = jnp.sum(probabilities * phase, axis=-1)
+        centered = phase - center[..., None]
+        variance = jnp.sum(probabilities * centered**2, axis=-1)
+        width = jnp.sqrt(jnp.maximum(variance, 1e-12))
+        asymmetry = jnp.sum(probabilities * centered**3, axis=-1)
+        return center, width, asymmetry
+
+    predicted_features = features(predicted)
+    observed_features = features(observed)
+    per_interval = sum(
+        ((predicted_item - observed_item) / scale) ** 2
+        for predicted_item, observed_item in zip(
+            predicted_features, observed_features, strict=True
+        )
+    ) / 3.0
+    loss = jnp.sum(valid_float * per_interval, axis=-1) / interval_count
+    return jnp.where(jnp.any(valid_intervals, axis=-1), loss, 0.0)
+
+
+def soft_mean_spike_peak_voltage_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    spike_masks,
+    spike_valid,
+    scale=1.0,
+    temperature_mV=1.0,
+    **_,
+):
+    """Mean per-spike squared peak-voltage error in fixed observed windows."""
+
+    masks = (
+        jnp.asarray(spike_masks, dtype=bool)
+        & jnp.asarray(mask, dtype=bool)[:, None, :]
+    )
+    valid = jnp.asarray(spike_valid, dtype=bool) & jnp.any(masks, axis=-1)
+    valid_float = valid.astype(predicted.dtype)
+    count = jnp.maximum(jnp.sum(valid_float, axis=-1), 1.0)
+
+    def peaks(voltage):
+        logits = voltage[:, None, :] / temperature_mV
+        masked_logits = jnp.where(masks, logits, -jnp.inf)
+        reference = jnp.max(masked_logits, axis=-1, keepdims=True)
+        reference = jnp.where(valid[..., None], reference, 0.0)
+        sample_count = jnp.maximum(jnp.sum(masks, axis=-1), 1.0)
+        mean_exponential = (
+            jnp.sum(
+                jnp.where(
+                    masks, jnp.exp(masked_logits - reference), 0.0
+                ),
+                axis=-1,
+            )
+            / sample_count
+        )
+        mean_exponential = jnp.where(valid, mean_exponential, 1.0)
+        return temperature_mV * (
+            jnp.squeeze(reference, axis=-1) + jnp.log(mean_exponential)
+        )
+
+    difference = (peaks(predicted) - peaks(observed)) / scale
+    loss = jnp.sum(valid_float * difference**2, axis=-1) / count
+    return jnp.where(jnp.any(valid, axis=-1), loss, 0.0)
+
+
+def soft_ahp_depth_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    baseline_mask,
+    scale=1.0,
+    temperature_mV=1.0,
+    **_,
+):
+    """Compare recovery minimum depth relative to each trace's own baseline."""
+
+    def depth(voltage):
+        baseline = _masked_mean(voltage, baseline_mask)
+        minimum = _soft_masked_minimum(voltage, mask, temperature_mV)
+        return baseline - minimum
+
+    difference = (depth(predicted) - depth(observed)) / scale
+    valid = jnp.any(mask, axis=-1) & jnp.any(baseline_mask, axis=-1)
+    return jnp.where(valid, difference**2, 0.0)
+
+
+def soft_ahp_deficit_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    baseline_mask,
+    scale=1.0,
+    temperature_mV=1.0,
+    **_,
+):
+    """Compare mean voltage deficit below baseline across recovery."""
+
+    def mean_deficit(voltage):
+        baseline = _masked_mean(voltage, baseline_mask)
+        deficit = temperature_mV * jnn.softplus(
+            (baseline[:, None] - voltage) / temperature_mV
+        )
+        return _masked_mean(deficit, mask)
+
+    difference = (mean_deficit(predicted) - mean_deficit(observed)) / scale
+    valid = jnp.any(mask, axis=-1) & jnp.any(baseline_mask, axis=-1)
+    return jnp.where(valid, difference**2, 0.0)
 
 
 def soft_maximum_voltage_error(
