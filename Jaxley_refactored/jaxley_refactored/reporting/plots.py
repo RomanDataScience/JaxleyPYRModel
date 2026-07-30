@@ -12,6 +12,21 @@ import numpy as np
 from jaxley_refactored.data import TraceBucket
 
 
+_HYPERPOLARIZING_PLOT_START_MS = 400.0
+
+
+def _plot_sample_mask(protocol: str, time_ms: np.ndarray) -> np.ndarray:
+    """Select the visible samples without changing simulation or scoring.
+
+    Short, deliberately truncated traces (for example smoke-test runs) fall
+    back to their full available duration when they do not reach 400 ms.
+    """
+    if protocol != "hyperpolarizing_pulse":
+        return np.ones(time_ms.shape, dtype=bool)
+    mask = time_ms >= _HYPERPOLARIZING_PLOT_START_MS
+    return mask if np.any(mask) else np.ones(time_ms.shape, dtype=bool)
+
+
 def plot_epoch_traces(
     directory: Path,
     buckets: Iterable[TraceBucket],
@@ -56,10 +71,11 @@ def plot_epoch_traces(
     )
     for index, (record, simulated) in enumerate(traces):
         axis = axes.flat[index]
-        time_seconds = record.time_ms / 1000.0
+        plot_mask = _plot_sample_mask(record.protocol, record.time_ms)
+        time_seconds = record.time_ms[plot_mask] / 1000.0
         axis.plot(
             time_seconds,
-            record.voltage_mV,
+            record.voltage_mV[plot_mask],
             color="black",
             linewidth=0.9,
             alpha=experimental_alpha,
@@ -68,7 +84,7 @@ def plot_epoch_traces(
         )
         axis.plot(
             time_seconds,
-            simulated,
+            simulated[plot_mask],
             color="tab:orange",
             linewidth=0.9,
             alpha=1.0,

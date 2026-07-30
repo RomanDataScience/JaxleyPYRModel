@@ -4,6 +4,7 @@ import numpy as np
 
 from jaxley_refactored.data import TraceRecord, bucket_records
 from jaxley_refactored.reporting import plot_epoch_traces
+from jaxley_refactored.reporting.plots import _plot_sample_mask
 
 
 def _record(trace_id: str, protocol: str, size: int) -> TraceRecord:
@@ -61,3 +62,24 @@ def test_epoch_plot_accepts_experimental_style_preview(tmp_path: Path):
     assert destination.name == "preview.png"
     assert destination.stat().st_size > 0
     assert not (tmp_path / "latest.png").exists()
+
+
+def test_hyperpolarizing_plot_hides_samples_before_400_ms():
+    time_ms = np.array([0.0, 399.95, 400.0, 500.0, 650.0])
+
+    mask = _plot_sample_mask("hyperpolarizing_pulse", time_ms)
+
+    np.testing.assert_array_equal(mask, [False, False, True, True, True])
+    np.testing.assert_array_equal(
+        _plot_sample_mask("depolarizing_step", time_ms),
+        np.ones(time_ms.shape, dtype=bool),
+    )
+
+
+def test_short_hyperpolarizing_plot_keeps_available_smoke_test_samples():
+    time_ms = np.array([0.0, 50.0, 100.0])
+
+    np.testing.assert_array_equal(
+        _plot_sample_mask("hyperpolarizing_pulse", time_ms),
+        np.ones(time_ms.shape, dtype=bool),
+    )

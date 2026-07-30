@@ -167,6 +167,26 @@ depolarizing firing rate, interspike-minimum voltage, spike and recovery
 metrics, and the outside-step spike penalty—see
 [`configs/losses/README_LSU_1.md`](configs/losses/README_LSU_1.md).
 
+For a separate hyperpolarization-only fit using point-by-point voltage MSE:
+
+```bash
+bash scripts/run_full_fitting.sh \
+  --config configs/losses/hyperpolarizing_only.yaml \
+  --cells m20240527cd \
+  --seed 1234
+```
+
+This configuration writes fitted runs to `runs_hyper/` instead of `runs/`.
+
+To run the full hyperpolarization-only CMA-ES → Adam hybrid pipeline:
+
+```bash
+./scripts/run_hybrid_cells.sh \
+  --config configs/search/hyperpolarizing_only_cma_adam.yaml \
+  --cells m20240527cd \
+  --seed 1234
+```
+
 - `model.morphology.provider`: `hoc_live`, `hoc_artifact`, or `swc`.
 - `model.morphology.path`: artifact directory or any compatible SWC file.
 - `model.morphology.discretization`: d-lambda and frequency.

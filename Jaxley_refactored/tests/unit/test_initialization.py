@@ -87,3 +87,24 @@ def test_hybrid_config_does_not_change_legacy_fit_default():
     assert hybrid.search.reporting.cma_plot_every_generations == 1
     assert hybrid.search.reporting.adam_plot_every_epochs == 10
     assert hybrid.search.reporting.plot_final_candidates is True
+
+
+def test_hyperpolarizing_hybrid_inherits_isolated_loss_and_full_budget():
+    local = load_config(
+        PROJECT / "configs/losses/hyperpolarizing_only.yaml"
+    )
+    hybrid = load_config(
+        PROJECT / "configs/search/hyperpolarizing_only_cma_adam.yaml"
+    )
+
+    assert hybrid.search.strategy == "hybrid"
+    assert hybrid.search.global_search.population_size == 40
+    assert hybrid.search.global_search.generations == 100
+    assert hybrid.search.local_exploration.epochs == 50
+    assert hybrid.search.local_exploration.backtracking is False
+    assert hybrid.search.local_refinement.epochs == 150
+    assert hybrid.search.local_refinement.backtracking is True
+    assert hybrid.fit.components == local.fit.components
+    assert hybrid.fit.penalties == ()
+    assert hybrid.dataset.segments == ("hyperpolarizing_pulse",)
+    assert hybrid.output.root == PROJECT / "runs_hyper"

@@ -100,6 +100,32 @@ def test_backtracking_optimizer_configuration_is_validated():
         )
 
 
+def test_hyperpolarizing_only_config_has_isolated_data_loss_and_output():
+    config = load_config(
+        PROJECT / "configs/losses/hyperpolarizing_only.yaml"
+    )
+
+    assert config.dataset.segments == ("hyperpolarizing_pulse",)
+    assert config.dataset.trace_indices == (1, 3)
+    assert config.dataset.simulation_post_ms == 100.0
+    assert config.dataset.score_pre_ms == 100.0
+    assert config.dataset.score_post_ms == 100.0
+    assert config.fit.protocol_weights == {
+        "depolarizing_step": 0.0,
+        "hyperpolarizing_pulse": 1.0,
+    }
+    assert config.fit.penalties == ()
+    assert len(config.fit.components) == 1
+    component = config.fit.components[0]
+    assert component.kind == "voltage_mse"
+    assert component.label == "hyperpolarizing_waveform_mse"
+    assert component.protocols == ("hyperpolarizing_pulse",)
+    assert component.window == "score"
+    assert component.weight == 1.0
+    assert component.scale == 1.0
+    assert config.output.root == PROJECT / "runs_hyper"
+
+
 def test_outside_spike_penalty_configuration_is_validated():
     default_config = AppConfig.from_mapping(
         {

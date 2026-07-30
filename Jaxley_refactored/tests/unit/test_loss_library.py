@@ -43,6 +43,7 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
             "resting_voltage",
             "hyperpolarizing_steady_state",
         ),
+        "hyperpolarizing_only.yaml": ("hyperpolarizing_waveform_mse",),
         "LSU_1.yaml": (
             "hyperpolarizing_waveform_mse",
             "depolarizing_firing_rate",

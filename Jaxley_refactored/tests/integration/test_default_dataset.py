@@ -54,6 +54,27 @@ def test_trace_indices_select_cell_specific_first_and_third_traces():
     assert len(first_cell) == len(second_cell) == 4
 
 
+def test_hyperpolarizing_only_config_loads_two_650_ms_records_per_cell():
+    config = load_config(
+        PROJECT / "configs/losses/hyperpolarizing_only.yaml"
+    )
+
+    for cell_id, expected_ids in {
+        "m20240527cd": {"v75ctrl", "v77ctrl"},
+        "m20260331b": {"v34ctrl", "v43ctrl"},
+    }.items():
+        records = SegmentedTraceLoader().load(
+            replace(config.dataset, cell_id=cell_id)
+        )
+        assert len(records) == 2
+        assert {record.protocol for record in records} == {
+            "hyperpolarizing_pulse"
+        }
+        assert {record.trace_id for record in records} == expected_ids
+        assert all(np.isclose(record.time_ms[-1], 650.0) for record in records)
+        assert all(record.score_mask[-1] for record in records)
+
+
 def test_lsu_applies_protocol_specific_simulation_horizons():
     config = load_config(PROJECT / "configs/losses/LSU_1.yaml")
     training = replace(config.dataset, cell_id="m20260331b")

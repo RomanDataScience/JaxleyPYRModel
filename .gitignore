@@ -9,5 +9,5 @@ __pycache__
 mod/
 *.npz
 *.csv
-runs/
+runs*/
 *.out
