@@ -120,7 +120,11 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert (
         components["hyperpolarizing_forbidden_spikes"].window == "full_trace"
     )
-    assert all(item.weight == 1.0 for item in lsu.fit.components)
+    assert all(
+        item.weight == 1.0
+        for item in lsu.fit.components
+        if item.label != "depolarizing_minus50_minus40_voltage_mse"
+    )
     assert all(item.scale == 1.0 for item in lsu.fit.components)
     early_late = components["depolarizing_early_late_voltage_difference"]
     assert early_late.kind == "mean_window_difference_error"
@@ -138,6 +142,7 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert voltage_band.window == "stimulus"
     assert voltage_band.voltage_band_lower_mV == -50.0
     assert voltage_band.voltage_band_upper_mV == -40.0
+    assert voltage_band.weight == 0.75
 
 
 def test_every_lsu_variant_inherits_the_same_reweighted_objective():

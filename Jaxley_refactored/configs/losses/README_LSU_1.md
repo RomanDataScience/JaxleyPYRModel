@@ -32,8 +32,9 @@ independent of cell-specific trace names.
 
 ## Complete objective
 
-All additive components currently have raw weight `1.0` and native-unit scale
-`1.0`, following the requested equal-weight configuration.
+All additive components have raw weight `1.0` except the dedicated
+−50 to −40 mV plateau-band term, whose weight is `0.75`. Every normalization
+scale remains `1.0` in its native units.
 
 | Component | Biological role | Protocol/window |
 |---|---|---|
@@ -50,7 +51,7 @@ All additive components currently have raw weight `1.0` and native-unit scale
 | `depolarizing_ahp_duration` | Mean below-baseline deficit over recovery | Depolarizing, `recovery` |
 | `depolarizing_early_late_voltage_difference` | Baseline versus early AHP, 100–200 and 600–700 ms | Depolarizing |
 | `depolarizing_terminal_baseline_difference` | Baseline versus recovery tail, 100–200 and 900–1000 ms | Depolarizing |
-| `depolarizing_minus50_minus40_voltage_mse` | Pointwise voltage error in the experimental −50 to −40 mV band | Depolarizing, `stimulus` |
+| `depolarizing_minus50_minus40_voltage_mse` | Pointwise voltage error in the experimental −50 to −40 mV band; weight `0.75` | Depolarizing, `stimulus` |
 
 ## 1. Firing rate
 
@@ -165,9 +166,10 @@ The objective uses `protocol_mean`:
 | Depolarizing | `0.8` | `0.4` |
 | Hyperpolarizing | `0.2` | `0.1` |
 
-Protocol-filtered components are not renormalized. Thus equal raw component
-weights do not imply equal final influence: depolarizing-only components retain
-the `0.8` allocation and hyperpolarizing-only components retain `0.2`.
+Protocol-filtered components are not renormalized. Thus raw component weights
+do not directly equal final influence: depolarizing-only components retain the
+`0.8` allocation and hyperpolarizing-only components retain `0.2`. The plateau
+band has a pre-metric coefficient of `0.75 × 0.8 = 0.6`.
 
 Likewise, setting every native-unit scale to `1.0` does not statistically
 equalize the metrics. Firing-rate error is measured in Hz, voltage features in

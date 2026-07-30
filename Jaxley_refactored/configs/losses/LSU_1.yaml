@@ -177,7 +177,7 @@ fit:
       # within the fixed -50 to -40 mV band.
       - kind: experimental_voltage_band_mse
         label: depolarizing_minus50_minus40_voltage_mse
-        weight: 1.0
+        weight: 0.75
         protocols: [depolarizing_step]
         window: stimulus
         voltage_band_lower_mV: -50.0
