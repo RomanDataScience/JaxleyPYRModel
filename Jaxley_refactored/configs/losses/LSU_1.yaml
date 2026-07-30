@@ -12,8 +12,8 @@ dataset:
   score_windows:
     post_ms: 500.0
 
-# LSU_1 uses point-by-point voltage MSE and a differentiable depolarizing
-# firing-rate error, plus a continuous multiplier for spikes outside the step.
+# LSU_1 uses pointwise MSE only for hyperpolarizing traces. Depolarizing traces
+# use differentiable firing-rate, DBLO, spike-shape/height, and recovery terms.
 fit:
   objective:
     # Preserve the global 0.8/0.2 protocol allocation for protocol-specific
@@ -33,11 +33,11 @@ fit:
         temperature_mV: 2.0
 
     components:
-      # Mean squared point-by-point voltage difference over each score window.
+      # Point-by-point voltage difference only for hyperpolarizing traces.
       - kind: voltage_mse
-        label: waveform_mse
+        label: hyperpolarizing_waveform_mse
         weight: 1.0
-        protocols: [depolarizing_step, hyperpolarizing_pulse]
+        protocols: [hyperpolarizing_pulse]
         window: score
         scale_mV: 5.0
 
@@ -50,6 +50,65 @@ fit:
         threshold_mV: -20.0
         temperature_mV: 2.0
         scale_hz: 5.0
+
+      # Inter-spike depolarization baseline offset relative to resting voltage.
+      - kind: soft_dblo_error
+        label: depolarizing_dblo
+        weight: 2.0
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        temperature_mV: 1.0
+        scale_mV: 5.0
+
+      # Robust voltage-shape and slope comparisons during the current step.
+      - kind: pseudo_huber
+        label: depolarizing_spike_waveform
+        weight: 0.25
+        protocols: [depolarizing_step]
+        window: stimulus
+        scale_mV: 5.0
+        delta: 1.0
+
+      - kind: derivative_mse
+        label: depolarizing_spike_derivative
+        weight: 0.25
+        protocols: [depolarizing_step]
+        window: stimulus
+        scale_mV_per_ms: 20.0
+
+      # Smooth maximum-voltage comparison for action-potential height.
+      - kind: soft_maximum_voltage_error
+        label: depolarizing_spike_height
+        weight: 0.32
+        protocols: [depolarizing_step]
+        window: stimulus
+        temperature_mV: 1.0
+        scale_mV: 5.0
+
+      # Post-step waveform, return slope, and AHP depth.
+      - kind: pseudo_huber
+        label: depolarizing_recovery_waveform
+        weight: 0.5
+        protocols: [depolarizing_step]
+        window: recovery
+        scale_mV: 3.0
+        delta: 1.0
+
+      - kind: derivative_mse
+        label: depolarizing_recovery_derivative
+        weight: 0.2
+        protocols: [depolarizing_step]
+        window: recovery
+        scale_mV_per_ms: 1.0
+
+      - kind: soft_minimum_voltage_error
+        label: depolarizing_ahp_depth
+        weight: 0.10
+        protocols: [depolarizing_step]
+        window: recovery
+        temperature_mV: 1.0
+        scale_mV: 3.0
 
     aggregation: protocol_mean
     # With two training traces per protocol, these totals assign 0.4 to each

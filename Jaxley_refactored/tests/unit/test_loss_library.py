@@ -37,7 +37,17 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
             "resting_voltage",
             "hyperpolarizing_steady_state",
         ),
-        "LSU_1.yaml": ("waveform_mse", "depolarizing_firing_rate"),
+        "LSU_1.yaml": (
+            "hyperpolarizing_waveform_mse",
+            "depolarizing_firing_rate",
+            "depolarizing_dblo",
+            "depolarizing_spike_waveform",
+            "depolarizing_spike_derivative",
+            "depolarizing_spike_height",
+            "depolarizing_recovery_waveform",
+            "depolarizing_recovery_derivative",
+            "depolarizing_ahp_depth",
+        ),
     }
     for filename, labels in expected.items():
         config = load_config(PROJECT / "configs/losses" / filename)
@@ -47,15 +57,12 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert len(lsu.fit.penalties) == 1
     assert lsu.fit.penalties[0].label == "outside_step_spikes"
     assert lsu.fit.penalties[0].factor_per_spike == 1.1
-    assert len(lsu.fit.components) == 2
+    assert len(lsu.fit.components) == 9
     component = lsu.fit.components[0]
-    assert component.label == "waveform_mse"
+    assert component.label == "hyperpolarizing_waveform_mse"
     assert component.kind == "voltage_mse"
     assert component.weight == 1.0
-    assert component.protocols == (
-        "depolarizing_step",
-        "hyperpolarizing_pulse",
-    )
+    assert component.protocols == ("hyperpolarizing_pulse",)
     assert component.window == "score"
     assert component.scale == 5.0
     firing_rate = lsu.fit.components[1]
@@ -67,6 +74,14 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert firing_rate.threshold_mV == -20.0
     assert firing_rate.temperature_mV == 2.0
     assert firing_rate.scale == 5.0
+    components = {item.label: item for item in lsu.fit.components}
+    assert components["depolarizing_dblo"].weight == 2.0
+    assert components["depolarizing_spike_waveform"].weight == 0.25
+    assert components["depolarizing_spike_derivative"].weight == 0.25
+    assert components["depolarizing_spike_height"].weight == 0.32
+    assert components["depolarizing_recovery_waveform"].weight == 0.5
+    assert components["depolarizing_recovery_derivative"].weight == 0.2
+    assert components["depolarizing_ahp_depth"].weight == 0.10
 
 
 def test_every_lsu_variant_inherits_the_same_reweighted_objective():
