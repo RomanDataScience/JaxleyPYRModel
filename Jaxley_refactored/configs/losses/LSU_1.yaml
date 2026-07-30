@@ -81,6 +81,18 @@ fit:
         temperature_mV: 2.0
         scale_hz: 1.0
 
+      # Match first-spike latency and the sequence of interspike intervals
+      # using exponentially filtered continuous threshold crossings.
+      - kind: soft_spike_train_mse
+        label: depolarizing_spike_timing_adaptation
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        temperature_mV: 2.0
+        kernel_tau_ms: 10.0
+        scale: 1.0
+
       # Explicitly forbid depolarizing spikes before or after the current step.
       - kind: soft_forbidden_spike_count_error
         label: depolarizing_forbidden_spikes
@@ -142,6 +154,24 @@ fit:
         spike_window_half_width_ms: 3.0
         scale_mV: 1.0
 
+      # Joint per-spike comparison of smooth half-width, pre-peak upstroke, and
+      # post-peak repolarization in fixed experimental-aligned windows.
+      # Observed spikes clipped before either half-height crossing are excluded.
+      - kind: soft_spike_width_slope_error
+        label: depolarizing_spike_width_slopes
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        temperature_mV: 1.0
+        spike_window_half_width_ms: 4.0
+        width_scale_ms: 0.5
+        upstroke_scale_mV_per_ms: 50.0
+        repolarization_scale_mV_per_ms: 20.0
+        slope_temperature_mV_per_ms: 10.0
+        amplitude_gate_mV: 20.0
+        amplitude_gate_temperature_mV: 5.0
+
       # Robust full recovery waveform comparison.
       - kind: pseudo_huber
         label: depolarizing_recovery_waveform
@@ -163,6 +193,16 @@ fit:
       # Mean below-baseline deficit across recovery: depth times duration.
       - kind: soft_ahp_deficit_error
         label: depolarizing_ahp_duration
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: recovery
+        temperature_mV: 1.0
+        scale_mV: 1.0
+
+      # Match the centered first temporal moment of below-baseline deficit,
+      # distinguishing brief early AHPs from prolonged late recovery.
+      - kind: soft_ahp_timing_moment_error
+        label: depolarizing_ahp_recovery_timing
         weight: 1.0
         protocols: [depolarizing_step]
         window: recovery

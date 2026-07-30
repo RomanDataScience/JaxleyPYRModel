@@ -269,11 +269,11 @@ class BucketObjective:
             spike_masks = None
             spike_valid = None
             if component.kind in {
+                "soft_trough_depth_error",
                 "soft_ahp_depth_error",
                 "soft_ahp_deficit_error",
+                "soft_ahp_timing_moment_error",
             }:
-                baseline_mask = jnp.asarray(bucket.window_masks["baseline"])
-            if component.kind == "soft_trough_depth_error":
                 # Restrict the reference baseline to the scored pre-stimulus
                 # interval, excluding any startup transient before scoring.
                 baseline_mask = jnp.asarray(
@@ -334,7 +334,10 @@ class BucketObjective:
                     interval_valid = np.any(interval_masks, axis=-1)
                 interspike_masks = jnp.asarray(interval_masks)
                 interspike_valid = jnp.asarray(interval_valid)
-            if component.kind == "soft_mean_spike_peak_voltage_error":
+            if component.kind in {
+                "soft_mean_spike_peak_voltage_error",
+                "soft_spike_width_slope_error",
+            }:
                 peak_masks, peak_valid = observed_spike_peak_masks(
                     bucket.observed_mV,
                     component_mask,
@@ -397,7 +400,10 @@ class BucketObjective:
                     interspike_context["baseline_mask"] = term.baseline_mask
             if term.spec.kind == "mean_window_difference_error":
                 interspike_context["comparison_mask"] = term.comparison_mask
-            if term.spec.kind == "soft_mean_spike_peak_voltage_error":
+            if term.spec.kind in {
+                "soft_mean_spike_peak_voltage_error",
+                "soft_spike_width_slope_error",
+            }:
                 interspike_context.update(
                     {
                         "spike_masks": term.spike_masks,
@@ -408,6 +414,7 @@ class BucketObjective:
                 "soft_trough_depth_error",
                 "soft_ahp_depth_error",
                 "soft_ahp_deficit_error",
+                "soft_ahp_timing_moment_error",
             }:
                 interspike_context["baseline_mask"] = jnp.asarray(
                     term.baseline_mask
@@ -421,6 +428,21 @@ class BucketObjective:
                 delta=term.spec.delta,
                 threshold_mV=term.spec.threshold_mV,
                 temperature_mV=term.spec.temperature_mV,
+                kernel_tau_ms=term.spec.kernel_tau_ms,
+                slope_temperature_mV_per_ms=(
+                    term.spec.slope_temperature_mV_per_ms
+                ),
+                width_scale_ms=term.spec.width_scale_ms,
+                upstroke_scale_mV_per_ms=(
+                    term.spec.upstroke_scale_mV_per_ms
+                ),
+                repolarization_scale_mV_per_ms=(
+                    term.spec.repolarization_scale_mV_per_ms
+                ),
+                amplitude_gate_mV=term.spec.amplitude_gate_mV,
+                amplitude_gate_temperature_mV=(
+                    term.spec.amplitude_gate_temperature_mV
+                ),
                 **interspike_context,
             )
             contribution = (

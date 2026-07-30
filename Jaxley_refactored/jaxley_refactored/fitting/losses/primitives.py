@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from jax import lax
 import jax.nn as jnn
 import jax.numpy as jnp
 
@@ -29,6 +30,12 @@ def _soft_masked_minimum(values, mask, temperature_mV):
         jnp.squeeze(reference, axis=-1) + jnp.log(mean_exponential)
     )
     return jnp.where(valid, result, 0.0)
+
+
+def _soft_masked_maximum(values, mask, temperature):
+    """Numerically stable smooth maximum over the final masked axis."""
+
+    return -_soft_masked_minimum(-values, mask, temperature)
 
 
 def masked_mse(predicted, observed, mask, *, scale=1.0, **_):
@@ -149,6 +156,87 @@ def soft_firing_rate_error(
 
     difference_hz = soft_rate(predicted) - soft_rate(observed)
     return (difference_hz / scale) ** 2
+
+
+def soft_spike_train_mse(
+    predicted,
+    observed,
+    mask,
+    *,
+    dt_ms,
+    scale=1.0,
+    threshold_mV=-20.0,
+    temperature_mV=2.0,
+    kernel_tau_ms=10.0,
+    **_,
+):
+    """Compare exponentially filtered continuous spike-crossing trains.
+
+    The sigmoid crossing surrogate and causal exponential filter keep the
+    metric continuous in voltage. Filtering makes it tolerant to very small
+    timing offsets while preserving first-spike latency and ISI adaptation.
+    """
+
+    destination_mask = jnp.asarray(mask[..., 1:], dtype=bool)
+    alpha = jnp.exp(-dt_ms / kernel_tau_ms)
+
+    def filtered_crossings(voltage):
+        events = _soft_upward_crossings(
+            voltage,
+            threshold_mV=threshold_mV,
+            temperature_mV=temperature_mV,
+        )
+        events = events * destination_mask
+
+        def step(state, inputs):
+            event, selected = inputs
+            updated = jnp.where(
+                selected,
+                alpha * state + event,
+                jnp.zeros_like(state),
+            )
+            return updated, updated
+
+        initial = jnp.zeros(events.shape[:-1], dtype=events.dtype)
+        _, filtered = lax.scan(
+            step,
+            initial,
+            (
+                jnp.moveaxis(events, -1, 0),
+                jnp.moveaxis(destination_mask, -1, 0),
+            ),
+        )
+        return jnp.moveaxis(filtered, 0, -1)
+
+    difference = (
+        filtered_crossings(predicted) - filtered_crossings(observed)
+    ) / scale
+    normalized_dt = dt_ms / kernel_tau_ms
+    selected_next = jnp.concatenate(
+        (
+            destination_mask[..., 1:],
+            jnp.zeros_like(destination_mask[..., :1]),
+        ),
+        axis=-1,
+    )
+    segment_ends = destination_mask & ~selected_next
+    # Add the exact energy of the exponential tail beyond each selected
+    # segment. Without this correction, an otherwise identical last spike is
+    # progressively underweighted as it approaches stimulus offset.
+    omitted_tail_factor = (
+        normalized_dt
+        * jnp.exp(-2.0 * normalized_dt)
+        / (-jnp.expm1(-2.0 * normalized_dt))
+    )
+    selected_energy = normalized_dt * jnp.sum(
+        destination_mask * difference**2,
+        axis=-1,
+    )
+    omitted_tail_energy = omitted_tail_factor * jnp.sum(
+        segment_ends * difference**2,
+        axis=-1,
+    )
+    return selected_energy + omitted_tail_energy
 
 
 def soft_upward_crossing_count(
@@ -439,6 +527,151 @@ def soft_mean_spike_peak_voltage_error(
     return jnp.where(jnp.any(valid, axis=-1), loss, 0.0)
 
 
+def soft_spike_width_slope_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    spike_masks,
+    spike_valid,
+    dt_ms,
+    temperature_mV=1.0,
+    width_scale_ms=0.5,
+    upstroke_scale_mV_per_ms=50.0,
+    repolarization_scale_mV_per_ms=20.0,
+    slope_temperature_mV_per_ms=10.0,
+    amplitude_gate_mV=20.0,
+    amplitude_gate_temperature_mV=5.0,
+    **_,
+):
+    """Compare half-width, upstroke, and repolarization for every spike."""
+
+    masks = (
+        jnp.asarray(spike_masks, dtype=bool)
+        & jnp.asarray(mask, dtype=bool)[:, None, :]
+    )
+    sample_index = jnp.arange(predicted.shape[-1])
+    observed_expanded = observed[:, None, :]
+    observed_peak_index = jnp.argmax(
+        jnp.where(masks, observed_expanded, -jnp.inf),
+        axis=-1,
+    )
+    pre_peak_masks = masks & (
+        sample_index[None, None, :] < observed_peak_index[..., None]
+    )
+    post_peak_masks = masks & (
+        sample_index[None, None, :] > observed_peak_index[..., None]
+    )
+    width_pair_masks = masks[..., 1:] & masks[..., :-1]
+    derivative_masks = (
+        masks[..., 2:] & masks[..., 1:-1] & masks[..., :-2]
+    )
+    derivative_center_index = sample_index[1:-1]
+    upstroke_masks = derivative_masks & (
+        derivative_center_index[None, None, :]
+        <= observed_peak_index[..., None]
+    )
+    repolarization_masks = derivative_masks & (
+        derivative_center_index[None, None, :]
+        >= observed_peak_index[..., None]
+    )
+
+    # A spike clipped by the selected window does not define a meaningful
+    # half-width or repolarization target. Completeness is derived entirely
+    # from the fixed observed trace, so it does not affect differentiability
+    # with respect to simulated voltage.
+    observed_foot = jnp.min(
+        jnp.where(pre_peak_masks, observed_expanded, jnp.inf),
+        axis=-1,
+    )
+    observed_peak = jnp.take_along_axis(
+        observed_expanded,
+        observed_peak_index[..., None],
+        axis=-1,
+    )[..., 0]
+    observed_half_height = observed_foot + 0.5 * (
+        observed_peak - observed_foot
+    )
+    has_pre_half_height = jnp.any(
+        pre_peak_masks
+        & (observed_expanded <= observed_half_height[..., None]),
+        axis=-1,
+    )
+    has_post_half_height = jnp.any(
+        post_peak_masks
+        & (observed_expanded <= observed_half_height[..., None]),
+        axis=-1,
+    )
+    valid = (
+        jnp.asarray(spike_valid, dtype=bool)
+        & jnp.any(pre_peak_masks, axis=-1)
+        & jnp.any(post_peak_masks, axis=-1)
+        & jnp.any(width_pair_masks, axis=-1)
+        & jnp.any(upstroke_masks, axis=-1)
+        & jnp.any(repolarization_masks, axis=-1)
+        & has_pre_half_height
+        & has_post_half_height
+    )
+    valid_float = valid.astype(predicted.dtype)
+    count = jnp.maximum(jnp.sum(valid_float, axis=-1), 1.0)
+
+    def features(voltage):
+        expanded = voltage[:, None, :]
+        foot = _soft_masked_minimum(
+            expanded,
+            pre_peak_masks,
+            temperature_mV,
+        )
+        peak = _soft_masked_maximum(expanded, masks, temperature_mV)
+        amplitude = peak - foot
+        amplitude_gate = jnn.sigmoid(
+            (amplitude - amplitude_gate_mV)
+            / amplitude_gate_temperature_mV
+        )
+        half_height = foot + 0.5 * amplitude
+        occupancy = jnn.sigmoid(
+            (expanded - half_height[..., None]) / temperature_mV
+        )
+        width = amplitude_gate * dt_ms * jnp.sum(
+            0.5 * (occupancy[..., 1:] + occupancy[..., :-1])
+            * width_pair_masks,
+            axis=-1,
+        )
+        derivative = (
+            voltage[..., 2:] - voltage[..., :-2]
+        ) / (2.0 * dt_ms)
+        expanded = derivative[:, None, :]
+        upstroke = amplitude_gate * _soft_masked_maximum(
+            expanded,
+            upstroke_masks,
+            slope_temperature_mV_per_ms,
+        )
+        repolarization = amplitude_gate * (
+            -_soft_masked_minimum(
+                expanded,
+                repolarization_masks,
+                slope_temperature_mV_per_ms,
+            )
+        )
+        return width, upstroke, repolarization
+
+    predicted_width, predicted_up, predicted_down = features(predicted)
+    observed_width, observed_up, observed_down = features(observed)
+    per_spike = (
+        ((predicted_width - observed_width) / width_scale_ms) ** 2
+        + (
+            (predicted_up - observed_up)
+            / upstroke_scale_mV_per_ms
+        ) ** 2
+        + (
+            (predicted_down - observed_down)
+            / repolarization_scale_mV_per_ms
+        ) ** 2
+    ) / 3.0
+    loss = jnp.sum(valid_float * per_spike, axis=-1) / count
+    return jnp.where(jnp.any(valid, axis=-1), loss, 0.0)
+
+
 def soft_trough_depth_error(
     predicted,
     observed,
@@ -504,6 +737,54 @@ def soft_ahp_deficit_error(
 
     difference = (mean_deficit(predicted) - mean_deficit(observed)) / scale
     valid = jnp.any(mask, axis=-1) & jnp.any(baseline_mask, axis=-1)
+    return jnp.where(valid, difference**2, 0.0)
+
+
+def soft_ahp_timing_moment_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    baseline_mask,
+    dt_ms,
+    scale=1.0,
+    temperature_mV=1.0,
+    **_,
+):
+    """Compare the centered first moment of below-baseline recovery voltage."""
+
+    recovery_mask = jnp.asarray(mask, dtype=bool)
+    baseline_mask = jnp.asarray(baseline_mask, dtype=bool)
+    sample_index = jnp.arange(predicted.shape[-1], dtype=predicted.dtype)
+    first_index = jnp.min(
+        jnp.where(recovery_mask, sample_index, jnp.inf),
+        axis=-1,
+    )
+    valid = jnp.any(recovery_mask, axis=-1) & jnp.any(
+        baseline_mask, axis=-1
+    )
+    first_index = jnp.where(valid, first_index, 0.0)
+    last_index = jnp.max(
+        jnp.where(recovery_mask, sample_index, -jnp.inf),
+        axis=-1,
+    )
+    last_index = jnp.where(valid, last_index, first_index + 1.0)
+    span = jnp.maximum(last_index - first_index, 1.0)
+    phase = (
+        sample_index[None, :] - first_index[:, None]
+    ) / span[:, None]
+    centered_time_weight = 2.0 * phase - 1.0
+
+    def timing_moment(voltage):
+        baseline = _masked_mean(voltage, baseline_mask)
+        deficit = temperature_mV * jnn.softplus(
+            (baseline[:, None] - voltage) / temperature_mV
+        )
+        return _masked_mean(centered_time_weight * deficit, recovery_mask)
+
+    difference = (
+        timing_moment(predicted) - timing_moment(observed)
+    ) / scale
     return jnp.where(valid, difference**2, 0.0)
 
 

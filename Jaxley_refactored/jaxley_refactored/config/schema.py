@@ -74,8 +74,8 @@ def _positive_ints(value: Any, where: str) -> tuple[int, ...]:
 
 def _positive(value: Any, where: str) -> float:
     result = float(value)
-    if result <= 0.0:
-        raise ConfigError(f"{where} must be positive.")
+    if not math.isfinite(result) or result <= 0.0:
+        raise ConfigError(f"{where} must be finite and positive.")
     return result
 
 
@@ -675,15 +675,18 @@ _LOSS_KINDS = {
     "mean_window_difference_error",
     "experimental_voltage_band_mse",
     "soft_firing_rate_error",
+    "soft_spike_train_mse",
     "soft_forbidden_spike_count_error",
     "subthreshold_mean_error",
     "soft_dblo_error",
     "soft_interspike_minimum_voltage_error",
     "soft_interspike_trough_shape_error",
     "soft_mean_spike_peak_voltage_error",
+    "soft_spike_width_slope_error",
     "soft_trough_depth_error",
     "soft_ahp_depth_error",
     "soft_ahp_deficit_error",
+    "soft_ahp_timing_moment_error",
     "soft_minimum_voltage_error",
     "soft_maximum_voltage_error",
 }
@@ -718,6 +721,13 @@ class LossComponentSpec:
     voltage_band_lower_mV: float = -50.0
     voltage_band_upper_mV: float = -40.0
     spike_window_half_width_ms: float = 3.0
+    kernel_tau_ms: float = 10.0
+    width_scale_ms: float = 0.5
+    upstroke_scale_mV_per_ms: float = 50.0
+    repolarization_scale_mV_per_ms: float = 20.0
+    slope_temperature_mV_per_ms: float = 10.0
+    amplitude_gate_mV: float = 20.0
+    amplitude_gate_temperature_mV: float = 5.0
     label: str = ""
 
     @classmethod
@@ -745,6 +755,13 @@ class LossComponentSpec:
                 "voltage_band_lower_mV",
                 "voltage_band_upper_mV",
                 "spike_window_half_width_ms",
+                "kernel_tau_ms",
+                "width_scale_ms",
+                "upstroke_scale_mV_per_ms",
+                "repolarization_scale_mV_per_ms",
+                "slope_temperature_mV_per_ms",
+                "amplitude_gate_mV",
+                "amplitude_gate_temperature_mV",
                 "label",
             },
             where,
@@ -757,7 +774,12 @@ class LossComponentSpec:
             raise ConfigError(f"Unsupported loss window: {window}")
         scale_keys = [
             key
-            for key in ("scale", "scale_mV", "scale_mV_per_ms", "scale_hz")
+            for key in (
+                "scale",
+                "scale_mV",
+                "scale_mV_per_ms",
+                "scale_hz",
+            )
             if key in data
         ]
         if len(scale_keys) > 1:
@@ -791,6 +813,34 @@ class LossComponentSpec:
             data.get("spike_window_half_width_ms", 3.0),
             f"{where}.spike_window_half_width_ms",
         )
+        kernel_tau = _positive(
+            data.get("kernel_tau_ms", 10.0),
+            f"{where}.kernel_tau_ms",
+        )
+        width_scale = _positive(
+            data.get("width_scale_ms", 0.5),
+            f"{where}.width_scale_ms",
+        )
+        upstroke_scale = _positive(
+            data.get("upstroke_scale_mV_per_ms", 50.0),
+            f"{where}.upstroke_scale_mV_per_ms",
+        )
+        repolarization_scale = _positive(
+            data.get("repolarization_scale_mV_per_ms", 20.0),
+            f"{where}.repolarization_scale_mV_per_ms",
+        )
+        slope_temperature = _positive(
+            data.get("slope_temperature_mV_per_ms", 10.0),
+            f"{where}.slope_temperature_mV_per_ms",
+        )
+        amplitude_gate = _positive(
+            data.get("amplitude_gate_mV", 20.0),
+            f"{where}.amplitude_gate_mV",
+        )
+        amplitude_gate_temperature = _positive(
+            data.get("amplitude_gate_temperature_mV", 5.0),
+            f"{where}.amplitude_gate_temperature_mV",
+        )
         return cls(
             kind=kind,
             weight=weight,
@@ -809,6 +859,13 @@ class LossComponentSpec:
             voltage_band_lower_mV=band_lower,
             voltage_band_upper_mV=band_upper,
             spike_window_half_width_ms=spike_half_width,
+            kernel_tau_ms=kernel_tau,
+            width_scale_ms=width_scale,
+            upstroke_scale_mV_per_ms=upstroke_scale,
+            repolarization_scale_mV_per_ms=repolarization_scale,
+            slope_temperature_mV_per_ms=slope_temperature,
+            amplitude_gate_mV=amplitude_gate,
+            amplitude_gate_temperature_mV=amplitude_gate_temperature,
             label=str(data.get("label", kind)),
         )
 

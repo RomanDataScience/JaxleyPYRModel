@@ -213,3 +213,34 @@ def test_outside_spike_penalty_configuration_is_validated():
                 }
             }
         )
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "kernel_tau_ms",
+        "width_scale_ms",
+        "upstroke_scale_mV_per_ms",
+        "repolarization_scale_mV_per_ms",
+        "slope_temperature_mV_per_ms",
+        "amplitude_gate_mV",
+        "amplitude_gate_temperature_mV",
+    ),
+)
+@pytest.mark.parametrize("value", (0.0, -1.0, float("nan"), float("inf")))
+def test_feature_loss_positive_fields_must_be_finite(field, value):
+    with pytest.raises(ConfigError, match=field):
+        AppConfig.from_mapping(
+            {
+                "fit": {
+                    "objective": {
+                        "components": [
+                            {
+                                "kind": "soft_spike_width_slope_error",
+                                field: value,
+                            }
+                        ]
+                    }
+                }
+            }
+        )

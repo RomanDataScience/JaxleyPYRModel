@@ -21,10 +21,13 @@ from jaxley_refactored.fitting.losses import (
     observed_spike_peak_masks,
     soft_ahp_deficit_error,
     soft_ahp_depth_error,
+    soft_ahp_timing_moment_error,
     soft_dblo_error,
     soft_interspike_minimum_voltage_error,
     soft_interspike_trough_shape_error,
     soft_mean_spike_peak_voltage_error,
+    soft_spike_width_slope_error,
+    soft_spike_train_mse,
     soft_trough_depth_error,
     soft_upward_crossing_count,
 )
@@ -54,15 +57,18 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
             "hyperpolarizing_waveform_mse",
             "hyperpolarizing_derivative_mse",
             "depolarizing_firing_rate",
+            "depolarizing_spike_timing_adaptation",
             "depolarizing_forbidden_spikes",
             "hyperpolarizing_forbidden_spikes",
             "depolarizing_interspike_minimum_voltage",
             "depolarizing_interspike_trough_shape",
             "depolarizing_spike_waveform",
             "depolarizing_spike_height",
+            "depolarizing_spike_width_slopes",
             "depolarizing_recovery_waveform",
             "depolarizing_ahp_depth",
             "depolarizing_ahp_duration",
+            "depolarizing_ahp_recovery_timing",
             "depolarizing_early_late_voltage_difference",
             "depolarizing_terminal_baseline_difference",
             "depolarizing_minus50_minus40_voltage_mse",
@@ -85,7 +91,7 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert penalties["hyperpolarizing_any_spikes"].protocols == (
         "hyperpolarizing_pulse",
     )
-    assert len(lsu.fit.components) == 16
+    assert len(lsu.fit.components) == 19
     component = lsu.fit.components[0]
     assert component.label == "hyperpolarizing_trough_depth"
     assert component.kind == "soft_trough_depth_error"
@@ -118,6 +124,11 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert firing_rate.temperature_mV == 2.0
     assert firing_rate.scale == 1.0
     components = {item.label: item for item in lsu.fit.components}
+    timing = components["depolarizing_spike_timing_adaptation"]
+    assert timing.kind == "soft_spike_train_mse"
+    assert timing.window == "stimulus"
+    assert timing.kernel_tau_ms == 10.0
+    assert timing.scale == 1.0
     interspike = components["depolarizing_interspike_minimum_voltage"]
     assert interspike.kind == "soft_interspike_minimum_voltage_error"
     assert interspike.weight == 1.0
@@ -131,11 +142,24 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
         components["depolarizing_spike_height"].kind
         == "soft_mean_spike_peak_voltage_error"
     )
+    spike_shape = components["depolarizing_spike_width_slopes"]
+    assert spike_shape.kind == "soft_spike_width_slope_error"
+    assert spike_shape.spike_window_half_width_ms == 4.0
+    assert spike_shape.width_scale_ms == 0.5
+    assert spike_shape.upstroke_scale_mV_per_ms == 50.0
+    assert spike_shape.repolarization_scale_mV_per_ms == 20.0
+    assert spike_shape.slope_temperature_mV_per_ms == 10.0
+    assert spike_shape.amplitude_gate_mV == 20.0
+    assert spike_shape.amplitude_gate_temperature_mV == 5.0
     assert components["depolarizing_ahp_depth"].kind == "soft_ahp_depth_error"
     assert (
         components["depolarizing_ahp_duration"].kind
         == "soft_ahp_deficit_error"
     )
+    recovery_timing = components["depolarizing_ahp_recovery_timing"]
+    assert recovery_timing.kind == "soft_ahp_timing_moment_error"
+    assert recovery_timing.window == "recovery"
+    assert recovery_timing.scale == 1.0
     assert (
         components["depolarizing_forbidden_spikes"].window
         == "outside_stimulus"
@@ -216,15 +240,18 @@ def test_registered_waveform_losses_are_finite_and_differentiable():
         "steady_state_error",
         "mean_window_difference_error",
         "soft_firing_rate_error",
+        "soft_spike_train_mse",
         "soft_forbidden_spike_count_error",
         "subthreshold_mean_error",
         "soft_dblo_error",
         "soft_interspike_minimum_voltage_error",
         "soft_interspike_trough_shape_error",
         "soft_mean_spike_peak_voltage_error",
+        "soft_spike_width_slope_error",
         "soft_trough_depth_error",
         "soft_ahp_depth_error",
         "soft_ahp_deficit_error",
+        "soft_ahp_timing_moment_error",
         "soft_minimum_voltage_error",
         "soft_maximum_voltage_error",
     ):
@@ -528,6 +555,110 @@ def test_soft_firing_rate_does_not_count_a_stationary_near_threshold_plateau():
     assert float(gradient) != 0.0
 
 
+def test_soft_spike_train_distinguishes_equal_rate_but_mistimed_spikes():
+    observed = jnp.full((1, 101), -65.0)
+    observed = observed.at[0, jnp.asarray([20, 50, 80])].set(-15.0)
+    shifted = jnp.full_like(observed, -65.0)
+    shifted = shifted.at[0, jnp.asarray([25, 55, 85])].set(-15.0)
+    mask = jnp.ones_like(observed, dtype=bool)
+    common = {
+        "dt_ms": 1.0,
+        "scale": 1.0,
+        "threshold_mV": -20.0,
+        "temperature_mV": 2.0,
+    }
+
+    rate_exact = default_loss_registry().get("soft_firing_rate_error")(
+        observed, observed, mask, **common
+    )
+    rate_shifted = default_loss_registry().get("soft_firing_rate_error")(
+        shifted, observed, mask, **common
+    )
+    timing_exact = soft_spike_train_mse(
+        observed,
+        observed,
+        mask,
+        kernel_tau_ms=10.0,
+        **common,
+    )
+    timing_shifted = soft_spike_train_mse(
+        shifted,
+        observed,
+        mask,
+        kernel_tau_ms=10.0,
+        **common,
+    )
+
+    np.testing.assert_allclose(rate_exact, [0.0], atol=1e-12)
+    np.testing.assert_allclose(rate_shifted, [0.0], atol=1e-10)
+    np.testing.assert_allclose(timing_exact, [0.0], atol=1e-12)
+    assert float(timing_shifted[0]) > 0.0
+
+    def scalar(voltage):
+        return jnp.sum(
+            soft_spike_train_mse(
+                voltage,
+                observed,
+                mask,
+                kernel_tau_ms=10.0,
+                **common,
+            )
+        )
+
+    value, gradient = jax.jit(jax.value_and_grad(scalar))(shifted)
+    assert np.isfinite(float(value))
+    assert np.isfinite(np.asarray(gradient)).all()
+    assert not np.allclose(np.asarray(gradient), 0.0)
+
+
+def test_soft_spike_train_resets_outside_the_selected_window():
+    observed = jnp.full((1, 20), -65.0)
+    predicted = observed.at[0, 2].set(-15.0)
+    mask = jnp.zeros_like(observed, dtype=bool).at[:, 8:16].set(True)
+
+    loss = soft_spike_train_mse(
+        predicted,
+        observed,
+        mask,
+        dt_ms=1.0,
+        scale=1.0,
+        threshold_mV=-20.0,
+        temperature_mV=2.0,
+        kernel_tau_ms=10.0,
+    )
+
+    np.testing.assert_allclose(loss, [0.0], atol=1e-12)
+
+
+def test_soft_spike_train_tail_correction_equalizes_last_and_middle_spikes():
+    flat = jnp.full((1, 41), -65.0)
+    middle_spike = flat.at[0, 10].set(-15.0)
+    last_spike = flat.at[0, 40].set(-15.0)
+    mask = jnp.ones_like(flat, dtype=bool)
+    kwargs = {
+        "dt_ms": 1.0,
+        "scale": 1.0,
+        "threshold_mV": -20.0,
+        "temperature_mV": 2.0,
+        "kernel_tau_ms": 10.0,
+    }
+
+    middle_loss = soft_spike_train_mse(
+        flat,
+        middle_spike,
+        mask,
+        **kwargs,
+    )
+    last_loss = soft_spike_train_mse(
+        flat,
+        last_spike,
+        mask,
+        **kwargs,
+    )
+
+    np.testing.assert_allclose(last_loss, middle_loss, rtol=1e-5, atol=1e-7)
+
+
 def test_forbidden_spike_count_penalizes_selected_crossings_only():
     term = default_loss_registry().get("soft_forbidden_spike_count_error")
     voltage = jnp.asarray([[-65.0, 20.0, -65.0, 20.0, -65.0]])
@@ -649,6 +780,137 @@ def test_per_spike_peak_loss_detects_a_short_second_spike():
     )(predicted)
     assert np.isfinite(np.asarray(gradient)).all()
     assert not np.allclose(np.asarray(gradient), 0.0)
+
+
+def test_spike_width_slope_loss_detects_broader_slower_spike():
+    observed = jnp.asarray(
+        [[-90.0, -65.0, -65.0, -60.0, -30.0, 25.0, -30.0, -60.0,
+          -65.0, -65.0, -90.0]]
+    )
+    broader = jnp.asarray(
+        [[40.0, -65.0, -60.0, -45.0, -10.0, 25.0, -10.0, -45.0,
+          -60.0, -65.0, 40.0]]
+    )
+    component_mask = jnp.asarray(
+        [[False, True, True, True, True, True, True, True, True, True, False]]
+    )
+    spike_masks = component_mask[:, None, :]
+    spike_valid = jnp.asarray([[True]])
+    kwargs = {
+        "spike_masks": spike_masks,
+        "spike_valid": spike_valid,
+        "dt_ms": 0.5,
+        "temperature_mV": 1.0,
+        "width_scale_ms": 0.5,
+        "upstroke_scale_mV_per_ms": 50.0,
+        "repolarization_scale_mV_per_ms": 20.0,
+        "slope_temperature_mV_per_ms": 10.0,
+        "amplitude_gate_mV": 20.0,
+        "amplitude_gate_temperature_mV": 5.0,
+    }
+
+    exact = soft_spike_width_slope_error(
+        observed,
+        observed,
+        component_mask,
+        **kwargs,
+    )
+    mismatch = soft_spike_width_slope_error(
+        broader,
+        observed,
+        component_mask,
+        **kwargs,
+    )
+
+    np.testing.assert_allclose(exact, [0.0], atol=1e-12)
+    assert float(mismatch[0]) > 0.0
+
+    def scalar(voltage):
+        return jnp.sum(
+            soft_spike_width_slope_error(
+                voltage,
+                observed,
+                component_mask,
+                **kwargs,
+            )
+        )
+
+    value, gradient = jax.jit(jax.value_and_grad(scalar))(broader)
+    assert np.isfinite(float(value))
+    assert np.isfinite(np.asarray(gradient)).all()
+    assert not np.allclose(np.asarray(gradient)[0, 1:10], 0.0)
+    np.testing.assert_array_equal(
+        np.asarray(gradient)[0, [0, 10]],
+        np.zeros(2),
+    )
+
+
+def test_spike_width_slope_loss_is_finite_for_a_missing_spike():
+    observed = jnp.asarray(
+        [[-65.0, -60.0, -30.0, 25.0, -30.0, -60.0, -65.0]]
+    )
+    missing = jnp.full_like(observed, -65.0)
+    mask = jnp.ones_like(observed, dtype=bool)
+    kwargs = {
+        "spike_masks": mask[:, None, :],
+        "spike_valid": jnp.asarray([[True]]),
+        "dt_ms": 0.5,
+        "temperature_mV": 1.0,
+        "width_scale_ms": 0.5,
+        "upstroke_scale_mV_per_ms": 50.0,
+        "repolarization_scale_mV_per_ms": 20.0,
+        "slope_temperature_mV_per_ms": 10.0,
+        "amplitude_gate_mV": 20.0,
+        "amplitude_gate_temperature_mV": 5.0,
+    }
+
+    value, gradient = jax.value_and_grad(
+        lambda voltage: jnp.sum(
+            soft_spike_width_slope_error(
+                voltage,
+                observed,
+                mask,
+                **kwargs,
+            )
+        )
+    )(missing)
+
+    assert np.isfinite(float(value))
+    assert float(value) > 0.0
+    assert np.isfinite(np.asarray(gradient)).all()
+    assert not np.allclose(np.asarray(gradient), 0.0)
+
+
+def test_spike_width_slope_excludes_an_observed_spike_clipped_at_window_end():
+    observed = jnp.asarray([[-65.0, -60.0, -30.0, 25.0]])
+    predicted = jnp.full_like(observed, -65.0)
+    mask = jnp.ones_like(observed, dtype=bool)
+    kwargs = {
+        "spike_masks": mask[:, None, :],
+        "spike_valid": jnp.asarray([[True]]),
+        "dt_ms": 0.5,
+        "temperature_mV": 1.0,
+        "width_scale_ms": 0.5,
+        "upstroke_scale_mV_per_ms": 50.0,
+        "repolarization_scale_mV_per_ms": 20.0,
+        "slope_temperature_mV_per_ms": 10.0,
+        "amplitude_gate_mV": 20.0,
+        "amplitude_gate_temperature_mV": 5.0,
+    }
+
+    value, gradient = jax.value_and_grad(
+        lambda voltage: jnp.sum(
+            soft_spike_width_slope_error(
+                voltage,
+                observed,
+                mask,
+                **kwargs,
+            )
+        )
+    )(predicted)
+
+    np.testing.assert_allclose(value, 0.0, atol=1e-12)
+    np.testing.assert_array_equal(gradient, jnp.zeros_like(predicted))
 
 
 def test_soft_dblo_matches_mean_interspike_minimum_minus_rest_and_is_smooth():
@@ -877,6 +1139,66 @@ def test_baseline_relative_ahp_metrics_capture_depth_and_duration():
         )(shallow_fast)
         assert np.isfinite(np.asarray(gradient)).all()
         assert not np.allclose(np.asarray(gradient), 0.0)
+
+
+def test_ahp_timing_moment_distinguishes_early_from_late_deficit():
+    observed = jnp.asarray([[-65.0, -65.0, -70.0, -69.0, -67.0, -65.0]])
+    late = jnp.asarray([[-65.0, -65.0, -65.0, -67.0, -69.0, -70.0]])
+    flat = jnp.full_like(observed, -65.0)
+    baseline = jnp.asarray([[True, True, False, False, False, False]])
+    recovery = ~baseline
+    common = {
+        "baseline_mask": baseline,
+        "scale": 1.0,
+        "temperature_mV": 0.5,
+    }
+
+    depth = soft_ahp_depth_error(late, observed, recovery, **common)
+    deficit = soft_ahp_deficit_error(late, observed, recovery, **common)
+    exact_timing = soft_ahp_timing_moment_error(
+        observed,
+        observed,
+        recovery,
+        dt_ms=1.0,
+        **common,
+    )
+    late_timing = soft_ahp_timing_moment_error(
+        late,
+        observed,
+        recovery,
+        dt_ms=1.0,
+        **common,
+    )
+    offset_timing = soft_ahp_timing_moment_error(
+        observed + 10.0,
+        observed,
+        recovery,
+        dt_ms=1.0,
+        **common,
+    )
+
+    np.testing.assert_allclose(depth, [0.0], atol=1e-8)
+    np.testing.assert_allclose(deficit, [0.0], atol=1e-8)
+    np.testing.assert_allclose(exact_timing, [0.0], atol=1e-12)
+    np.testing.assert_allclose(offset_timing, [0.0], atol=1e-8)
+    assert float(late_timing[0]) > 0.0
+
+    value, gradient = jax.jit(
+        jax.value_and_grad(
+            lambda voltage: jnp.sum(
+                soft_ahp_timing_moment_error(
+                    voltage,
+                    observed,
+                    recovery,
+                    dt_ms=1.0,
+                    **common,
+                )
+            )
+        )
+    )(flat)
+    assert np.isfinite(float(value))
+    assert np.isfinite(np.asarray(gradient)).all()
+    assert not np.allclose(np.asarray(gradient), 0.0)
 
 
 def test_outside_spike_multiplier_is_continuous_and_counts_crossing_destination():
