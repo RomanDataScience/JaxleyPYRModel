@@ -1,7 +1,8 @@
 extends: ../losses/hyperpolarizing_only.yaml
 
 # Full CMA-ES -> exploratory Adam -> backtracking Adam protocol, using only
-# hyperpolarizing traces and their voltage plus first-derivative MSE.
+# hyperpolarizing traces with trough voltage as the primary feature, plus
+# waveform and first-derivative MSE.
 fit:
   initialization:
     mode: jittered_reference

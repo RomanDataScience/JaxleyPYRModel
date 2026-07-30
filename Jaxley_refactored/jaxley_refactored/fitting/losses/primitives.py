@@ -439,6 +439,28 @@ def soft_mean_spike_peak_voltage_error(
     return jnp.where(jnp.any(valid, axis=-1), loss, 0.0)
 
 
+def soft_trough_depth_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    baseline_mask,
+    scale=1.0,
+    temperature_mV=1.0,
+    **_,
+):
+    """Compare minimum-voltage depth relative to a supplied baseline window."""
+
+    def depth(voltage):
+        baseline = _masked_mean(voltage, baseline_mask)
+        minimum = _soft_masked_minimum(voltage, mask, temperature_mV)
+        return baseline - minimum
+
+    difference = (depth(predicted) - depth(observed)) / scale
+    valid = jnp.any(mask, axis=-1) & jnp.any(baseline_mask, axis=-1)
+    return jnp.where(valid, difference**2, 0.0)
+
+
 def soft_ahp_depth_error(
     predicted,
     observed,
@@ -451,14 +473,14 @@ def soft_ahp_depth_error(
 ):
     """Compare recovery minimum depth relative to each trace's own baseline."""
 
-    def depth(voltage):
-        baseline = _masked_mean(voltage, baseline_mask)
-        minimum = _soft_masked_minimum(voltage, mask, temperature_mV)
-        return baseline - minimum
-
-    difference = (depth(predicted) - depth(observed)) / scale
-    valid = jnp.any(mask, axis=-1) & jnp.any(baseline_mask, axis=-1)
-    return jnp.where(valid, difference**2, 0.0)
+    return soft_trough_depth_error(
+        predicted,
+        observed,
+        mask,
+        baseline_mask=baseline_mask,
+        scale=scale,
+        temperature_mV=temperature_mV,
+    )
 
 
 def soft_ahp_deficit_error(

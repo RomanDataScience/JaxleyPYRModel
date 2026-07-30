@@ -99,9 +99,6 @@ bash scripts/run_hybrid_cells.sh --cells all --max-parallel-cells 2
 The default is `--cells all --max-parallel-cells 1`, so complete hybrid
 pipelines run one at a time and do not compete for memory.
 
-Use `configs/search/LSU_1_cma_adam_smoke.yaml` only for short end-to-end
-correctness checks; it is not a scientific optimization budget.
-
 Hybrid reporting defaults to:
 
 - the best training candidate after every CMA generation;
@@ -171,8 +168,8 @@ depolarizing firing rate, interspike-minimum voltage, spike and recovery
 metrics, and the outside-step spike penalty—see
 [`configs/losses/README_LSU_1.md`](configs/losses/README_LSU_1.md).
 
-For a separate hyperpolarization-only fit using point-by-point voltage MSE
-plus first-derivative MSE:
+For a separate hyperpolarization-only fit using dominant trough-depth
+matching, point-by-point voltage MSE, and first-derivative MSE:
 
 ```bash
 bash scripts/run_full_fitting.sh \

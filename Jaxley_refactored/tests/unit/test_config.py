@@ -136,15 +136,22 @@ def test_hyperpolarizing_only_config_has_isolated_data_loss_and_output():
     assert config.dataset.segments == ("hyperpolarizing_pulse",)
     assert config.dataset.trace_indices == (1, 3)
     assert config.dataset.simulation_post_ms == 100.0
-    assert config.dataset.score_pre_ms == 100.0
+    assert config.dataset.score_pre_ms == 50.0
     assert config.dataset.score_post_ms == 100.0
     assert config.fit.protocol_weights == {
         "depolarizing_step": 0.0,
         "hyperpolarizing_pulse": 1.0,
     }
     assert config.fit.penalties == ()
-    assert len(config.fit.components) == 2
-    waveform, derivative = config.fit.components
+    assert len(config.fit.components) == 3
+    trough, waveform, derivative = config.fit.components
+    assert trough.kind == "soft_trough_depth_error"
+    assert trough.label == "hyperpolarizing_trough_depth"
+    assert trough.protocols == ("hyperpolarizing_pulse",)
+    assert trough.window == "stimulus"
+    assert trough.weight == 4.0
+    assert trough.scale == 1.0
+    assert trough.temperature_mV == 0.5
     assert waveform.kind == "voltage_mse"
     assert waveform.label == "hyperpolarizing_waveform_mse"
     assert waveform.protocols == ("hyperpolarizing_pulse",)

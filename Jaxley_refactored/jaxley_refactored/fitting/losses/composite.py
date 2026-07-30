@@ -273,6 +273,13 @@ class BucketObjective:
                 "soft_ahp_deficit_error",
             }:
                 baseline_mask = jnp.asarray(bucket.window_masks["baseline"])
+            if component.kind == "soft_trough_depth_error":
+                # Restrict the reference baseline to the scored pre-stimulus
+                # interval, excluding any startup transient before scoring.
+                baseline_mask = jnp.asarray(
+                    bucket.window_masks["baseline"]
+                    & bucket.window_masks["score"]
+                )
             if component.kind == "mean_window_difference_error":
                 component_mask = np.zeros_like(bucket.observed_mV, dtype=bool)
                 second_mask = np.zeros_like(bucket.observed_mV, dtype=bool)
@@ -398,6 +405,7 @@ class BucketObjective:
                     }
                 )
             if term.spec.kind in {
+                "soft_trough_depth_error",
                 "soft_ahp_depth_error",
                 "soft_ahp_deficit_error",
             }:

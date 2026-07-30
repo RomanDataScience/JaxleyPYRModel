@@ -61,6 +61,9 @@ def default_loss_registry() -> LossRegistry:
         "soft_mean_spike_peak_voltage_error",
         primitives.soft_mean_spike_peak_voltage_error,
     )
+    registry.register(
+        "soft_trough_depth_error", primitives.soft_trough_depth_error
+    )
     registry.register("soft_ahp_depth_error", primitives.soft_ahp_depth_error)
     registry.register(
         "soft_ahp_deficit_error", primitives.soft_ahp_deficit_error

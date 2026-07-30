@@ -12,12 +12,13 @@ dataset:
   score_windows:
     post_ms: 500.0
 
-# LSU_1 uses pointwise voltage and first-derivative MSE for hyperpolarizing
-# traces. Depolarizing traces use differentiable firing-rate, absolute
-# interspike-minimum voltage, spike-shape/height, and recovery terms.
+# LSU_1 uses primary trough-depth matching plus pointwise voltage and
+# first-derivative MSE for hyperpolarizing traces. Depolarizing traces use
+# differentiable firing-rate, absolute interspike-minimum voltage,
+# spike-shape/height, and recovery terms.
 fit:
   objective:
-    # Preserve the global 0.8/0.2 protocol allocation for protocol-specific
+    # Preserve the global 0.7/0.3 protocol allocation for protocol-specific
     # components instead of converting each component to a conditional mean.
     renormalize_protocol_filtered_components: false
 
@@ -43,7 +44,17 @@ fit:
         temperature_mV: 2.0
 
     components:
-      # Point-by-point voltage difference only for hyperpolarizing traces.
+      # Primary hyperpolarizing target: match depth from the stable scored
+      # pre-pulse baseline to the trough. A soft minimum preserves gradients.
+      - kind: soft_trough_depth_error
+        label: hyperpolarizing_trough_depth
+        weight: 4.0
+        protocols: [hyperpolarizing_pulse]
+        window: stimulus
+        temperature_mV: 0.5
+        scale_mV: 1.0
+
+      # Point-by-point voltage difference for hyperpolarizing traces.
       - kind: voltage_mse
         label: hyperpolarizing_waveform_mse
         weight: 1.0

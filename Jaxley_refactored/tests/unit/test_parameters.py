@@ -69,7 +69,6 @@ def test_all_lsu_local_and_hybrid_configs_select_the_same_44_parameters():
         PROJECT / "configs/losses/LSU_1_wide_bounds.yaml",
         PROJECT / "configs/losses/LSU_1_wide_bounds_adam.yaml",
         PROJECT / "configs/search/LSU_1_cma_adam.yaml",
-        PROJECT / "configs/search/LSU_1_cma_adam_smoke.yaml",
     )
     expected = None
     for path in paths:

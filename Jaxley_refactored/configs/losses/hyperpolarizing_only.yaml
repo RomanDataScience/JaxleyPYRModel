@@ -8,15 +8,25 @@ dataset:
   simulation_window:
     post_stimulus_ms: 100.0
   score_windows:
-    # Compare 100 ms before pulse onset through 100 ms after pulse offset.
-    pre_ms: 100.0
+    # Compare 50 ms before pulse onset through 100 ms after pulse offset.
+    pre_ms: 50.0
     post_ms: 100.0
 
 fit:
   objective:
     penalties: []
     components:
-      # Pure point-by-point experimental-versus-simulated voltage difference.
+      # Primary target: depth from the stable scored pre-pulse baseline to the
+      # trough. The soft minimum is continuous in simulated voltage.
+      - kind: soft_trough_depth_error
+        label: hyperpolarizing_trough_depth
+        weight: 4.0
+        protocols: [hyperpolarizing_pulse]
+        window: stimulus
+        temperature_mV: 0.5
+        scale_mV: 1.0
+
+      # Point-by-point experimental-versus-simulated voltage difference.
       - kind: voltage_mse
         label: hyperpolarizing_waveform_mse
         weight: 1.0

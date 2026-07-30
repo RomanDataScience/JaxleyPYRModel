@@ -25,6 +25,7 @@ from jaxley_refactored.fitting.losses import (
     soft_interspike_minimum_voltage_error,
     soft_interspike_trough_shape_error,
     soft_mean_spike_peak_voltage_error,
+    soft_trough_depth_error,
     soft_upward_crossing_count,
 )
 from jaxley_refactored.fitting.trainer import Trainer
@@ -44,10 +45,12 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
             "hyperpolarizing_steady_state",
         ),
         "hyperpolarizing_only.yaml": (
+            "hyperpolarizing_trough_depth",
             "hyperpolarizing_waveform_mse",
             "hyperpolarizing_derivative_mse",
         ),
         "LSU_1.yaml": (
+            "hyperpolarizing_trough_depth",
             "hyperpolarizing_waveform_mse",
             "hyperpolarizing_derivative_mse",
             "depolarizing_firing_rate",
@@ -82,22 +85,30 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert penalties["hyperpolarizing_any_spikes"].protocols == (
         "hyperpolarizing_pulse",
     )
-    assert len(lsu.fit.components) == 15
+    assert len(lsu.fit.components) == 16
     component = lsu.fit.components[0]
-    assert component.label == "hyperpolarizing_waveform_mse"
-    assert component.kind == "voltage_mse"
-    assert component.weight == 1.0
+    assert component.label == "hyperpolarizing_trough_depth"
+    assert component.kind == "soft_trough_depth_error"
+    assert component.weight == 4.0
     assert component.protocols == ("hyperpolarizing_pulse",)
-    assert component.window == "score"
+    assert component.window == "stimulus"
     assert component.scale == 1.0
-    derivative = lsu.fit.components[1]
+    assert component.temperature_mV == 0.5
+    waveform = lsu.fit.components[1]
+    assert waveform.label == "hyperpolarizing_waveform_mse"
+    assert waveform.kind == "voltage_mse"
+    assert waveform.weight == 1.0
+    assert waveform.protocols == ("hyperpolarizing_pulse",)
+    assert waveform.window == "score"
+    assert waveform.scale == 1.0
+    derivative = lsu.fit.components[2]
     assert derivative.label == "hyperpolarizing_derivative_mse"
     assert derivative.kind == "derivative_mse"
     assert derivative.weight == 1.0
     assert derivative.protocols == ("hyperpolarizing_pulse",)
     assert derivative.window == "score"
     assert derivative.scale == 1.0
-    firing_rate = lsu.fit.components[2]
+    firing_rate = lsu.fit.components[3]
     assert firing_rate.label == "depolarizing_firing_rate"
     assert firing_rate.kind == "soft_firing_rate_error"
     assert firing_rate.weight == 1.0
@@ -135,7 +146,11 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert all(
         item.weight == 1.0
         for item in lsu.fit.components
-        if item.label != "depolarizing_minus50_minus40_voltage_mse"
+        if item.label
+        not in {
+            "hyperpolarizing_trough_depth",
+            "depolarizing_minus50_minus40_voltage_mse",
+        }
     )
     assert all(item.scale == 1.0 for item in lsu.fit.components)
     early_late = components["depolarizing_early_late_voltage_difference"]
@@ -163,7 +178,6 @@ def test_every_lsu_variant_inherits_the_same_reweighted_objective():
         PROJECT / "configs/losses/LSU_1_wide_bounds.yaml",
         PROJECT / "configs/losses/LSU_1_wide_bounds_adam.yaml",
         PROJECT / "configs/search/LSU_1_cma_adam.yaml",
-        PROJECT / "configs/search/LSU_1_cma_adam_smoke.yaml",
     )
     configs = tuple(load_config(path) for path in paths)
     reference = configs[0].fit
@@ -208,6 +222,7 @@ def test_registered_waveform_losses_are_finite_and_differentiable():
         "soft_interspike_minimum_voltage_error",
         "soft_interspike_trough_shape_error",
         "soft_mean_spike_peak_voltage_error",
+        "soft_trough_depth_error",
         "soft_ahp_depth_error",
         "soft_ahp_deficit_error",
         "soft_minimum_voltage_error",
@@ -292,6 +307,134 @@ def test_derivative_mse_matches_voltage_slope_not_constant_offset():
     )(steeper)
     assert np.isfinite(np.asarray(gradient)).all()
     assert np.any(np.abs(np.asarray(gradient)) > 0.0)
+
+
+def test_soft_trough_depth_is_offset_invariant_and_windowed():
+    observed = jnp.asarray(
+        [[-100.0, -65.0, -65.0, -66.0, -68.0, -67.0, -100.0]]
+    )
+    shallow = jnp.asarray(
+        [[-200.0, -65.0, -65.0, -66.0, -66.0, -66.0, -200.0]]
+    )
+    baseline = jnp.asarray(
+        [[False, True, True, False, False, False, False]]
+    )
+    stimulus = jnp.asarray(
+        [[False, False, False, True, True, True, False]]
+    )
+    kwargs = {
+        "baseline_mask": baseline,
+        "scale": 1.0,
+        "temperature_mV": 0.5,
+    }
+
+    exact = soft_trough_depth_error(
+        observed,
+        observed,
+        stimulus,
+        **kwargs,
+    )
+    common_offset = soft_trough_depth_error(
+        observed + 10.0,
+        observed,
+        stimulus,
+        **kwargs,
+    )
+    mismatch = soft_trough_depth_error(
+        shallow,
+        observed,
+        stimulus,
+        **kwargs,
+    )
+
+    np.testing.assert_allclose(exact, [0.0], atol=1e-12)
+    np.testing.assert_allclose(common_offset, [0.0], atol=1e-9)
+    assert float(mismatch[0]) > 0.0
+    gradient = jax.grad(
+        lambda voltage: jnp.sum(
+            soft_trough_depth_error(
+                voltage,
+                observed,
+                stimulus,
+                **kwargs,
+            )
+        )
+    )(shallow)
+    assert np.isfinite(np.asarray(gradient)).all()
+    np.testing.assert_array_equal(
+        np.asarray(gradient)[0, [0, 6]],
+        np.zeros(2),
+    )
+    assert np.any(np.abs(np.asarray(gradient)[0, 1:6]) > 0.0)
+
+
+def test_hyperpolarizing_trough_uses_scored_stable_baseline_only():
+    time_ms = np.arange(0.0, 650.1, 50.0)
+    observed = np.asarray(
+        [
+            -90.0,
+            -85.0,
+            -80.0,
+            -75.0,
+            -72.0,
+            -70.0,
+            -68.0,
+            -66.0,
+            -65.0,
+            -65.0,
+            -66.0,
+            -68.0,
+            -66.0,
+            -65.0,
+        ]
+    )
+    record = TraceRecord(
+        cell_id="cell",
+        trace_id="hyper",
+        protocol="hyperpolarizing_pulse",
+        voltage_mV=observed,
+        current_nA=np.zeros_like(observed),
+        time_ms=time_ms,
+        score_mask=time_ms >= 400.0,
+        dt_ms=50.0,
+        initial_voltage_mV=-90.0,
+        weight=1.0,
+        metadata={"epoch_start_ms": 500.0, "epoch_stop_ms": 550.0},
+        checksums={},
+    )
+    bucket = bucket_records((record,))[0]
+    component = LossComponentSpec(
+        kind="soft_trough_depth_error",
+        label="trough",
+        weight=4.0,
+        window="stimulus",
+        protocols=("hyperpolarizing_pulse",),
+        scale=1.0,
+        temperature_mV=0.5,
+    )
+    objective = BucketObjective(
+        (component,),
+        bucket,
+        component_denominators((component,), (bucket,)),
+        default_loss_registry(),
+    )
+
+    startup_mismatch = observed.copy()
+    startup_mismatch[:8] += 50.0
+    stable_baseline_mismatch = startup_mismatch.copy()
+    stable_baseline_mismatch[8:10] += 2.0
+
+    startup_loss, _ = objective(
+        jnp.asarray(startup_mismatch[None, :]),
+        jnp.asarray(bucket.observed_mV),
+    )
+    baseline_loss, _ = objective(
+        jnp.asarray(stable_baseline_mismatch[None, :]),
+        jnp.asarray(bucket.observed_mV),
+    )
+
+    np.testing.assert_allclose(startup_loss, 0.0, atol=1e-12)
+    assert float(baseline_loss) > 0.0
 
 
 def test_mean_window_difference_matches_simulated_and_observed_offsets():

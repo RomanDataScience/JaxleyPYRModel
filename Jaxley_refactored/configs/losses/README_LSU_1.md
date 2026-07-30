@@ -6,7 +6,9 @@ traces. It deliberately does not use depolarizing whole-trace MSE as the sole
 criterion: small spike-timing offsets can make pointwise errors large even
 when the relevant physiology is similar.
 
-The requested priorities are:
+For hyperpolarizing traces, the primary feature is the voltage level of the
+trough relative to the stable pre-pulse baseline. The depolarizing priorities
+remain:
 
 1. depolarizing firing rate;
 2. no depolarizing spikes outside the current step and no hyperpolarizing
@@ -32,13 +34,15 @@ independent of cell-specific trace names.
 
 ## Complete objective
 
-All additive components have raw weight `1.0` except the dedicated
+All additive components have raw weight `1.0` except the primary
+hyperpolarizing trough-depth term, whose weight is `4.0`, and the dedicated
 −50 to −40 mV plateau-band term, whose weight is `0.75`. Every normalization
 scale remains `1.0` in its native units. The derivative scale is expressed in
 mV/ms; voltage-feature scales are expressed in mV.
 
 | Component | Biological role | Protocol/window |
 |---|---|---|
+| `hyperpolarizing_trough_depth` | Primary hyperpolarizing target: stable-baseline-to-smooth-trough depth; weight `4.0` | Hyperpolarizing, `stimulus` |
 | `hyperpolarizing_waveform_mse` | Hyperpolarizing voltage trajectory | Hyperpolarizing, `score` |
 | `hyperpolarizing_derivative_mse` | Hyperpolarizing dV/dt trajectory, including onset, sag, offset, and recovery kinetics | Hyperpolarizing, `score` |
 | `depolarizing_firing_rate` | Firing frequency | Depolarizing, `stimulus` |
@@ -91,6 +95,26 @@ final_loss =
 
 The additive terms remain nonzero even if other components become very small;
 the multipliers increase the full objective for prohibited spikes.
+
+## Hyperpolarizing trough depth
+
+The principal hyperpolarizing feature is the voltage deflection from the
+stable 400–500 ms pre-pulse baseline to the lowest voltage reached during the
+500–550 ms current pulse. For each trace:
+
+```text
+depth(V) = mean(V[400:500 ms]) - softmin(V[500:550 ms])
+loss = 4 × ((depth(V_sim) - depth(V_exp)) / 1 mV)²
+```
+
+The soft-minimum temperature is `0.5 mV`. This is narrow enough to represent
+the rounded trough while distributing gradients over nearby low-voltage
+samples instead of selecting one hard `argmin`. Restricting the baseline to
+the scored interval explicitly excludes the startup transient before 400 ms.
+The depth is invariant to a common voltage offset; waveform MSE separately
+anchors absolute baseline and trajectory. Its raw weight `4.0` is four times
+the waveform and derivative weights, making trough depth the dominant
+hyperpolarizing feature.
 
 ## 3. Interspike minimum and rounded trough shape
 

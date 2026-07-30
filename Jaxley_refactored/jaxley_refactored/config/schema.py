@@ -681,6 +681,7 @@ _LOSS_KINDS = {
     "soft_interspike_minimum_voltage_error",
     "soft_interspike_trough_shape_error",
     "soft_mean_spike_peak_voltage_error",
+    "soft_trough_depth_error",
     "soft_ahp_depth_error",
     "soft_ahp_deficit_error",
     "soft_minimum_voltage_error",
