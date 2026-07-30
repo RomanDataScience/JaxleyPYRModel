@@ -188,8 +188,8 @@ fit:
     # With two training traces per protocol, these totals assign 0.4 to each
     # depolarizing trace and 0.1 to each hyperpolarizing trace.
     protocol_weights:
-      depolarizing_step: 0.8
-      hyperpolarizing_pulse: 0.2
+      depolarizing_step: 0.6
+      hyperpolarizing_pulse: 0.4
 
 output:
   run_name: auto
