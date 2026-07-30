@@ -34,11 +34,13 @@ independent of cell-specific trace names.
 
 All additive components have raw weight `1.0` except the dedicated
 −50 to −40 mV plateau-band term, whose weight is `0.75`. Every normalization
-scale remains `1.0` in its native units.
+scale remains `1.0` in its native units. The derivative scale is expressed in
+mV/ms; voltage-feature scales are expressed in mV.
 
 | Component | Biological role | Protocol/window |
 |---|---|---|
 | `hyperpolarizing_waveform_mse` | Hyperpolarizing voltage trajectory | Hyperpolarizing, `score` |
+| `hyperpolarizing_derivative_mse` | Hyperpolarizing dV/dt trajectory, including onset, sag, offset, and recovery kinetics | Hyperpolarizing, `score` |
 | `depolarizing_firing_rate` | Firing frequency | Depolarizing, `stimulus` |
 | `depolarizing_forbidden_spikes` | No spikes before or after depolarizing pulse | Depolarizing, `outside_stimulus` |
 | `hyperpolarizing_forbidden_spikes` | No spikes anywhere in hyperpolarizing trace | Hyperpolarizing, `full_trace` |
@@ -150,6 +152,17 @@ The raw recovery derivative MSE was removed. At scale 1 it was several orders
 of magnitude more sensitive than the voltage features to sub-millisecond
 timing shifts and did not specifically encode slow AHP physiology.
 
+For hyperpolarizing traces, by contrast, LSU_1 retains first-derivative MSE
+over the scored 400–650 ms interval. These traces contain no action potentials,
+so dV/dt directly complements voltage MSE by constraining pulse onset, sag,
+offset, and passive return kinetics without spike-time-shift amplification:
+
+```text
+mean(((diff(V_sim) / dt - diff(V_exp) / dt) / 1 mV/ms)²)
+```
+
+Only adjacent sample pairs fully inside the score window contribute.
+
 ## 5. Spike height
 
 Observed spike peaks define fixed ±3 ms windows. A smooth maximum is calculated
@@ -163,13 +176,13 @@ The objective uses `protocol_mean`:
 
 | Protocol | Protocol total | Per selected trace |
 |---|---:|---:|
-| Depolarizing | `0.8` | `0.4` |
-| Hyperpolarizing | `0.2` | `0.1` |
+| Depolarizing | `0.7` | `0.35` |
+| Hyperpolarizing | `0.3` | `0.15` |
 
 Protocol-filtered components are not renormalized. Thus raw component weights
 do not directly equal final influence: depolarizing-only components retain the
-`0.8` allocation and hyperpolarizing-only components retain `0.2`. The plateau
-band has a pre-metric coefficient of `0.75 × 0.8 = 0.6`.
+`0.7` allocation and hyperpolarizing-only components retain `0.3`. The plateau
+band has a pre-metric coefficient of `0.75 × 0.7 = 0.525`.
 
 Likewise, setting every native-unit scale to `1.0` does not statistically
 equalize the metrics. Firing-rate error is measured in Hz, voltage features in

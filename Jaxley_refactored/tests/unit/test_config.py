@@ -115,14 +115,20 @@ def test_hyperpolarizing_only_config_has_isolated_data_loss_and_output():
         "hyperpolarizing_pulse": 1.0,
     }
     assert config.fit.penalties == ()
-    assert len(config.fit.components) == 1
-    component = config.fit.components[0]
-    assert component.kind == "voltage_mse"
-    assert component.label == "hyperpolarizing_waveform_mse"
-    assert component.protocols == ("hyperpolarizing_pulse",)
-    assert component.window == "score"
-    assert component.weight == 1.0
-    assert component.scale == 1.0
+    assert len(config.fit.components) == 2
+    waveform, derivative = config.fit.components
+    assert waveform.kind == "voltage_mse"
+    assert waveform.label == "hyperpolarizing_waveform_mse"
+    assert waveform.protocols == ("hyperpolarizing_pulse",)
+    assert waveform.window == "score"
+    assert waveform.weight == 1.0
+    assert waveform.scale == 1.0
+    assert derivative.kind == "derivative_mse"
+    assert derivative.label == "hyperpolarizing_derivative_mse"
+    assert derivative.protocols == ("hyperpolarizing_pulse",)
+    assert derivative.window == "score"
+    assert derivative.weight == 1.0
+    assert derivative.scale == 1.0
     assert config.output.root == PROJECT / "runs_hyper"
 
 

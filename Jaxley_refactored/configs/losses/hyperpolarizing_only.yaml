@@ -23,6 +23,15 @@ fit:
         protocols: [hyperpolarizing_pulse]
         window: score
         scale_mV: 1.0
+
+      # First-derivative MSE complements voltage MSE by matching response and
+      # recovery kinetics without introducing a non-differentiable feature.
+      - kind: derivative_mse
+        label: hyperpolarizing_derivative_mse
+        weight: 1.0
+        protocols: [hyperpolarizing_pulse]
+        window: score
+        scale_mV_per_ms: 1.0
     aggregation: protocol_mean
     protocol_weights:
       # Explicit zero overrides the inherited depolarizing allocation.

@@ -12,9 +12,9 @@ dataset:
   score_windows:
     post_ms: 500.0
 
-# LSU_1 uses pointwise MSE only for hyperpolarizing traces. Depolarizing traces
-# use differentiable firing-rate, absolute interspike-minimum voltage,
-# spike-shape/height, and recovery terms.
+# LSU_1 uses pointwise voltage and first-derivative MSE for hyperpolarizing
+# traces. Depolarizing traces use differentiable firing-rate, absolute
+# interspike-minimum voltage, spike-shape/height, and recovery terms.
 fit:
   objective:
     # Preserve the global 0.8/0.2 protocol allocation for protocol-specific
@@ -50,6 +50,15 @@ fit:
         protocols: [hyperpolarizing_pulse]
         window: score
         scale_mV: 1.0
+
+      # Match dV/dt over the same scored interval so pulse onset, sag, pulse
+      # offset, and return kinetics cannot be hidden by a small voltage error.
+      - kind: derivative_mse
+        label: hyperpolarizing_derivative_mse
+        weight: 1.0
+        protocols: [hyperpolarizing_pulse]
+        window: score
+        scale_mV_per_ms: 1.0
 
       # Smooth firing-frequency comparison during the depolarizing current step.
       - kind: soft_firing_rate_error
@@ -185,8 +194,8 @@ fit:
         scale_mV: 1.0
 
     aggregation: protocol_mean
-    # With two training traces per protocol, these totals assign 0.4 to each
-    # depolarizing trace and 0.1 to each hyperpolarizing trace.
+    # With two training traces per protocol, these totals assign 0.35 to each
+    # depolarizing trace and 0.15 to each hyperpolarizing trace.
     protocol_weights:
       depolarizing_step: 0.7
       hyperpolarizing_pulse: 0.3

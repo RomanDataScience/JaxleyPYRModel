@@ -43,9 +43,13 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
             "resting_voltage",
             "hyperpolarizing_steady_state",
         ),
-        "hyperpolarizing_only.yaml": ("hyperpolarizing_waveform_mse",),
+        "hyperpolarizing_only.yaml": (
+            "hyperpolarizing_waveform_mse",
+            "hyperpolarizing_derivative_mse",
+        ),
         "LSU_1.yaml": (
             "hyperpolarizing_waveform_mse",
+            "hyperpolarizing_derivative_mse",
             "depolarizing_firing_rate",
             "depolarizing_forbidden_spikes",
             "hyperpolarizing_forbidden_spikes",
@@ -78,7 +82,7 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert penalties["hyperpolarizing_any_spikes"].protocols == (
         "hyperpolarizing_pulse",
     )
-    assert len(lsu.fit.components) == 14
+    assert len(lsu.fit.components) == 15
     component = lsu.fit.components[0]
     assert component.label == "hyperpolarizing_waveform_mse"
     assert component.kind == "voltage_mse"
@@ -86,7 +90,14 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert component.protocols == ("hyperpolarizing_pulse",)
     assert component.window == "score"
     assert component.scale == 1.0
-    firing_rate = lsu.fit.components[1]
+    derivative = lsu.fit.components[1]
+    assert derivative.label == "hyperpolarizing_derivative_mse"
+    assert derivative.kind == "derivative_mse"
+    assert derivative.weight == 1.0
+    assert derivative.protocols == ("hyperpolarizing_pulse",)
+    assert derivative.window == "score"
+    assert derivative.scale == 1.0
+    firing_rate = lsu.fit.components[2]
     assert firing_rate.label == "depolarizing_firing_rate"
     assert firing_rate.kind == "soft_firing_rate_error"
     assert firing_rate.weight == 1.0
@@ -242,6 +253,45 @@ def test_pseudo_huber_is_less_sensitive_to_a_large_outlier_than_mse():
         predicted, observed, mask, dt_ms=0.05, scale=1.0, delta=1.0
     )
     assert float(huber[0]) < float(mse[0])
+
+
+def test_derivative_mse_matches_voltage_slope_not_constant_offset():
+    term = default_loss_registry().get("derivative_mse")
+    observed = jnp.asarray([[0.0, 1.0, 2.0, 3.0]])
+    constant_offset = observed + 5.0
+    steeper = jnp.asarray([[0.0, 2.0, 4.0, 6.0]])
+    mask = jnp.ones_like(observed, dtype=bool)
+
+    offset_error = term(
+        constant_offset,
+        observed,
+        mask,
+        dt_ms=1.0,
+        scale=1.0,
+    )
+    slope_error = term(
+        steeper,
+        observed,
+        mask,
+        dt_ms=1.0,
+        scale=1.0,
+    )
+
+    np.testing.assert_allclose(offset_error, [0.0], atol=1e-12)
+    np.testing.assert_allclose(slope_error, [1.0], rtol=1e-6)
+    gradient = jax.grad(
+        lambda voltage: jnp.sum(
+            term(
+                voltage,
+                observed,
+                mask,
+                dt_ms=1.0,
+                scale=1.0,
+            )
+        )
+    )(steeper)
+    assert np.isfinite(np.asarray(gradient)).all()
+    assert np.any(np.abs(np.asarray(gradient)) > 0.0)
 
 
 def test_mean_window_difference_matches_simulated_and_observed_offsets():

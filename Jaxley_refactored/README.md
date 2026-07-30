@@ -167,7 +167,8 @@ depolarizing firing rate, interspike-minimum voltage, spike and recovery
 metrics, and the outside-step spike penalty—see
 [`configs/losses/README_LSU_1.md`](configs/losses/README_LSU_1.md).
 
-For a separate hyperpolarization-only fit using point-by-point voltage MSE:
+For a separate hyperpolarization-only fit using point-by-point voltage MSE
+plus first-derivative MSE:
 
 ```bash
 bash scripts/run_full_fitting.sh \
