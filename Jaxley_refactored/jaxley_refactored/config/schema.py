@@ -672,9 +672,12 @@ _LOSS_KINDS = {
     "correlation_loss",
     "resting_voltage_error",
     "steady_state_error",
+    "mean_window_difference_error",
+    "experimental_voltage_band_mse",
     "soft_firing_rate_error",
     "subthreshold_mean_error",
     "soft_dblo_error",
+    "soft_interspike_minimum_voltage_error",
     "soft_minimum_voltage_error",
     "soft_maximum_voltage_error",
 }
@@ -694,6 +697,12 @@ class LossComponentSpec:
     delta: float = 1.0
     threshold_mV: float = -20.0
     temperature_mV: float = 2.0
+    first_window_start_ms: float = 100.0
+    first_window_end_ms: float = 200.0
+    second_window_start_ms: float = 600.0
+    second_window_end_ms: float = 700.0
+    voltage_band_lower_mV: float = -50.0
+    voltage_band_upper_mV: float = -40.0
     label: str = ""
 
     @classmethod
@@ -714,6 +723,12 @@ class LossComponentSpec:
                 "delta",
                 "threshold_mV",
                 "temperature_mV",
+                "first_window_start_ms",
+                "first_window_end_ms",
+                "second_window_start_ms",
+                "second_window_end_ms",
+                "voltage_band_lower_mV",
+                "voltage_band_upper_mV",
                 "label",
             },
             where,
@@ -735,6 +750,27 @@ class LossComponentSpec:
         weight = float(data.get("weight", 1.0))
         if weight < 0.0:
             raise ConfigError(f"{where}.weight cannot be negative.")
+        first_start = float(data.get("first_window_start_ms", 100.0))
+        first_end = float(data.get("first_window_end_ms", 200.0))
+        second_start = float(data.get("second_window_start_ms", 600.0))
+        second_end = float(data.get("second_window_end_ms", 700.0))
+        if not all(
+            math.isfinite(item)
+            for item in (first_start, first_end, second_start, second_end)
+        ):
+            raise ConfigError(f"{where} time-window boundaries must be finite.")
+        if first_end <= first_start or second_end <= second_start:
+            raise ConfigError(f"{where} time windows must have positive duration.")
+        band_lower = float(data.get("voltage_band_lower_mV", -50.0))
+        band_upper = float(data.get("voltage_band_upper_mV", -40.0))
+        if (
+            not math.isfinite(band_lower)
+            or not math.isfinite(band_upper)
+            or band_upper <= band_lower
+        ):
+            raise ConfigError(
+                f"{where} voltage band must have finite ordered boundaries."
+            )
         return cls(
             kind=kind,
             weight=weight,
@@ -746,6 +782,12 @@ class LossComponentSpec:
             temperature_mV=_positive(
                 data.get("temperature_mV", 2.0), f"{where}.temperature_mV"
             ),
+            first_window_start_ms=first_start,
+            first_window_end_ms=first_end,
+            second_window_start_ms=second_start,
+            second_window_end_ms=second_end,
+            voltage_band_lower_mV=band_lower,
+            voltage_band_upper_mV=band_upper,
             label=str(data.get("label", kind)),
         )
 

@@ -163,8 +163,8 @@ number of forward trials. See [docs/OPTIMIZATION.md](docs/OPTIMIZATION.md).
 The main executable configuration is
 `configs/fits/combe_m20240527cd_all.yaml`. Smaller runtime files inherit from it.
 For a complete explanation of LSU_1—including hyperpolarizing waveform MSE,
-depolarizing firing-rate, DBLO, spike and recovery metrics, and the
-outside-step spike penalty—see
+depolarizing firing rate, interspike-minimum voltage, spike and recovery
+metrics, and the outside-step spike penalty—see
 [`configs/losses/README_LSU_1.md`](configs/losses/README_LSU_1.md).
 
 - `model.morphology.provider`: `hoc_live`, `hoc_artifact`, or `swc`.

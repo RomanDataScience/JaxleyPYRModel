@@ -19,6 +19,7 @@ from jaxley_refactored.fitting.losses import (
     default_loss_registry,
     observed_interspike_masks,
     soft_dblo_error,
+    soft_interspike_minimum_voltage_error,
     soft_upward_crossing_count,
 )
 from jaxley_refactored.fitting.trainer import Trainer
@@ -40,13 +41,15 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
         "LSU_1.yaml": (
             "hyperpolarizing_waveform_mse",
             "depolarizing_firing_rate",
-            "depolarizing_dblo",
+            "depolarizing_interspike_minimum_voltage",
             "depolarizing_spike_waveform",
             "depolarizing_spike_derivative",
             "depolarizing_spike_height",
             "depolarizing_recovery_waveform",
             "depolarizing_recovery_derivative",
             "depolarizing_ahp_depth",
+            "depolarizing_early_late_voltage_difference",
+            "depolarizing_minus50_minus40_voltage_mse",
         ),
     }
     for filename, labels in expected.items():
@@ -57,31 +60,44 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert len(lsu.fit.penalties) == 1
     assert lsu.fit.penalties[0].label == "outside_step_spikes"
     assert lsu.fit.penalties[0].factor_per_spike == 1.1
-    assert len(lsu.fit.components) == 9
+    assert len(lsu.fit.components) == 11
     component = lsu.fit.components[0]
     assert component.label == "hyperpolarizing_waveform_mse"
     assert component.kind == "voltage_mse"
     assert component.weight == 1.0
     assert component.protocols == ("hyperpolarizing_pulse",)
     assert component.window == "score"
-    assert component.scale == 5.0
+    assert component.scale == 1.0
     firing_rate = lsu.fit.components[1]
     assert firing_rate.label == "depolarizing_firing_rate"
     assert firing_rate.kind == "soft_firing_rate_error"
-    assert firing_rate.weight == 4.0
+    assert firing_rate.weight == 1.0
     assert firing_rate.protocols == ("depolarizing_step",)
     assert firing_rate.window == "stimulus"
     assert firing_rate.threshold_mV == -20.0
     assert firing_rate.temperature_mV == 2.0
-    assert firing_rate.scale == 5.0
+    assert firing_rate.scale == 1.0
     components = {item.label: item for item in lsu.fit.components}
-    assert components["depolarizing_dblo"].weight == 2.0
-    assert components["depolarizing_spike_waveform"].weight == 0.25
-    assert components["depolarizing_spike_derivative"].weight == 0.25
-    assert components["depolarizing_spike_height"].weight == 0.32
-    assert components["depolarizing_recovery_waveform"].weight == 0.5
-    assert components["depolarizing_recovery_derivative"].weight == 0.2
-    assert components["depolarizing_ahp_depth"].weight == 0.10
+    interspike = components["depolarizing_interspike_minimum_voltage"]
+    assert interspike.kind == "soft_interspike_minimum_voltage_error"
+    assert interspike.weight == 1.0
+    assert interspike.scale == 1.0
+    assert interspike.temperature_mV == 1.0
+    assert all(item.weight == 1.0 for item in lsu.fit.components)
+    assert all(item.scale == 1.0 for item in lsu.fit.components)
+    early_late = components["depolarizing_early_late_voltage_difference"]
+    assert early_late.kind == "mean_window_difference_error"
+    assert early_late.protocols == ("depolarizing_step",)
+    assert early_late.first_window_start_ms == 100.0
+    assert early_late.first_window_end_ms == 200.0
+    assert early_late.second_window_start_ms == 600.0
+    assert early_late.second_window_end_ms == 700.0
+    voltage_band = components["depolarizing_minus50_minus40_voltage_mse"]
+    assert voltage_band.kind == "experimental_voltage_band_mse"
+    assert voltage_band.protocols == ("depolarizing_step",)
+    assert voltage_band.window == "stimulus"
+    assert voltage_band.voltage_band_lower_mV == -50.0
+    assert voltage_band.voltage_band_upper_mV == -40.0
 
 
 def test_every_lsu_variant_inherits_the_same_reweighted_objective():
@@ -119,6 +135,7 @@ def test_registered_waveform_losses_are_finite_and_differentiable():
 
     for name in (
         "voltage_mse",
+        "experimental_voltage_band_mse",
         "voltage_mae",
         "pseudo_huber",
         "normalized_voltage_mse",
@@ -126,9 +143,11 @@ def test_registered_waveform_losses_are_finite_and_differentiable():
         "correlation_loss",
         "resting_voltage_error",
         "steady_state_error",
+        "mean_window_difference_error",
         "soft_firing_rate_error",
         "subthreshold_mean_error",
         "soft_dblo_error",
+        "soft_interspike_minimum_voltage_error",
         "soft_minimum_voltage_error",
         "soft_maximum_voltage_error",
     ):
@@ -146,6 +165,7 @@ def test_registered_waveform_losses_are_finite_and_differentiable():
                     threshold_mV=-20.0,
                     temperature_mV=2.0,
                     baseline_mask=mask,
+                    comparison_mask=mask,
                     interspike_masks=mask[:, None, :],
                     interspike_valid=jnp.ones((1, 1), dtype=bool),
                 )
@@ -169,6 +189,46 @@ def test_pseudo_huber_is_less_sensitive_to_a_large_outlier_than_mse():
         predicted, observed, mask, dt_ms=0.05, scale=1.0, delta=1.0
     )
     assert float(huber[0]) < float(mse[0])
+
+
+def test_mean_window_difference_matches_simulated_and_observed_offsets():
+    term = default_loss_registry().get("mean_window_difference_error")
+    observed = jnp.asarray([[-65.0, -63.0, -55.0, -53.0]])
+    matching = observed + 7.0
+    mismatching = jnp.asarray([[-65.0, -63.0, -50.0, -48.0]])
+    early = jnp.asarray([[True, True, False, False]])
+    late = jnp.asarray([[False, False, True, True]])
+
+    exact = term(
+        matching,
+        observed,
+        early,
+        comparison_mask=late,
+        scale=1.0,
+    )
+    error = term(
+        mismatching,
+        observed,
+        early,
+        comparison_mask=late,
+        scale=1.0,
+    )
+
+    np.testing.assert_allclose(exact, [0.0], atol=1e-12)
+    np.testing.assert_allclose(error, [25.0], rtol=1e-6)
+    gradient = jax.grad(
+        lambda voltage: jnp.sum(
+            term(
+                voltage,
+                observed,
+                early,
+                comparison_mask=late,
+                scale=1.0,
+            )
+        )
+    )(mismatching)
+    assert np.isfinite(np.asarray(gradient)).all()
+    assert not np.allclose(np.asarray(gradient), 0.0)
 
 
 def test_soft_firing_rate_error_prefers_matching_spike_count():
@@ -312,6 +372,77 @@ def test_soft_dblo_is_finite_zero_without_two_observed_spikes():
                 observed,
                 stimulus,
                 baseline_mask=baseline,
+                interspike_masks=intervals,
+                interspike_valid=valid,
+                scale=5.0,
+                temperature_mV=1.0,
+            )
+        )
+
+    value, gradient = jax.value_and_grad(scalar)(predicted)
+    assert float(value) == 0.0
+    np.testing.assert_array_equal(gradient, jnp.zeros_like(predicted))
+
+
+def test_soft_interspike_minimum_compares_absolute_trough_voltage():
+    observed = jnp.asarray(
+        [[-70.0, -70.0, 20.0, -50.0, 20.0, -40.0, -65.0, -65.0]]
+    )
+    predicted = observed.at[0, 3].set(-45.0).at[0, 5].set(-35.0)
+    stimulus = jnp.asarray(
+        [[False, False, True, True, True, True, True, True]]
+    )
+    intervals = jnp.zeros((1, 2, observed.shape[-1]), dtype=bool)
+    intervals = intervals.at[0, 0, 3].set(True).at[0, 1, 5].set(True)
+    valid = jnp.asarray([[True, True]])
+    kwargs = {
+        "interspike_masks": intervals,
+        "interspike_valid": valid,
+        "scale": 5.0,
+        "temperature_mV": 1.0,
+    }
+
+    exact = soft_interspike_minimum_voltage_error(
+        observed, observed, stimulus, **kwargs
+    )
+    shifted_troughs = soft_interspike_minimum_voltage_error(
+        predicted, observed, stimulus, **kwargs
+    )
+    common_offset = soft_interspike_minimum_voltage_error(
+        predicted + 7.0, observed, stimulus, **kwargs
+    )
+
+    np.testing.assert_allclose(exact, [0.0], atol=1e-12)
+    np.testing.assert_allclose(shifted_troughs, [1.0], rtol=1e-6)
+    np.testing.assert_allclose(common_offset, [5.76], rtol=1e-6)
+
+    def scalar(voltage):
+        return jnp.sum(
+            soft_interspike_minimum_voltage_error(
+                voltage, observed, stimulus, **kwargs
+            )
+        )
+
+    value, gradient = jax.jit(jax.value_and_grad(scalar))(predicted)
+    assert np.isfinite(float(value))
+    assert np.isfinite(np.asarray(gradient)).all()
+    assert not np.allclose(np.asarray(gradient), 0.0)
+    assert not np.isclose(float(np.sum(gradient)), 0.0)
+
+
+def test_soft_interspike_minimum_is_zero_without_two_observed_spikes():
+    observed = jnp.asarray([[-70.0, -70.0, -60.0, -55.0]])
+    predicted = observed + 10.0
+    stimulus = jnp.asarray([[False, False, True, True]])
+    intervals = jnp.zeros((1, 1, 4), dtype=bool)
+    valid = jnp.asarray([[False]])
+
+    def scalar(voltage):
+        return jnp.sum(
+            soft_interspike_minimum_voltage_error(
+                voltage,
+                observed,
+                stimulus,
                 interspike_masks=intervals,
                 interspike_valid=valid,
                 scale=5.0,

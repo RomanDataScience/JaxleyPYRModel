@@ -4,8 +4,9 @@
 protocols:
 
 - Hyperpolarizing traces use point-by-point voltage MSE.
-- Depolarizing traces use firing rate, DBLO, spike shape and height, and
-  post-step recovery features. They do not use point-by-point voltage MSE.
+- Depolarizing traces use firing rate, absolute mean interspike-minimum
+  voltage, spike shape and height, and post-step recovery features. They do
+  not use point-by-point voltage MSE.
 - Both protocols receive a differentiable penalty for spikes outside the
   stimulus.
 
@@ -29,22 +30,24 @@ The relevant windows are:
 
 | Label | Purpose | Weight | Protocol/window | Scale |
 |---|---|---:|---|---:|
-| `hyperpolarizing_waveform_mse` | Point-by-point voltage MSE | `1.0` | Hyperpolarizing, `score` | `5 mV` |
-| `depolarizing_firing_rate` | Smooth firing-frequency error | `4.0` | Depolarizing, `stimulus` | `5 Hz` |
-| `depolarizing_dblo` | Inter-spike voltage floor relative to rest | `2.0` | Depolarizing, `stimulus` | `5 mV` |
-| `depolarizing_spike_waveform` | Robust spike waveform comparison | `0.25` | Depolarizing, `stimulus` | `5 mV` |
-| `depolarizing_spike_derivative` | Spike rise/fall and symmetry | `0.25` | Depolarizing, `stimulus` | `20 mV/ms` |
-| `depolarizing_spike_height` | Smooth maximum-voltage error | `0.32` | Depolarizing, `stimulus` | `5 mV` |
-| `depolarizing_recovery_waveform` | Post-step recovery trajectory | `0.5` | Depolarizing, `recovery` | `3 mV` |
-| `depolarizing_recovery_derivative` | Speed of return toward baseline | `0.2` | Depolarizing, `recovery` | `1 mV/ms` |
-| `depolarizing_ahp_depth` | Post-step minimum/AHP depth | `0.10` | Depolarizing, `recovery` | `3 mV` |
+| `hyperpolarizing_waveform_mse` | Point-by-point voltage MSE | `1.0` | Hyperpolarizing, `score` | `1 mV` |
+| `depolarizing_firing_rate` | Smooth firing-frequency error | `1.0` | Depolarizing, `stimulus` | `1 Hz` |
+| `depolarizing_interspike_minimum_voltage` | Absolute mean interspike minimum voltage | `1.0` | Depolarizing, `stimulus` | `1 mV` |
+| `depolarizing_spike_waveform` | Robust spike waveform comparison | `1.0` | Depolarizing, `stimulus` | `1 mV` |
+| `depolarizing_spike_derivative` | Spike rise/fall and symmetry | `1.0` | Depolarizing, `stimulus` | `1 mV/ms` |
+| `depolarizing_spike_height` | Smooth maximum-voltage error | `1.0` | Depolarizing, `stimulus` | `1 mV` |
+| `depolarizing_recovery_waveform` | Post-step recovery trajectory | `1.0` | Depolarizing, `recovery` | `1 mV` |
+| `depolarizing_recovery_derivative` | Speed of return toward baseline | `1.0` | Depolarizing, `recovery` | `1 mV/ms` |
+| `depolarizing_ahp_depth` | Post-step minimum/AHP depth | `1.0` | Depolarizing, `recovery` | `1 mV` |
+| `depolarizing_early_late_voltage_difference` | Difference between early and late mean voltage | `1.0` | Depolarizing, 100–200 vs 600–700 ms | `1 mV` |
+| `depolarizing_minus50_minus40_voltage_mse` | Voltage error in the experimental −50 to −40 mV band | `1.0` | Depolarizing, `stimulus` | `1 mV` |
 
 ### Hyperpolarizing waveform MSE
 
 This is the only `voltage_mse` component:
 
 ```text
-mean(((V_simulated(t) - V_experimental(t)) / 5 mV)²)
+mean(((V_simulated(t) - V_experimental(t)) / 1 mV)²)
 ```
 
 It is restricted to `hyperpolarizing_pulse`; there is no depolarizing
@@ -54,15 +57,18 @@ point-by-point MSE.
 
 A sigmoid around -20 mV converts voltage into smooth threshold occupancy.
 Positive occupancy changes approximate upward crossings. The squared
-simulated-versus-experimental rate difference is normalized by 5 Hz.
+simulated-versus-experimental rate difference is normalized by 1 Hz.
 
-### DBLO
+### Mean interspike minimum voltage
 
 Experimental spikes define fixed peak-to-next-threshold intervals. Smooth
 simulated minima within those intervals estimate the inter-spike voltage floor
-relative to the pre-step resting voltage. Experimental intervals and smooth
-minima preserve differentiability. A trace with fewer than two qualifying
-experimental spikes contributes zero to this term.
+after the first spike and before the last spike. The metric averages the
+minimum from every consecutive-spike interval and compares the simulated and
+experimental absolute voltages. It does **not** subtract resting voltage and
+is therefore not DBLO. Experimental intervals and smooth minima preserve
+differentiability. A trace with fewer than two qualifying experimental spikes
+contributes zero to this term.
 
 ### Spike shape and height
 
@@ -87,6 +93,34 @@ Recovery combines:
 Together these terms represent both the hyperpolarized undershoot and the slow
 return toward baseline.
 
+### Early-to-late mean-voltage difference
+
+This component computes:
+
+```text
+delta_sim = mean(V_sim[100:200 ms]) - mean(V_sim[600:700 ms])
+delta_exp = mean(V_exp[100:200 ms]) - mean(V_exp[600:700 ms])
+loss = ((delta_sim - delta_exp) / 1 mV)²
+```
+
+It applies only to depolarizing traces, whose simulations contain both complete
+windows. It is invariant to a uniform voltage shift applied to the entire
+trace and specifically constrains the change between the early baseline and
+late recovery periods.
+
+### −50 to −40 mV depolarizing voltage band
+
+During the depolarizing stimulus, this component selects samples where:
+
+```text
+-50 mV <= V_experimental(t) <= -40 mV
+```
+
+It computes point-by-point simulated-versus-experimental voltage MSE at those
+fixed samples, normalized by 1 mV. The experimental trace—not the simulated
+trace—defines band membership, so the mask remains fixed during optimization
+and the loss remains differentiable in simulated voltage.
+
 ## Aggregation
 
 The objective uses `protocol_mean`:
@@ -99,6 +133,11 @@ The objective uses `protocol_mean`:
 `renormalize_protocol_filtered_components: false` means depolarizing-only
 components retain a total factor of `0.8`, while the hyperpolarizing MSE retains
 a total factor of `0.2`.
+
+All component weights and normalization scales are `1.0`, but this does not
+make their realized contributions numerically identical. The loss primitives
+have different units and distributions, and the protocol allocation still
+multiplies depolarizing terms by `0.8` and the hyperpolarizing term by `0.2`.
 
 ## Outside-stimulus spike penalty
 
@@ -115,9 +154,10 @@ retain useful gradients near threshold.
 ## Differentiability
 
 The loss avoids integer simulated spike counts and hard simulated extrema:
-firing rate and the penalty use smooth threshold occupancy, while DBLO, spike
-height, and AHP depth use smooth extrema. MSE, pseudo-Huber, and derivative
-terms are continuous and compatible with JAX automatic differentiation.
+firing rate and the penalty use smooth threshold occupancy, while the
+interspike voltage, spike height, and AHP depth use smooth extrema. MSE,
+pseudo-Huber, and derivative terms are continuous and compatible with JAX
+automatic differentiation.
 
 ## Related configurations
 

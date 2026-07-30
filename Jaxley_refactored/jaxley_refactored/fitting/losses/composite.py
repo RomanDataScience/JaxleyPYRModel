@@ -117,6 +117,7 @@ class BoundTerm:
     baseline_mask: object | None
     interspike_masks: object | None
     interspike_valid: object | None
+    comparison_mask: object | None
 
 
 @dataclass(frozen=True)
@@ -189,16 +190,70 @@ class BucketObjective:
             component_mask = np.asarray(
                 bucket.window_masks[component.window], dtype=bool
             )
+            if component.kind == "experimental_voltage_band_mse":
+                component_mask = (
+                    component_mask
+                    & (bucket.observed_mV >= component.voltage_band_lower_mV)
+                    & (bucket.observed_mV <= component.voltage_band_upper_mV)
+                )
+                selected = protocol_selector.astype(bool)
+                if np.any(selected & ~np.any(component_mask, axis=-1)):
+                    raise ValueError(
+                        f"Loss component {component.label!r} selects no "
+                        "experimental samples in its voltage band."
+                    )
             baseline_mask = None
             interspike_masks = None
             interspike_valid = None
-            if component.kind == "soft_dblo_error":
-                baseline_mask = jnp.asarray(bucket.window_masks["baseline"])
+            comparison_mask = None
+            if component.kind == "mean_window_difference_error":
+                component_mask = np.zeros_like(bucket.observed_mV, dtype=bool)
+                second_mask = np.zeros_like(bucket.observed_mV, dtype=bool)
+                for row, record in enumerate(bucket.records):
+                    size = len(record.time_ms)
+                    component_mask[row, :size] = (
+                        (record.time_ms >= component.first_window_start_ms)
+                        & (record.time_ms <= component.first_window_end_ms)
+                    )
+                    second_mask[row, :size] = (
+                        (record.time_ms >= component.second_window_start_ms)
+                        & (record.time_ms <= component.second_window_end_ms)
+                    )
+                selected = protocol_selector.astype(bool)
+                if np.any(
+                    selected
+                    & (
+                        ~np.any(component_mask, axis=-1)
+                        | ~np.any(second_mask, axis=-1)
+                    )
+                ):
+                    raise ValueError(
+                        f"Loss component {component.label!r} has an empty "
+                        "configured time window for a selected trace."
+                    )
+                comparison_mask = jnp.asarray(second_mask)
+            if component.kind in {
+                "soft_dblo_error",
+                "soft_interspike_minimum_voltage_error",
+            }:
+                if component.kind == "soft_dblo_error":
+                    baseline_mask = jnp.asarray(bucket.window_masks["baseline"])
                 interval_masks, interval_valid = observed_interspike_masks(
                     bucket.observed_mV,
                     component_mask,
                     threshold_mV=component.threshold_mV,
                 )
+                if component.kind == "soft_interspike_minimum_voltage_error":
+                    # This metric is explicitly after the preceding spike:
+                    # exclude the observed peak that starts each interval.
+                    starts = np.argmax(interval_masks, axis=-1)
+                    for trace_index, interval_index in np.argwhere(interval_valid):
+                        interval_masks[
+                            trace_index,
+                            interval_index,
+                            starts[trace_index, interval_index],
+                        ] = False
+                    interval_valid = np.any(interval_masks, axis=-1)
                 interspike_masks = jnp.asarray(interval_masks)
                 interspike_valid = jnp.asarray(interval_valid)
             terms.append(
@@ -211,6 +266,7 @@ class BucketObjective:
                     baseline_mask=baseline_mask,
                     interspike_masks=interspike_masks,
                     interspike_valid=interspike_valid,
+                    comparison_mask=comparison_mask,
                 )
             )
         self.terms = tuple(terms)
@@ -239,13 +295,19 @@ class BucketObjective:
         contributions = {}
         total = jnp.asarray(0.0)
         for term in self.terms:
-            dblo_context = {}
-            if term.spec.kind == "soft_dblo_error":
-                dblo_context = {
-                    "baseline_mask": term.baseline_mask,
+            interspike_context = {}
+            if term.spec.kind in {
+                "soft_dblo_error",
+                "soft_interspike_minimum_voltage_error",
+            }:
+                interspike_context = {
                     "interspike_masks": term.interspike_masks,
                     "interspike_valid": term.interspike_valid,
                 }
+                if term.spec.kind == "soft_dblo_error":
+                    interspike_context["baseline_mask"] = term.baseline_mask
+            if term.spec.kind == "mean_window_difference_error":
+                interspike_context["comparison_mask"] = term.comparison_mask
             per_trace = term.function(
                 predicted,
                 observed,
@@ -255,7 +317,7 @@ class BucketObjective:
                 delta=term.spec.delta,
                 threshold_mV=term.spec.threshold_mV,
                 temperature_mV=term.spec.temperature_mV,
-                **dblo_context,
+                **interspike_context,
             )
             contribution = (
                 term.spec.weight

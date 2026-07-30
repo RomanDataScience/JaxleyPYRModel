@@ -9,6 +9,7 @@ from .composite import (
 from .primitives import (
     masked_mse,
     soft_dblo_error,
+    soft_interspike_minimum_voltage_error,
     soft_upward_crossing_count,
     weighted_bucket_loss,
 )
@@ -23,6 +24,7 @@ __all__ = [
     "masked_mse",
     "observed_interspike_masks",
     "soft_dblo_error",
+    "soft_interspike_minimum_voltage_error",
     "soft_upward_crossing_count",
     "weighted_bucket_loss",
 ]

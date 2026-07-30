@@ -86,6 +86,26 @@ def mean_voltage_error(predicted, observed, mask, *, scale=1.0, **_):
     return (difference / scale) ** 2
 
 
+def mean_window_difference_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    comparison_mask,
+    scale=1.0,
+    **_,
+):
+    """Compare the voltage difference between two configured time windows."""
+
+    predicted_difference = _masked_mean(predicted, mask) - _masked_mean(
+        predicted, comparison_mask
+    )
+    observed_difference = _masked_mean(observed, mask) - _masked_mean(
+        observed, comparison_mask
+    )
+    return ((predicted_difference - observed_difference) / scale) ** 2
+
+
 def _soft_upward_crossings(
     voltage,
     *,
@@ -240,6 +260,49 @@ def soft_dblo_error(
     difference = dblo(predicted) - dblo(observed)
     loss = (difference / scale) ** 2
     return jnp.where(valid_trace, loss, 0.0)
+
+
+def soft_interspike_minimum_voltage_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    interspike_masks,
+    interspike_valid,
+    scale=1.0,
+    temperature_mV=1.0,
+    **_,
+):
+    """Compare absolute mean interspike minimum voltage.
+
+    Fixed experimental intervals cover the region after each spike peak and
+    before the next spike's upward threshold crossing. Smooth minima keep the
+    metric differentiable in simulated voltage. Unlike DBLO, no resting
+    voltage is subtracted.
+    """
+
+    interval_masks = (
+        jnp.asarray(interspike_masks, dtype=bool)
+        & jnp.asarray(mask, dtype=bool)[:, None, :]
+    )
+    valid_intervals = (
+        jnp.asarray(interspike_valid, dtype=bool)
+        & jnp.any(interval_masks, axis=-1)
+    )
+    valid_float = valid_intervals.astype(predicted.dtype)
+    interval_count = jnp.maximum(jnp.sum(valid_float, axis=-1), 1.0)
+
+    def mean_interspike_minimum(voltage):
+        minima = _soft_masked_minimum(
+            voltage[:, None, :], interval_masks, temperature_mV
+        )
+        return jnp.sum(valid_float * minima, axis=-1) / interval_count
+
+    difference = mean_interspike_minimum(
+        predicted
+    ) - mean_interspike_minimum(observed)
+    loss = (difference / scale) ** 2
+    return jnp.where(jnp.any(valid_intervals, axis=-1), loss, 0.0)
 
 
 def soft_maximum_voltage_error(

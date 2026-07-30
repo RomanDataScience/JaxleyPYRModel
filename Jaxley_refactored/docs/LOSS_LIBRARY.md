@@ -10,6 +10,7 @@ are summed before one update to the shared parameter vector.
 | Kind | Meaning | Typical scale |
 | --- | --- | --- |
 | `voltage_mse` | Mean squared voltage residual | `scale_mV: 1` |
+| `experimental_voltage_band_mse` | Voltage MSE over a fixed experimental voltage range | Band boundaries and `scale_mV` |
 | `voltage_mae` | Mean absolute voltage residual | `scale_mV: 1–5` |
 | `pseudo_huber` | Smooth robust voltage residual | `scale_mV: 5`, `delta: 1` |
 | `normalized_voltage_mse` | MSE normalized by observed voltage range | Minimum range via `scale_mV` |
@@ -17,13 +18,26 @@ are summed before one update to the shared parameter vector.
 | `correlation_loss` | One minus masked waveform correlation | No scale required |
 | `resting_voltage_error` | Squared error between window means | `baseline` window |
 | `steady_state_error` | Squared error between window means | `stimulus_end` window |
+| `mean_window_difference_error` | Squared error between simulated and experimental differences of two configurable time-window means | Window boundaries and `scale_mV` |
 | `soft_firing_rate_error` | Squared difference between positive smooth-threshold occupancy rates | `threshold_mV`, `temperature_mV`, `scale_hz` |
 | `subthreshold_mean_error` | Squared inter-spike mean-voltage error using an experimental subthreshold mask | `threshold_mV`, `scale_mV` |
 | `soft_dblo_error` | Squared error in depolarization baseline offset: mean interspike minimum minus pre-step rest | `threshold_mV`, `temperature_mV`, `scale_mV` |
+| `soft_interspike_minimum_voltage_error` | Squared error in the absolute mean of interspike minimum voltages | `threshold_mV`, `temperature_mV`, `scale_mV` |
 | `soft_minimum_voltage_error` | Squared difference between smooth minimum voltages | `temperature_mV`, `scale_mV` |
 | `soft_maximum_voltage_error` | Squared difference between smooth maximum voltages | `temperature_mV`, `scale_mV` |
 
 `masked_voltage_mse` remains an alias for backward compatibility.
+
+`experimental_voltage_band_mse` accepts `voltage_band_lower_mV` and
+`voltage_band_upper_mV`. Its named window is intersected with samples whose
+experimental voltage lies inclusively inside that range. The observation
+defines a fixed mask, preserving differentiability in simulated voltage.
+
+`mean_window_difference_error` accepts `first_window_start_ms`,
+`first_window_end_ms`, `second_window_start_ms`, and
+`second_window_end_ms`. It compares
+`mean(first window) - mean(second window)` between simulated and experimental
+voltage. Both windows must be present in every trace selected by the component.
 
 ### Explicit DBLO metric
 
@@ -52,6 +66,19 @@ therefore contributes approximately one event, while a stationary voltage near
 threshold contributes zero. This avoids allowing a depolarized non-spiking
 plateau to imitate repeated spikes. The construction is continuous, piecewise
 differentiable, and compatible with JAX automatic differentiation.
+
+### Absolute mean interspike minimum voltage
+
+`soft_interspike_minimum_voltage_error` uses the same fixed experimental
+peak-to-next-threshold intervals as DBLO. These intervals span consecutive
+spikes after the first spike peak and end before the last spike's upward
+threshold crossing. A smooth minimum is computed in each interval and those
+minima are averaged.
+
+The simulated and experimental absolute mean voltages are compared directly;
+resting voltage is not subtracted. This makes the metric distinct from DBLO
+and sensitive to a common voltage offset. A trace with fewer than two observed
+in-step spikes contributes finite zero.
 
 ## Named windows
 
@@ -140,11 +167,11 @@ objective.
 
 `configs/losses/LSU_1.yaml` restricts score-window point-by-point voltage MSE
 to the hyperpolarizing protocol. Depolarizing traces instead use
-differentiable firing-rate, DBLO, spike waveform/slope/height, and post-step
-recovery trajectory/slope/AHP metrics. Protocol allocations are `0.8` and
-`0.2`. The complete base loss is multiplied by `1.1` raised to the continuous
-number of spikes outside the stimulus intervals. LSU_1 inherits Adam with
-backtracking.
+differentiable firing rate, absolute mean interspike-minimum voltage, spike
+waveform/slope/height, and post-step recovery trajectory/slope/AHP metrics.
+Protocol allocations are `0.8` and `0.2`. The complete base loss is multiplied
+by `1.1` raised to the continuous number of spikes outside the stimulus
+intervals. LSU_1 inherits Adam with backtracking.
 
 See
 [`configs/losses/README_LSU_1.md`](../configs/losses/README_LSU_1.md)
