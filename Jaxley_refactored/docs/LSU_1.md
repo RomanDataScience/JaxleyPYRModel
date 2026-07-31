@@ -63,7 +63,7 @@ otherwise expressed in mV.
 | `hyperpolarizing_trough_depth` | Primary hyperpolarizing target: stable-baseline-to-smooth-trough depth; weight `4.0` | Hyperpolarizing, `stimulus` |
 | `hyperpolarizing_waveform_mse` | Hyperpolarizing voltage trajectory | Hyperpolarizing, `score` |
 | `hyperpolarizing_derivative_mse` | Hyperpolarizing dV/dt trajectory, including onset, sag, offset, and recovery kinetics | Hyperpolarizing, `score` |
-| `depolarizing_firing_rate` | Firing frequency | Depolarizing, `stimulus` |
+| `depolarizing_firing_rate` | Firing frequency; raw weight `0.1` (reduced tenfold relative to the unit-weight feature terms) | Depolarizing, `stimulus` |
 | `depolarizing_spike_timing_adaptation` | First-spike latency and the sequence of interspike intervals | Depolarizing, `stimulus` |
 | `depolarizing_forbidden_spikes` | No spikes before or after depolarizing pulse | Depolarizing, `outside_stimulus` |
 | `hyperpolarizing_forbidden_spikes` | No spikes anywhere in hyperpolarizing trace | Hyperpolarizing, `full_trace` |

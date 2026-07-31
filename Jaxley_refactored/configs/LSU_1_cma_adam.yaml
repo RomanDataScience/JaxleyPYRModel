@@ -178,7 +178,9 @@ fit:
       # --- Depolarizing spike count and timing ----------------------------
       - kind: soft_firing_rate_error
         label: depolarizing_firing_rate
-        weight: 1.0
+        # Reduced 10-fold so firing rate guides the fit without dominating
+        # the depolarizing waveform, spike-shape, plateau, and recovery terms.
+        weight: 0.1
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
