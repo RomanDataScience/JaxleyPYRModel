@@ -8,7 +8,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_DIR=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 REPOSITORY_DIR=$(cd -- "${PROJECT_DIR}/.." && pwd)
 
-CONFIG="${PROJECT_DIR}/configs/search/LSU_1_cma_adam.yaml"
+CONFIG="${PROJECT_DIR}/configs/LSU_1_cma_adam.yaml"
 MANIFEST="${REPOSITORY_DIR}/JaxleyModel/Experimental_currentClamp_Analysis/Segmented_Traces/segment_metadata.csv"
 PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE:-python}
 CELL_SELECTION=all

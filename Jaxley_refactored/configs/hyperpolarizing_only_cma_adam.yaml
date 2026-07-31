@@ -1,0 +1,273 @@
+# Standalone configuration for the hyperpolarizing-only hybrid calibration.
+# This file has no inherited YAML dependencies.
+
+schema_version: 1
+
+# ---------------------------------------------------------------------------
+# Biophysical model
+# ---------------------------------------------------------------------------
+model:
+  id: combe2023
+
+  morphology:
+    provider: hoc_live
+    grouping:
+      required_groups: [soma, axon, basal, apical]
+      reject_unclassified: true
+    discretization:
+      strategy: d_lambda
+      d_lambda: 0.3
+      frequency_hz: 100.0
+
+  profile:
+    mode: exact_hoc_frozen_grid
+
+  mechanisms:
+    include: [all_from_preset]
+    exclude: []
+    calcium_diffusion:
+      enabled: true
+      axial_diffusion: 0.22
+
+  distributions:
+    preset: combe2023_cch_driven
+    overrides: {}
+
+  parameters:
+    catalog: combe2023
+    value_overrides: {}
+    bound_expansion_factor: 1.0
+    fit:
+      # Fits all 44 conductance, passive, and kinetic parameters.
+      include_tags: [conductance, passive, kinetics]
+      include: []
+      exclude: []
+
+# ---------------------------------------------------------------------------
+# Stimulation, recording, and initial state
+# ---------------------------------------------------------------------------
+protocol:
+  injection_site:
+    group: soma
+    branch: 0
+    location: 0.5
+
+  recording_sites:
+    - state: v
+      group: soma
+      branch: 0
+      location: 0.5
+
+  initial_state:
+    mode: observed_first_sample
+    fixed_voltage_mV: -71.9879
+
+  alignment: prefix
+
+# ---------------------------------------------------------------------------
+# Hyperpolarizing experimental data and simulation window
+# ---------------------------------------------------------------------------
+dataset:
+  provider: segmented_current_clamp
+  root: ../../JaxleyModel/Experimental_currentClamp_Analysis/Segmented_Traces
+  manifest: segment_metadata.csv
+  # The launcher replaces this value when --cells is provided.
+  cell_id: m20240527cd
+
+  selection:
+    trace_indices: [1, 3]
+    validation_trace_indices: [2, 4]
+    segments: [hyperpolarizing_pulse]
+
+  units:
+    voltage: mV
+    current_on_disk: pA
+    current_for_jaxley: nA
+    time: ms
+
+  validation:
+    require_v_i_t_triplet: true
+    reject_length_mismatch: true
+    reject_nonfinite: true
+    require_uniform_time: true
+    ignore_absolute_manifest_output_paths: true
+
+  resampling:
+    target_dt_ms: 0.1
+    voltage_method: linear
+    current_method: zero_order_hold
+
+  score_windows:
+    source: manifest_epoch
+    # Plot and score from 50 ms before pulse onset, excluding startup transient.
+    pre_ms: 50.0
+    post_ms: 100.0
+
+  simulation_window:
+    # Both selected records end 100 ms after the pulse, at 650 ms.
+    post_stimulus_ms: 100.0
+
+# ---------------------------------------------------------------------------
+# Hyperpolarizing-only differentiable objective and base Adam
+# ---------------------------------------------------------------------------
+fit:
+  objective:
+    aggregation: protocol_mean
+    protocol_weights:
+      depolarizing_step: 0.0
+      hyperpolarizing_pulse: 1.0
+    renormalize_protocol_filtered_components: true
+    penalties: []
+
+    components:
+      # Primary feature: stable-baseline-to-trough voltage depth.
+      - kind: soft_trough_depth_error
+        label: hyperpolarizing_trough_depth
+        weight: 4.0
+        protocols: [hyperpolarizing_pulse]
+        window: stimulus
+        temperature_mV: 0.5
+        scale_mV: 1.0
+
+      # Full voltage trajectory over the scored interval.
+      - kind: voltage_mse
+        label: hyperpolarizing_waveform_mse
+        weight: 1.0
+        protocols: [hyperpolarizing_pulse]
+        window: score
+        scale_mV: 1.0
+
+      # Response, sag, offset, and recovery kinetics.
+      - kind: derivative_mse
+        label: hyperpolarizing_derivative_mse
+        weight: 1.0
+        protocols: [hyperpolarizing_pulse]
+        window: score
+        scale_mV_per_ms: 1.0
+
+  parameter_transform:
+    default: projected_box
+    preserve_exact_zero_defaults: true
+
+  initialization:
+    mode: jittered_reference
+    scale: 0.10
+    preserve_exact_zero_reference: true
+
+  # Base optimizer for an ordinary fit using this same file.
+  optimizer:
+    name: adam
+    learning_rate: 0.01
+    gradient_clip_norm: 10.0
+    epochs: 50
+    beta1: 0.9
+    beta2: 0.999
+    epsilon: 1.0e-8
+    line_search:
+      enabled: true
+      reduction_factor: 0.5
+      growth_factor: 1.2
+      minimum_learning_rate: 0.0001
+      maximum_learning_rate: 0.1
+      maximum_trials: 6
+      require_loss_decrease: true
+
+  batching:
+    bucket_by: [delta_t, n_steps]
+    strategy: vmap
+    pad_to_longest: false
+
+  checkpoint:
+    every_epochs: 1
+    keep_best: true
+    keep_latest: true
+    resume: auto
+    reject_incompatible_hashes: true
+
+# ---------------------------------------------------------------------------
+# JAX/Jaxley runtime
+# ---------------------------------------------------------------------------
+runtime:
+  backend: cpu
+  precision: float64
+  seed: 0
+  jit: true
+
+  solver:
+    ode: bwd_euler
+    voltage: jaxley.dhs
+
+  rematerialization:
+    policy: sqrt
+    levels: 2
+
+  compilation_cache:
+    enabled: false
+
+  memory:
+    preallocate: false
+    fraction: 0.8
+
+  distributed:
+    mode: single_process
+
+# ---------------------------------------------------------------------------
+# Hybrid CMA-ES -> exploratory Adam -> backtracking Adam
+# ---------------------------------------------------------------------------
+search:
+  strategy: hybrid
+
+  global:
+    algorithm: cma_es
+    parameter_names: []
+    population_size: 40
+    parent_fraction: 0.30
+    generations: 100
+    sigma0: 0.15
+    boundary_policy: resample
+    invalid_loss: 1.0e12
+    checkpoint_every_generations: 1
+
+  local_exploration:
+    optimizer: adam
+    epochs: 50
+    learning_rate: 0.005
+    gradient_clip_norm: 10.0
+    line_search:
+      enabled: false
+
+  local_refinement:
+    optimizer: adam
+    epochs: 150
+    learning_rate: 0.001
+    gradient_clip_norm: 10.0
+    line_search:
+      enabled: true
+
+  selection:
+    global_rank_by: training_loss
+    local_rank_by: training_loss
+    final_rank_by: validation_primary_endpoint
+    keep_after_global: 10
+    keep_after_exploration: 10
+
+  reporting:
+    cma_plot_every_generations: 1
+    adam_plot_every_epochs: 10
+    plot_final_candidates: true
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+output:
+  root: ../runs_hyper
+  run_name: auto
+  plot_every_epochs: 1
+  evaluate_every_epochs: 5
+  save_predictions: best_and_final
+  provenance:
+    include_git_state: true
+    include_environment: true
+    include_device: true
+    include_input_hashes: true
+    include_resolved_config: true

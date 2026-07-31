@@ -11,6 +11,10 @@ from jaxley_refactored.parameters import (
 
 
 PROJECT = Path(__file__).resolve().parents[2]
+SUPPORTED_CONFIGS = (
+    PROJECT / "configs/LSU_1_cma_adam.yaml",
+    PROJECT / "configs/hyperpolarizing_only_cma_adam.yaml",
+)
 KINETIC_NAMES = (
     "kd_deactivation_tau_scale",
     "nat_fast_inactivation_tau_scale",
@@ -62,16 +66,10 @@ def test_kinetic_metadata_and_persistent_sodium_remain_explicit():
     )
 
 
-def test_all_lsu_local_and_hybrid_configs_select_the_same_44_parameters():
+def test_supported_configs_select_the_same_44_parameters():
     catalog = combe2023_catalog()
-    paths = (
-        PROJECT / "configs/losses/LSU_1.yaml",
-        PROJECT / "configs/losses/LSU_1_wide_bounds.yaml",
-        PROJECT / "configs/losses/LSU_1_wide_bounds_adam.yaml",
-        PROJECT / "configs/search/LSU_1_cma_adam.yaml",
-    )
     expected = None
-    for path in paths:
+    for path in SUPPORTED_CONFIGS:
         config = load_config(path)
         specs = catalog.select(
             include_tags=config.model.parameters.include_tags,
@@ -84,9 +82,7 @@ def test_all_lsu_local_and_hybrid_configs_select_the_same_44_parameters():
         assert "nap_gnabar" in names
         expected = names if expected is None else expected
         assert names == expected
-
-    hybrid = load_config(PROJECT / "configs/search/LSU_1_cma_adam.yaml")
-    assert hybrid.search.global_search.parameter_names == ()
+        assert config.search.global_search.parameter_names == ()
 
 
 def test_projected_box_preserves_exact_zero_and_bounds():

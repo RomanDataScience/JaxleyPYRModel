@@ -8,11 +8,13 @@ from jaxley_refactored.data import SegmentedTraceLoader, bucket_records, weight_
 
 
 PROJECT = Path(__file__).resolve().parents[2]
+FULL_CONFIG = PROJECT / "configs/LSU_1_cma_adam.yaml"
+HYPER_CONFIG = PROJECT / "configs/hyperpolarizing_only_cma_adam.yaml"
 
 
-def test_default_cell_loads_first_and_third_segmented_traces():
-    config = load_config(PROJECT / "configs/runtimes/cpu_x64.yaml")
-    assert config.dataset.simulation_post_ms is None
+def test_full_hybrid_loads_first_and_third_segmented_traces():
+    config = load_config(FULL_CONFIG)
+    assert config.dataset.simulation_post_ms == 500.0
     records = SegmentedTraceLoader().load(config.dataset)
     weighted = weight_records(
         records,
@@ -26,11 +28,11 @@ def test_default_cell_loads_first_and_third_segmented_traces():
     assert len(records) == 4
     assert {record.trace_id for record in records} == {"v75ctrl", "v77ctrl"}
     assert {(bucket.n_steps, len(bucket.records)) for bucket in buckets} == {
-        (13_000, 2),
-        (24_000, 2),
+        (6_501, 2),
+        (10_001, 2),
     }
     assert np.isclose(sum(record.weight for record in weighted), 1.0)
-    assert all(np.isclose(record.dt_ms, 0.05) for record in records)
+    assert all(np.isclose(record.dt_ms, 0.1) for record in records)
 
     smoke_records = tuple(record.with_max_steps(100) for record in weighted)
     smoke_buckets = bucket_records(smoke_records)
@@ -41,7 +43,7 @@ def test_default_cell_loads_first_and_third_segmented_traces():
 
 
 def test_trace_indices_select_cell_specific_first_and_third_traces():
-    config = load_config(PROJECT / "configs/runtimes/cpu_x64.yaml")
+    config = load_config(FULL_CONFIG)
     selection = replace(config.dataset, traces=(), trace_indices=(1, 3))
 
     first_cell = SegmentedTraceLoader().load(selection)
@@ -55,9 +57,7 @@ def test_trace_indices_select_cell_specific_first_and_third_traces():
 
 
 def test_hyperpolarizing_only_config_loads_two_650_ms_records_per_cell():
-    config = load_config(
-        PROJECT / "configs/losses/hyperpolarizing_only.yaml"
-    )
+    config = load_config(HYPER_CONFIG)
 
     for cell_id, expected_ids in {
         "m20240527cd": {"v75ctrl", "v77ctrl"},
@@ -76,7 +76,7 @@ def test_hyperpolarizing_only_config_loads_two_650_ms_records_per_cell():
 
 
 def test_lsu_applies_protocol_specific_simulation_horizons():
-    config = load_config(PROJECT / "configs/losses/LSU_1.yaml")
+    config = load_config(FULL_CONFIG)
     training = replace(config.dataset, cell_id="m20260331b")
 
     assert training.simulation_post_ms == 500.0

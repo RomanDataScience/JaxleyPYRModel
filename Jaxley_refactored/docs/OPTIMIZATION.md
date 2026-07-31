@@ -21,9 +21,10 @@ remain zero initially while still being trainable during optimization.
 
 ## Backtracking
 
-The default configuration uses projected Adam with a fixed learning rate.
 Parameters are optimized in normalized `[0, 1]` coordinates and projected back
-into that interval after every proposal.
+into that interval after every proposal. Both shipped standalone configurations
+enable backtracking for their base Adam optimizer. Their hybrid protocols use a
+fixed-step exploratory Adam stage followed by a backtracking refinement stage.
 
 The optional backtracking method separates two responsibilities:
 
@@ -38,24 +39,28 @@ the next epoch starts with a slightly larger rate. If no proposal is accepted,
 the parameters and moments remain unchanged and the next epoch starts with the
 smaller rate reached by the search.
 
-Use the supplied configuration:
+Use the base Adam section of the full standalone configuration:
 
 ```bash
 bash scripts/run_full_fitting.sh \
-  --config configs/optimizers/adam_backtracking.yaml \
+  --config configs/LSU_1_cma_adam.yaml \
   --cells m20240527cd \
   --epochs 50
 ```
 
-For a quick compilation and behavior check:
+For a short compilation and optimizer check:
 
 ```bash
 bash scripts/run_full_fitting.sh \
-  --config configs/optimizers/adam_backtracking.yaml \
+  --config configs/LSU_1_cma_adam.yaml \
   --cells m20240527cd \
-  --epochs 3 \
-  --max-steps 100
+  --epochs 3
 ```
+
+The only other shipped YAML is
+`configs/hyperpolarizing_only_cma_adam.yaml`; use it in the same command to
+run backtracking Adam against only the hyperpolarizing objective. There are no
+separate optimizer or runtime preset files.
 
 Each epoch log reports `lr`, `accepted`, and `trials`. The matching
 `metrics.jsonl` entry also contains `loss_before_step`. With backtracking,

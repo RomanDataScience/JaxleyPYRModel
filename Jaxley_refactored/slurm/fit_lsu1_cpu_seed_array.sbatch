@@ -29,7 +29,7 @@ mkdir -p "${MPLCONFIGDIR}" "${RUN_SCRATCH}"
 cd "${PROJECT_DIR}"
 
 srun bash scripts/run_full_fitting.sh \
-  --config configs/losses/LSU_1_wide_bounds.yaml \
+  --config configs/LSU_1_cma_adam.yaml \
   --cells m20260331b \
   --seed "${SEED}" \
   --max-parallel-cells 1

@@ -434,8 +434,14 @@ def _hybrid_fit(config, args) -> int:
         config = replace(config, output=replace(config.output, run_name=args.run_name))
 
     training_records = _records(config)
+    if not config.dataset.validation_trace_indices:
+        raise ValueError(
+            "hybrid-fit requires dataset.selection.validation_trace_indices."
+        )
     validation_dataset = replace(
-        config.dataset, traces=(), trace_indices=(2, 4)
+        config.dataset,
+        traces=(),
+        trace_indices=config.dataset.validation_trace_indices,
     )
     validation_config = replace(config, dataset=validation_dataset)
     validation_records = _records(validation_config)

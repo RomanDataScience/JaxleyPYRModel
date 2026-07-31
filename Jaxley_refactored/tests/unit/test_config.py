@@ -2,6 +2,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 import pytest
+import yaml
 
 from jaxley_refactored.config import ConfigError, load_config
 from jaxley_refactored.config.hashing import stable_hash
@@ -9,13 +10,83 @@ from jaxley_refactored.config.schema import AppConfig
 
 
 PROJECT = Path(__file__).resolve().parents[2]
+CONFIG_ROOT = PROJECT / "configs"
+FULL_CONFIG = CONFIG_ROOT / "LSU_1_cma_adam.yaml"
+HYPER_CONFIG = CONFIG_ROOT / "hyperpolarizing_only_cma_adam.yaml"
 
 
-def test_default_config_resolves_paths_and_is_stable():
-    config = load_config(PROJECT / "configs/runtimes/cpu_x64.yaml")
+def test_config_directory_contains_only_two_standalone_yaml_files():
+    config_files = {path for path in CONFIG_ROOT.rglob("*") if path.is_file()}
+
+    assert config_files == {FULL_CONFIG, HYPER_CONFIG}
+    for path in config_files:
+        with path.open(encoding="utf-8") as handle:
+            raw = yaml.safe_load(handle)
+        assert isinstance(raw, dict)
+        assert "extends" not in raw
+
+
+def test_hybrid_lsu_config_is_standalone_and_explicit():
+    path = FULL_CONFIG
+    with path.open(encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle)
+
+    assert "extends" not in raw
+    assert set(raw) == {
+        "schema_version",
+        "model",
+        "protocol",
+        "dataset",
+        "fit",
+        "runtime",
+        "search",
+        "output",
+    }
+    assert raw["dataset"]["selection"]["trace_indices"] == [1, 3]
+    assert raw["dataset"]["selection"]["validation_trace_indices"] == [2, 4]
+    assert raw["dataset"]["resampling"]["target_dt_ms"] == 0.1
+    assert raw["dataset"]["simulation_window"] == {
+        "post_stimulus_ms": 500.0,
+        "post_stimulus_ms_by_protocol": {
+            "hyperpolarizing_pulse": 100.0,
+        },
+    }
+    assert len(raw["fit"]["objective"]["components"]) == 19
+    assert len(raw["fit"]["objective"]["penalties"]) == 2
+    assert raw["fit"]["checkpoint"]["reject_incompatible_hashes"] is True
+    assert raw["output"]["provenance"]["include_resolved_config"] is True
+
+    config = load_config(path)
+    assert config.dataset.trace_indices == (1, 3)
+    assert config.dataset.validation_trace_indices == (2, 4)
+    assert config.model.parameters.bound_expansion_factor == 1.0
+    assert config.fit.initialization.mode == "jittered_reference"
+    assert config.fit.initialization.scale == 0.10
+    assert config.fit.optimizer.line_search.enabled is True
+    assert config.runtime.backend == "cpu"
+    assert config.runtime.precision == "float64"
+    assert config.runtime.solver == "bwd_euler"
+    assert config.runtime.voltage_solver == "jaxley.dhs"
+    assert config.search.strategy == "hybrid"
+    assert config.search.global_search.population_size == 40
+    assert config.search.global_search.generations == 100
+    assert config.search.global_search.parent_fraction == 0.30
+    assert config.search.global_search.elites == 10
+    assert config.search.local_exploration.epochs == 50
+    assert config.search.local_exploration.backtracking is False
+    assert config.search.local_refinement.epochs == 150
+    assert config.search.local_refinement.backtracking is True
+    assert config.output.root == PROJECT / "runs"
+
+
+@pytest.mark.parametrize("path", (FULL_CONFIG, HYPER_CONFIG))
+def test_supported_configs_resolve_paths_and_are_stable(path):
+    config = load_config(path)
 
     assert config.dataset.cell_id == "m20240527cd"
     assert config.dataset.root.is_absolute()
+    assert config.dataset.manifest.is_absolute()
+    assert config.output.root.is_absolute()
     assert config.model.morphology.provider == "hoc_live"
     assert config.model.distributions.preset == "combe2023_cch_driven"
     assert stable_hash(asdict(config)) == stable_hash(asdict(config))
@@ -75,7 +146,21 @@ def test_unknown_root_key_is_rejected():
 
 
 def test_backtracking_optimizer_configuration_is_validated():
-    config = load_config(PROJECT / "configs/optimizers/adam_backtracking.yaml")
+    config = AppConfig.from_mapping(
+        {
+            "fit": {
+                "optimizer": {
+                    "learning_rate": 0.01,
+                    "line_search": {
+                        "enabled": True,
+                        "minimum_learning_rate": 0.0001,
+                        "maximum_learning_rate": 0.1,
+                        "maximum_trials": 6,
+                    },
+                }
+            }
+        }
+    )
 
     assert config.fit.optimizer.line_search.enabled
     assert (
@@ -129,9 +214,7 @@ def test_cma_parent_fraction_defaults_and_validation():
 
 
 def test_hyperpolarizing_only_config_has_isolated_data_loss_and_output():
-    config = load_config(
-        PROJECT / "configs/losses/hyperpolarizing_only.yaml"
-    )
+    config = load_config(HYPER_CONFIG)
 
     assert config.dataset.segments == ("hyperpolarizing_pulse",)
     assert config.dataset.trace_indices == (1, 3)

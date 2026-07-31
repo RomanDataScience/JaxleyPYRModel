@@ -1,0 +1,465 @@
+# Standalone configuration for the full LSU_1 hybrid calibration pipeline.
+#
+# This file deliberately does not use `extends`. It contains the complete
+# effective model, protocol, dataset, objective, optimizer, runtime, search,
+# and output configuration used by scripts/run_hybrid_cells.sh.
+
+schema_version: 1
+
+# ---------------------------------------------------------------------------
+# Biophysical model
+# ---------------------------------------------------------------------------
+model:
+  id: combe2023
+
+  morphology:
+    provider: hoc_live
+    grouping:
+      required_groups: [soma, axon, basal, apical]
+      reject_unclassified: true
+    discretization:
+      strategy: d_lambda
+      d_lambda: 0.3
+      frequency_hz: 100.0
+
+  profile:
+    mode: exact_hoc_frozen_grid
+
+  mechanisms:
+    include: [all_from_preset]
+    exclude: []
+    calcium_diffusion:
+      enabled: true
+      axial_diffusion: 0.22
+
+  distributions:
+    preset: combe2023_cch_driven
+    overrides: {}
+
+  parameters:
+    catalog: combe2023
+    value_overrides: {}
+    # 1.0 keeps the catalog bounds unchanged. Values above 1.0 expand them.
+    bound_expansion_factor: 1.0
+    fit:
+      # Fits all 44 conductance, passive, and kinetic parameters.
+      include_tags: [conductance, passive, kinetics]
+      include: []
+      exclude: []
+
+# ---------------------------------------------------------------------------
+# Stimulation, recording, and initial state
+# ---------------------------------------------------------------------------
+protocol:
+  injection_site:
+    group: soma
+    branch: 0
+    location: 0.5
+
+  recording_sites:
+    - state: v
+      group: soma
+      branch: 0
+      location: 0.5
+
+  initial_state:
+    mode: observed_first_sample
+    fixed_voltage_mV: -71.9879
+
+  alignment: prefix
+
+# ---------------------------------------------------------------------------
+# Experimental data and simulation windows
+# ---------------------------------------------------------------------------
+dataset:
+  provider: segmented_current_clamp
+  # Paths are relative to this file in configs/.
+  root: ../../JaxleyModel/Experimental_currentClamp_Analysis/Segmented_Traces
+  manifest: segment_metadata.csv
+  # The launcher replaces this value when --cells is provided.
+  cell_id: m20240527cd
+
+  selection:
+    # First and third trace for each protocol, independent of trace names.
+    trace_indices: [1, 3]
+    # Held-out traces used to rank the final hybrid candidates.
+    validation_trace_indices: [2, 4]
+    segments: [depolarizing_step, hyperpolarizing_pulse]
+
+  units:
+    voltage: mV
+    current_on_disk: pA
+    current_for_jaxley: nA
+    time: ms
+
+  validation:
+    require_v_i_t_triplet: true
+    reject_length_mismatch: true
+    reject_nonfinite: true
+    require_uniform_time: true
+    ignore_absolute_manifest_output_paths: true
+
+  resampling:
+    target_dt_ms: 0.1
+    voltage_method: linear
+    current_method: zero_order_hold
+
+  score_windows:
+    source: manifest_epoch
+    pre_ms: 100.0
+    post_ms: 500.0
+
+  simulation_window:
+    # Depolarizing traces retain 500 ms after current offset.
+    post_stimulus_ms: 500.0
+    # Hyperpolarizing traces retain 100 ms and finish at 650 ms.
+    post_stimulus_ms_by_protocol:
+      hyperpolarizing_pulse: 100.0
+
+# ---------------------------------------------------------------------------
+# LSU_1 differentiable objective and base Adam settings
+# ---------------------------------------------------------------------------
+fit:
+  objective:
+    aggregation: protocol_mean
+    # Two traces per protocol -> 0.35 per depolarizing trace and 0.15 per
+    # hyperpolarizing trace.
+    protocol_weights:
+      depolarizing_step: 0.7
+      hyperpolarizing_pulse: 0.3
+    renormalize_protocol_filtered_components: false
+
+    penalties:
+      # Multiply the total loss by 1.1 for each depolarizing spike outside the
+      # current step.
+      - kind: soft_outside_stimulus_spike_multiplier
+        label: depolarizing_outside_step_spikes
+        factor_per_spike: 1.1
+        maximum_multiplier: 1.0e12
+        protocols: [depolarizing_step]
+        window: outside_stimulus
+        threshold_mV: -20.0
+        temperature_mV: 2.0
+
+      # Hyperpolarizing traces must remain spike-free for the complete trace.
+      - kind: soft_outside_stimulus_spike_multiplier
+        label: hyperpolarizing_any_spikes
+        factor_per_spike: 1.1
+        maximum_multiplier: 1.0e12
+        protocols: [hyperpolarizing_pulse]
+        window: full_trace
+        threshold_mV: -20.0
+        temperature_mV: 2.0
+
+    components:
+      # --- Hyperpolarizing response ---------------------------------------
+      - kind: soft_trough_depth_error
+        label: hyperpolarizing_trough_depth
+        weight: 4.0
+        protocols: [hyperpolarizing_pulse]
+        window: stimulus
+        temperature_mV: 0.5
+        scale_mV: 1.0
+
+      - kind: voltage_mse
+        label: hyperpolarizing_waveform_mse
+        weight: 1.0
+        protocols: [hyperpolarizing_pulse]
+        window: score
+        scale_mV: 1.0
+
+      - kind: derivative_mse
+        label: hyperpolarizing_derivative_mse
+        weight: 1.0
+        protocols: [hyperpolarizing_pulse]
+        window: score
+        scale_mV_per_ms: 1.0
+
+      # --- Depolarizing spike count and timing ----------------------------
+      - kind: soft_firing_rate_error
+        label: depolarizing_firing_rate
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        temperature_mV: 2.0
+        scale_hz: 1.0
+
+      - kind: soft_spike_train_mse
+        label: depolarizing_spike_timing_adaptation
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        temperature_mV: 2.0
+        kernel_tau_ms: 10.0
+        scale: 1.0
+
+      - kind: soft_forbidden_spike_count_error
+        label: depolarizing_forbidden_spikes
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: outside_stimulus
+        threshold_mV: -20.0
+        temperature_mV: 2.0
+        scale: 1.0
+
+      - kind: soft_forbidden_spike_count_error
+        label: hyperpolarizing_forbidden_spikes
+        weight: 1.0
+        protocols: [hyperpolarizing_pulse]
+        window: full_trace
+        threshold_mV: -20.0
+        temperature_mV: 2.0
+        scale: 1.0
+
+      # --- Interspike plateau and trough geometry -------------------------
+      - kind: soft_interspike_minimum_voltage_error
+        label: depolarizing_interspike_minimum_voltage
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        temperature_mV: 1.0
+        scale_mV: 1.0
+
+      - kind: soft_interspike_trough_shape_error
+        label: depolarizing_interspike_trough_shape
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        temperature_mV: 1.0
+        scale: 1.0
+
+      - kind: pseudo_huber
+        label: depolarizing_spike_waveform
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: stimulus
+        scale_mV: 1.0
+        delta: 1.0
+
+      # --- Action-potential height and kinetics ---------------------------
+      - kind: soft_mean_spike_peak_voltage_error
+        label: depolarizing_spike_height
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        temperature_mV: 1.0
+        spike_window_half_width_ms: 3.0
+        scale_mV: 1.0
+
+      - kind: soft_spike_width_slope_error
+        label: depolarizing_spike_width_slopes
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        temperature_mV: 1.0
+        spike_window_half_width_ms: 4.0
+        width_scale_ms: 0.5
+        upstroke_scale_mV_per_ms: 50.0
+        repolarization_scale_mV_per_ms: 20.0
+        slope_temperature_mV_per_ms: 10.0
+        amplitude_gate_mV: 20.0
+        amplitude_gate_temperature_mV: 5.0
+
+      # --- Post-step AHP and slow return to baseline ----------------------
+      - kind: pseudo_huber
+        label: depolarizing_recovery_waveform
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: recovery
+        scale_mV: 1.0
+        delta: 1.0
+
+      - kind: soft_ahp_depth_error
+        label: depolarizing_ahp_depth
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: recovery
+        temperature_mV: 1.0
+        scale_mV: 1.0
+
+      - kind: soft_ahp_deficit_error
+        label: depolarizing_ahp_duration
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: recovery
+        temperature_mV: 1.0
+        scale_mV: 1.0
+
+      - kind: soft_ahp_timing_moment_error
+        label: depolarizing_ahp_recovery_timing
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: recovery
+        temperature_mV: 1.0
+        scale_mV: 1.0
+
+      - kind: mean_window_difference_error
+        label: depolarizing_early_late_voltage_difference
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: full_trace
+        first_window_start_ms: 100.0
+        first_window_end_ms: 200.0
+        second_window_start_ms: 600.0
+        second_window_end_ms: 700.0
+        scale_mV: 1.0
+
+      - kind: mean_window_difference_error
+        label: depolarizing_terminal_baseline_difference
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: full_trace
+        first_window_start_ms: 100.0
+        first_window_end_ms: 200.0
+        second_window_start_ms: 900.0
+        second_window_end_ms: 1000.0
+        scale_mV: 1.0
+
+      # Pointwise plateau-region comparison using a fixed experimental mask.
+      - kind: experimental_voltage_band_mse
+        label: depolarizing_minus50_minus40_voltage_mse
+        weight: 0.75
+        protocols: [depolarizing_step]
+        window: stimulus
+        voltage_band_lower_mV: -50.0
+        voltage_band_upper_mV: -40.0
+        scale_mV: 1.0
+
+  parameter_transform:
+    default: projected_box
+    preserve_exact_zero_defaults: true
+
+  initialization:
+    mode: jittered_reference
+    # Uniform perturbation of up to +/-10% of each normalized parameter range.
+    scale: 0.10
+    preserve_exact_zero_reference: true
+
+  # Base optimizer used by the ordinary fit command. The hybrid command uses
+  # the two explicit local stages under `search` below.
+  optimizer:
+    name: adam
+    learning_rate: 0.01
+    gradient_clip_norm: 10.0
+    epochs: 50
+    beta1: 0.9
+    beta2: 0.999
+    epsilon: 1.0e-8
+    line_search:
+      enabled: true
+      reduction_factor: 0.5
+      growth_factor: 1.2
+      minimum_learning_rate: 0.0001
+      maximum_learning_rate: 0.1
+      maximum_trials: 6
+      require_loss_decrease: true
+
+  batching:
+    bucket_by: [delta_t, n_steps]
+    strategy: vmap
+    pad_to_longest: false
+
+  checkpoint:
+    every_epochs: 1
+    keep_best: true
+    keep_latest: true
+    resume: auto
+    reject_incompatible_hashes: true
+
+# ---------------------------------------------------------------------------
+# JAX/Jaxley runtime
+# ---------------------------------------------------------------------------
+runtime:
+  backend: cpu
+  precision: float64
+  seed: 0
+  jit: true
+
+  solver:
+    ode: bwd_euler
+    voltage: jaxley.dhs
+
+  rematerialization:
+    policy: sqrt
+    levels: 2
+
+  compilation_cache:
+    enabled: false
+
+  memory:
+    preallocate: false
+    fraction: 0.8
+
+  distributed:
+    mode: single_process
+
+# ---------------------------------------------------------------------------
+# Hybrid global-to-local optimization
+# ---------------------------------------------------------------------------
+search:
+  strategy: hybrid
+
+  global:
+    algorithm: cma_es
+    # Empty means every parameter selected by model.parameters.fit (44 total).
+    parameter_names: []
+    population_size: 40
+    # Recombine the best 12 candidates: 30% of 40.
+    parent_fraction: 0.30
+    generations: 100
+    sigma0: 0.15
+    boundary_policy: resample
+    invalid_loss: 1.0e12
+    checkpoint_every_generations: 1
+
+  # Exploratory Adam accepts every finite update; no backtracking.
+  local_exploration:
+    optimizer: adam
+    epochs: 50
+    learning_rate: 0.005
+    gradient_clip_norm: 10.0
+    line_search:
+      enabled: false
+
+  # Final Adam refinement keeps only loss-decreasing updates.
+  local_refinement:
+    optimizer: adam
+    epochs: 150
+    learning_rate: 0.001
+    gradient_clip_norm: 10.0
+    line_search:
+      enabled: true
+
+  selection:
+    global_rank_by: training_loss
+    local_rank_by: training_loss
+    final_rank_by: validation_primary_endpoint
+    keep_after_global: 10
+    keep_after_exploration: 10
+
+  reporting:
+    cma_plot_every_generations: 1
+    adam_plot_every_epochs: 10
+    plot_final_candidates: true
+
+# ---------------------------------------------------------------------------
+# Run output and provenance
+# ---------------------------------------------------------------------------
+output:
+  root: ../runs
+  run_name: auto
+  plot_every_epochs: 1
+  evaluate_every_epochs: 5
+  save_predictions: best_and_final
+  provenance:
+    include_git_state: true
+    include_environment: true
+    include_device: true
+    include_input_hashes: true
+    include_resolved_config: true

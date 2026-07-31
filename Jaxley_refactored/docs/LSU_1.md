@@ -1,6 +1,7 @@
 # LSU_1 configuration reference
 
-[`LSU_1.yaml`](LSU_1.yaml) is a differentiable, feature-aware objective for
+[`configs/LSU_1_cma_adam.yaml`](../configs/LSU_1_cma_adam.yaml) contains the
+differentiable, feature-aware objective for
 matching the electrophysiological behavior of the selected experimental
 traces. It deliberately does not use depolarizing whole-trace MSE as the sole
 criterion: small spike-timing offsets can make pointwise errors large even
@@ -19,9 +20,21 @@ remain:
 
 ## Data and optimizer
 
-LSU_1 inherits Adam with backtracking from
-`configs/optimizers/adam_backtracking.yaml`. Local, exploratory Adam, and
-CMA–Adam configurations inherit the same objective.
+The production configuration is intentionally self-contained in
+`configs/LSU_1_cma_adam.yaml`. It includes the complete LSU_1 objective
+alongside all model, data, runtime, CMA-ES, Adam, and output values so a run can
+be audited from one file.
+
+The configuration directory contains exactly two runnable YAMLs:
+
+- [`configs/LSU_1_cma_adam.yaml`](../configs/LSU_1_cma_adam.yaml), documented
+  here, fits both depolarizing and hyperpolarizing responses;
+- [`configs/hyperpolarizing_only_cma_adam.yaml`](../configs/hyperpolarizing_only_cma_adam.yaml)
+  uses only the hyperpolarizing trough-depth, waveform, and derivative
+  objectives and writes to `runs_hyper/`.
+
+Neither file uses `extends`, and no separate model, loss, optimizer, runtime,
+search, smoke, or GPU-preset YAML is shipped.
 
 The training set uses the first and third trace mapped to each protocol,
 independent of cell-specific trace names.

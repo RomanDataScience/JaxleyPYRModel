@@ -6,8 +6,8 @@
 #SBATCH --output=%x-%j.out
 #SBATCH --signal=B:USR1@120
 
-# Fit cell m20260331b with LSU_1, widened parameter bounds, and Adam
-# backtracking. Adjust the SBATCH resource directives for the local cluster.
+# Fit cell m20260331b with the local Adam settings in the standalone LSU_1
+# configuration. Adjust the SBATCH resource directives for the local cluster.
 set -euo pipefail
 
 PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE:-python}
@@ -25,5 +25,5 @@ cd "${PROJECT_DIR}"
 
 export PYTHON_EXECUTABLE
 srun bash scripts/run_full_fitting.sh \
-  --config configs/losses/LSU_1_wide_bounds.yaml \
+  --config configs/LSU_1_cma_adam.yaml \
   --cells m20260331b

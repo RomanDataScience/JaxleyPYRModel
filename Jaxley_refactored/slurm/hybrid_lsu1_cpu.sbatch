@@ -24,6 +24,6 @@ mkdir -p "${MPLCONFIGDIR}"
 cd "${PROJECT_DIR}"
 
 srun bash scripts/run_hybrid_fitting.sh \
-  --config configs/search/LSU_1_cma_adam.yaml \
+  --config configs/LSU_1_cma_adam.yaml \
   --cell "${CELL_ID}" \
   --seed "${SEED}"

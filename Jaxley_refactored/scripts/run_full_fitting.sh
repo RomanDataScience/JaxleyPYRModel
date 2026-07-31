@@ -6,8 +6,8 @@
 #   1. Within each cell, Jaxley's jitted vmap kernel simulates every trace in a
 #      same-shape (dt, n_steps) bucket in parallel.
 #   2. Optionally, independent cells can run as separate local processes with
-#      --max-parallel-cells. Keep this at 1 on a single GPU or a memory-limited
-#      workstation; vmap trace parallelism is still active.
+#      --max-parallel-cells. Keep this at 1 on a memory-limited workstation;
+#      vmap trace parallelism is still active inside each cell fit.
 #
 set -euo pipefail
 
@@ -15,7 +15,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_DIR=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 REPOSITORY_DIR=$(cd -- "${PROJECT_DIR}/.." && pwd)
 
-CONFIG="${PROJECT_DIR}/configs/runtimes/cpu_dt_0p1.yaml" # cpu_dt_0p1.yaml cpu_x64.yaml
+CONFIG="${PROJECT_DIR}/configs/LSU_1_cma_adam.yaml"
 MANIFEST="${REPOSITORY_DIR}/JaxleyModel/Experimental_currentClamp_Analysis/Segmented_Traces/segment_metadata.csv"
 PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE:-python}
 CELL_SELECTION=all
@@ -29,7 +29,7 @@ usage() {
   printf 'Fit all recorded cells with jitted vmap trace parallelism.\n\n'
   printf 'Usage: %s [options]\n\n' "${BASH_SOURCE[0]}"
   printf '%s\n' \
-    '  --config PATH              Fit/runtime YAML (default: CPU x64 config)' \
+    '  --config PATH              YAML config (default: standalone LSU_1 config)' \
     '  --manifest PATH            Segmented-trace CSV manifest' \
     '  --cells all|ID[,ID...]     Cells to fit (default: all manifest cells)' \
     '  --max-parallel-cells N     Concurrent cell fits (default: 1)' \

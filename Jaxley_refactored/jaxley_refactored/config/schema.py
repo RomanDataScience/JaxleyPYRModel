@@ -391,6 +391,7 @@ class DatasetSpec:
     cell_id: str = "m20240527cd"
     traces: tuple[str, ...] = ("*",)
     trace_indices: tuple[int, ...] = ()
+    validation_trace_indices: tuple[int, ...] = (2, 4)
     segments: tuple[str, ...] = (
         "depolarizing_step",
         "hyperpolarizing_pulse",
@@ -428,7 +429,12 @@ class DatasetSpec:
         selection = _mapping(data.get("selection"), "dataset.selection")
         _strict(
             selection,
-            {"traces", "trace_indices", "segments"},
+            {
+                "traces",
+                "trace_indices",
+                "validation_trace_indices",
+                "segments",
+            },
             "dataset.selection",
         )
         units = _mapping(data.get("units"), "dataset.units")
@@ -474,6 +480,10 @@ class DatasetSpec:
             cell_id=str(data.get("cell_id", "m20240527cd")),
             traces=traces,
             trace_indices=trace_indices,
+            validation_trace_indices=_positive_ints(
+                selection.get("validation_trace_indices", (2, 4)),
+                "dataset.selection.validation_trace_indices",
+            ),
             segments=_strings(
                 selection.get(
                     "segments",

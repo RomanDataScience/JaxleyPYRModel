@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 PROJECT_DIR=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE:-python}
-CONFIG="${PROJECT_DIR}/configs/search/LSU_1_cma_adam.yaml"
+CONFIG="${PROJECT_DIR}/configs/LSU_1_cma_adam.yaml"
 CELL_ID=m20260331b
 SEED=0
 RUN_NAME=

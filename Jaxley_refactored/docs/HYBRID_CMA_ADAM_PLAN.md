@@ -16,7 +16,9 @@ Implemented:
   comparison metrics, and validation plot;
 - best-of-generation CMA plots, periodic Adam plots with `latest.png`, and
   training/validation plots for every finalist;
-- full and smoke hybrid presets plus a local launcher.
+- two standalone hybrid configurations—full LSU_1 and hyperpolarizing-only—
+  plus local launchers. No inherited, smoke, optimizer, runtime, or GPU preset
+  YAMLs are shipped.
 
 Not yet implemented:
 
@@ -162,10 +164,15 @@ This separates optimizer failure from non-identifiability and from model
 misspecification. A method that cannot recover identifiable synthetic
 parameters under realistic noise is not ready for biological interpretation.
 
-### Initial parameter subset
+### CMA parameter dimensionality
 
-Do not begin with full-covariance CMA-ES over all 44 parameters. Start with a
-mechanistically relevant subset of approximately 12–20 active parameters:
+The shipped `configs/LSU_1_cma_adam.yaml` deliberately leaves
+`search.global.parameter_names` empty, which searches all 44 fitted parameters.
+That is the current production protocol and must be reported as such.
+
+For a preregistered reduced-dimensional ablation or an initial compute-limited
+development study, consider a mechanistically relevant subset of approximately
+12–20 active parameters:
 
 - sodium: `AXNa`, `gna`, `gnadend`, `scale_Na_conduct`, `nap_gnabar`;
 - delayed rectifier/Kv2: `gkdrsoma`, `gkdrdend`, `axongkdr`,
@@ -371,7 +378,7 @@ elite-neighborhood perturbation only after exact handoff is verified.
 Add:
 
 ```bash
-jaxley-refactored hybrid-fit --config configs/search/LSU_1_cma_adam.yaml
+jaxley-refactored hybrid-fit --config configs/LSU_1_cma_adam.yaml
 ```
 
 The orchestrator should:
@@ -696,9 +703,13 @@ are frozen.
 
 ## Recommended first experiment
 
-Before full CMA-ES, establish the baseline:
+Before interpreting the full CMA-ES result, establish a matched local-search
+baseline using the same standalone model and objective:
 
-1. Run 16 seed-jittered `LSU_1_wide_bounds_adam` searches for 50 epochs.
+1. Run 16 seed-jittered ordinary `fit` searches from
+   `configs/LSU_1_cma_adam.yaml` for 50 epochs. If wider bounds are part of the
+   study, freeze them in a versioned experimental copy rather than relying on
+   an undocumented preset.
 2. Backtracking-refine the best four.
 3. Evaluate all four on held-out traces.
 4. Record compute cost and parameter diversity.

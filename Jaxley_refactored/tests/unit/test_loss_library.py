@@ -35,24 +35,18 @@ from jaxley_refactored.fitting.trainer import Trainer
 
 
 PROJECT = Path(__file__).resolve().parents[2]
+FULL_CONFIG = PROJECT / "configs/LSU_1_cma_adam.yaml"
+HYPER_CONFIG = PROJECT / "configs/hyperpolarizing_only_cma_adam.yaml"
 
 
-def test_example_loss_configs_are_valid_and_have_unique_components():
+def test_supported_loss_configs_are_valid_and_have_unique_components():
     expected = {
-        "voltage_mse.yaml": ("waveform_mse",),
-        "pseudo_huber.yaml": ("waveform_huber",),
-        "huber_derivative_passive.yaml": (
-            "waveform_huber",
-            "waveform_derivative",
-            "resting_voltage",
-            "hyperpolarizing_steady_state",
-        ),
-        "hyperpolarizing_only.yaml": (
+        HYPER_CONFIG: (
             "hyperpolarizing_trough_depth",
             "hyperpolarizing_waveform_mse",
             "hyperpolarizing_derivative_mse",
         ),
-        "LSU_1.yaml": (
+        FULL_CONFIG: (
             "hyperpolarizing_trough_depth",
             "hyperpolarizing_waveform_mse",
             "hyperpolarizing_derivative_mse",
@@ -74,10 +68,13 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
             "depolarizing_minus50_minus40_voltage_mse",
         ),
     }
-    for filename, labels in expected.items():
-        config = load_config(PROJECT / "configs/losses" / filename)
-        assert tuple(component.label for component in config.fit.components) == labels
-    lsu = load_config(PROJECT / "configs/losses/LSU_1.yaml")
+    for path, labels in expected.items():
+        config = load_config(path)
+        actual = tuple(component.label for component in config.fit.components)
+        assert actual == labels
+        assert len(actual) == len(set(actual))
+
+    lsu = load_config(FULL_CONFIG)
     assert not lsu.fit.renormalize_protocol_filtered_components
     assert len(lsu.fit.penalties) == 2
     penalties = {penalty.label: penalty for penalty in lsu.fit.penalties}
@@ -196,31 +193,18 @@ def test_example_loss_configs_are_valid_and_have_unique_components():
     assert voltage_band.weight == 0.75
 
 
-def test_every_lsu_variant_inherits_the_same_reweighted_objective():
-    paths = (
-        PROJECT / "configs/losses/LSU_1.yaml",
-        PROJECT / "configs/losses/LSU_1_wide_bounds.yaml",
-        PROJECT / "configs/losses/LSU_1_wide_bounds_adam.yaml",
-        PROJECT / "configs/search/LSU_1_cma_adam.yaml",
-    )
-    configs = tuple(load_config(path) for path in paths)
-    reference = configs[0].fit
-    assert all(
-        config.dataset.simulation_post_ms == 500.0
-        and config.dataset.simulation_post_ms_by_protocol
-        == {"hyperpolarizing_pulse": 100.0}
-        and config.dataset.score_post_ms == 500.0
-        for config in configs
-    )
+def test_supported_loss_configs_use_their_explicit_simulation_horizons():
+    full = load_config(FULL_CONFIG)
+    hyper = load_config(HYPER_CONFIG)
 
-    for config in configs[1:]:
-        assert config.fit.components == reference.components
-        assert config.fit.penalties == reference.penalties
-        assert config.fit.protocol_weights == reference.protocol_weights
-        assert (
-            config.fit.renormalize_protocol_filtered_components
-            == reference.renormalize_protocol_filtered_components
-        )
+    assert full.dataset.simulation_post_ms == 500.0
+    assert full.dataset.simulation_post_ms_by_protocol == {
+        "hyperpolarizing_pulse": 100.0
+    }
+    assert full.dataset.score_post_ms == 500.0
+    assert hyper.dataset.simulation_post_ms == 100.0
+    assert hyper.dataset.simulation_post_ms_by_protocol == {}
+    assert hyper.dataset.score_post_ms == 100.0
 
 
 def test_registered_waveform_losses_are_finite_and_differentiable():
@@ -1512,7 +1496,7 @@ def test_lsu_global_protocol_weights_are_not_cancelled_by_component_filters():
     np.testing.assert_allclose(by_protocol["depolarizing_step"], [0.35, 0.35])
     np.testing.assert_allclose(by_protocol["hyperpolarizing_pulse"], [0.15, 0.15])
 
-    lsu = load_config(PROJECT / "configs/losses/LSU_1.yaml")
+    lsu = load_config(FULL_CONFIG)
     denominators = component_denominators(
         lsu.fit.components,
         bucket_records(weighted),

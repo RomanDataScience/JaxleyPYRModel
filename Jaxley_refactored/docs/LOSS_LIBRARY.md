@@ -20,14 +20,18 @@ are summed before one update to the shared parameter vector.
 | `steady_state_error` | Squared error between window means | `stimulus_end` window |
 | `mean_window_difference_error` | Squared error between simulated and experimental differences of two configurable time-window means | Window boundaries and `scale_mV` |
 | `soft_firing_rate_error` | Squared difference between positive smooth-threshold occupancy rates | `threshold_mV`, `temperature_mV`, `scale_hz` |
+| `soft_spike_train_mse` | Exponentially filtered soft-crossing mismatch for spike timing and adaptation | `kernel_tau_ms`, `threshold_mV`, `temperature_mV` |
 | `soft_forbidden_spike_count_error` | Squared smooth crossing count in a forbidden window | `threshold_mV`, `temperature_mV`, `scale` |
 | `subthreshold_mean_error` | Squared inter-spike mean-voltage error using an experimental subthreshold mask | `threshold_mV`, `scale_mV` |
 | `soft_dblo_error` | Squared error in depolarization baseline offset: mean interspike minimum minus pre-step rest | `threshold_mV`, `temperature_mV`, `scale_mV` |
 | `soft_interspike_minimum_voltage_error` | Mean per-interval squared error in absolute interspike minima | `threshold_mV`, `temperature_mV`, `scale_mV` |
 | `soft_interspike_trough_shape_error` | Per-interval trough phase, width, and asymmetry error | `threshold_mV`, `temperature_mV`, `scale` |
 | `soft_mean_spike_peak_voltage_error` | Mean per-spike peak error in fixed observed peak windows | `spike_window_half_width_ms`, `temperature_mV`, `scale_mV` |
+| `soft_spike_width_slope_error` | Joint per-spike half-width, upstroke, and repolarization error | Width and slope scales |
+| `soft_trough_depth_error` | Smooth trough depth relative to the stable scored baseline | `temperature_mV`, `scale_mV` |
 | `soft_ahp_depth_error` | Recovery minimum depth relative to pre-step baseline | `temperature_mV`, `scale_mV` |
 | `soft_ahp_deficit_error` | Mean smooth below-baseline recovery deficit | `temperature_mV`, `scale_mV` |
+| `soft_ahp_timing_moment_error` | Centered first temporal moment of smooth below-baseline recovery deficit | `temperature_mV`, `scale_mV` |
 | `soft_minimum_voltage_error` | Squared difference between smooth minimum voltages | `temperature_mV`, `scale_mV` |
 | `soft_maximum_voltage_error` | Squared difference between smooth maximum voltages | `temperature_mV`, `scale_mV` |
 
@@ -88,8 +92,8 @@ in-step spikes contributes finite zero.
 
 ## Named windows
 
-- `score`: the previous fitter's stimulus window, from 100 ms before onset to
-  800 ms after offset, clipped to the trace.
+- `score`: the configured interval from `score_windows.pre_ms` before onset to
+  `score_windows.post_ms` after offset, clipped to the trace.
 - `full_trace`: every real sample.
 - `baseline`: samples before stimulus onset.
 - `stimulus`: onset through offset.
@@ -165,8 +169,8 @@ Labels must be unique. Protocol-filtered components are normalized over the
 selected traces, so their weights do not accidentally depend on trace count.
 Set `renormalize_protocol_filtered_components: false` to retain the global
 protocol weights for those components. LSU_1 uses this mode. With its current
-`0.8/0.2` protocol allocation, the two depolarizing traces receive `0.4` each
-and the two hyperpolarizing traces receive `0.1` each.
+`0.7/0.3` protocol allocation, the two depolarizing traces receive `0.35` each
+and the two hyperpolarizing traces receive `0.15` each.
 
 `metrics.jsonl` reports both the total objective under `loss` and each weighted
 contribution under `component_losses`. When penalties are configured,
@@ -175,33 +179,37 @@ contribution under `component_losses`. When penalties are configured,
 remains the common score-window voltage RMSE, independent of the training
 objective.
 
-`configs/losses/LSU_1.yaml` restricts score-window point-by-point voltage MSE
+`configs/LSU_1_cma_adam.yaml` restricts score-window point-by-point voltage MSE
 to the hyperpolarizing protocol. Depolarizing traces instead use
 differentiable firing rate, absolute interspike minima, trough geometry,
 per-spike height, and baseline-relative AHP/recovery metrics. Additive soft
 counts forbid depolarizing spikes outside the step and hyperpolarizing spikes
 over the full trace; matching multiplicative safeguards use the same windows.
-Protocol allocations are `0.8` and `0.2`. LSU_1 inherits Adam with
-backtracking.
+Protocol allocations are `0.7` and `0.3`. Local LSU_1 uses Adam with
+backtracking. The production CMA-ES-to-Adam pipeline is fully specified in the
+standalone `configs/LSU_1_cma_adam.yaml` file.
 
-See
-[`configs/losses/README_LSU_1.md`](../configs/losses/README_LSU_1.md)
-for the complete component-by-component reference.
+See [the LSU_1 reference](LSU_1.md) for the complete component-by-component
+description.
 
-Use a 100-step smoke test with any loss configuration:
+The configuration directory ships exactly two runnable YAML files:
+
+- `configs/LSU_1_cma_adam.yaml`, containing the complete full LSU_1 hybrid;
+- `configs/hyperpolarizing_only_cma_adam.yaml`, containing the complete
+  hyperpolarizing-only hybrid with dominant trough-depth matching.
+
+Validate them without building or simulating the model:
+
+```bash
+jaxley-refactored validate-config --config configs/LSU_1_cma_adam.yaml
+jaxley-refactored validate-config \
+  --config configs/hyperpolarizing_only_cma_adam.yaml
+```
+
+For a model/data dry run of the full configuration:
 
 ```bash
 bash scripts/run_full_fitting.sh \
-  --config configs/losses/pseudo_huber.yaml \
-  --cells m20240527cd --epochs 1 --max-steps 100
+  --config configs/LSU_1_cma_adam.yaml \
+  --cells m20240527cd --dry-run
 ```
-
-Run all three shipped objectives sequentially with identical cell, seed, and
-training length:
-
-```bash
-bash scripts/run_loss_comparison.sh \
-  --cell m20240527cd --epochs 1 --max-steps 100
-```
-
-Remove `--max-steps` and choose the full epoch count only after smoke testing.

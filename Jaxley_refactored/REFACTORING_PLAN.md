@@ -306,17 +306,8 @@ Jaxley_refactored/
 ├── uv.lock
 ├── README.md
 ├── configs/
-│   ├── models/
-│   │   ├── combe2023_exact_hoc.yaml
-│   │   └── combe2023_rule_based.yaml
-│   ├── datasets/
-│   │   └── m20240527cd.yaml
-│   ├── fits/
-│   │   └── combe_m20240527cd_all.yaml
-│   ├── runtimes/
-│   │   ├── cpu_x64.yaml
-│   │   └── gpu_x64.yaml
-│   └── sweeps/
+│   ├── LSU_1_cma_adam.yaml
+│   └── hyperpolarizing_only_cma_adam.yaml
 ├── assets/
 │   └── morphologies/
 ├── jaxley_refactored/

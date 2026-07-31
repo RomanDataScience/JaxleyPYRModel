@@ -2,10 +2,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from jaxley_refactored.config import load_config
 from jaxley_refactored.config.hashing import config_as_dict
-from jaxley_refactored.config.schema import InitializationSpec
+from jaxley_refactored.config.schema import AppConfig, InitializationSpec
 from jaxley_refactored.fitting.initialization import (
     initial_normalized_values,
     initial_physical_values,
@@ -14,6 +15,8 @@ from jaxley_refactored.parameters import combe2023_catalog
 
 
 PROJECT = Path(__file__).resolve().parents[2]
+FULL_CONFIG = PROJECT / "configs/LSU_1_cma_adam.yaml"
+HYPER_CONFIG = PROJECT / "configs/hyperpolarizing_only_cma_adam.yaml"
 
 
 def _inputs(seed: int, initialization: InitializationSpec):
@@ -72,33 +75,23 @@ def test_reference_initialization_returns_catalog_defaults():
     )
 
 
-def test_hybrid_config_does_not_change_legacy_fit_default():
-    legacy = load_config(PROJECT / "configs/losses/LSU_1_wide_bounds.yaml")
-    hybrid = load_config(PROJECT / "configs/search/LSU_1_cma_adam.yaml")
+def test_app_config_still_defaults_to_local_fit_search():
+    default = AppConfig.from_mapping({})
 
-    assert legacy.search.strategy == "fit"
-    assert "search" not in config_as_dict(legacy)
+    assert default.search.strategy == "fit"
+    assert "search" not in config_as_dict(default)
+
+
+@pytest.mark.parametrize("path", (FULL_CONFIG, HYPER_CONFIG))
+def test_supported_configs_use_jittered_initialization_and_full_hybrid_budget(
+    path,
+):
+    hybrid = load_config(path)
+
+    assert hybrid.fit.initialization.mode == "jittered_reference"
+    assert hybrid.fit.initialization.scale == 0.10
     assert hybrid.search.strategy == "hybrid"
     assert config_as_dict(hybrid)["search"]["strategy"] == "hybrid"
-    assert hybrid.search.global_search.population_size == 40
-    assert hybrid.search.global_search.parent_fraction == 0.30
-    assert hybrid.search.global_search.generations == 100
-    assert hybrid.search.local_exploration.backtracking is False
-    assert hybrid.search.local_refinement.backtracking is True
-    assert hybrid.search.reporting.cma_plot_every_generations == 1
-    assert hybrid.search.reporting.adam_plot_every_epochs == 10
-    assert hybrid.search.reporting.plot_final_candidates is True
-
-
-def test_hyperpolarizing_hybrid_inherits_isolated_loss_and_full_budget():
-    local = load_config(
-        PROJECT / "configs/losses/hyperpolarizing_only.yaml"
-    )
-    hybrid = load_config(
-        PROJECT / "configs/search/hyperpolarizing_only_cma_adam.yaml"
-    )
-
-    assert hybrid.search.strategy == "hybrid"
     assert hybrid.search.global_search.population_size == 40
     assert hybrid.search.global_search.parent_fraction == 0.30
     assert hybrid.search.global_search.generations == 100
@@ -106,7 +99,14 @@ def test_hyperpolarizing_hybrid_inherits_isolated_loss_and_full_budget():
     assert hybrid.search.local_exploration.backtracking is False
     assert hybrid.search.local_refinement.epochs == 150
     assert hybrid.search.local_refinement.backtracking is True
-    assert hybrid.fit.components == local.fit.components
+    assert hybrid.search.reporting.cma_plot_every_generations == 1
+    assert hybrid.search.reporting.adam_plot_every_epochs == 10
+    assert hybrid.search.reporting.plot_final_candidates is True
+
+
+def test_hyperpolarizing_hybrid_has_isolated_loss_and_output():
+    hybrid = load_config(HYPER_CONFIG)
+
     assert hybrid.fit.penalties == ()
     assert hybrid.dataset.segments == ("hyperpolarizing_pulse",)
     assert hybrid.output.root == PROJECT / "runs_hyper"
