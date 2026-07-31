@@ -93,7 +93,7 @@ dataset:
     ignore_absolute_manifest_output_paths: true
 
   resampling:
-    target_dt_ms: 0.1
+    target_dt_ms: 0.05
     voltage_method: linear
     current_method: zero_order_hold
 
