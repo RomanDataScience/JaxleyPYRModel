@@ -166,6 +166,24 @@ bash scripts/run_full_fitting.sh \
 The log prints the tested learning rate, whether the step was accepted, and the
 number of forward trials. See [docs/OPTIMIZATION.md](docs/OPTIMIZATION.md).
 
+### Timestep convergence check
+
+Evaluate one fixed successful CMA candidate at 0.1, 0.05, and 0.025 ms:
+
+```bash
+python scripts/check_timestep_convergence.py \
+  --config runs/hybrid-m20240527cd-2d89f95b-seed1234/resolved_config.yaml \
+  --candidates runs/hybrid-m20240527cd-2d89f95b-seed1234/global/candidates.jsonl \
+  --dt-ms 0.1 0.05 0.025 \
+  --output runs/timestep-convergence-m20240527cd.json
+```
+
+If `--candidate-id` is omitted, the script selects the lowest-loss successful
+candidate in the JSONL file. It reports objective and component losses at each
+timestep, plus per-trace voltage RMSE and maximum absolute error relative to the
+finest requested timestep. The parameter vector is held fixed; only data
+resampling, state initialization, and integration timestep change.
+
 ## Configuration knobs
 
 The configuration directory intentionally ships only these two standalone

@@ -8,6 +8,11 @@ import jax.numpy as jnp
 
 
 def _masked_mean(values, mask):
+    """Mean over physical time for uniformly sampled traces.
+
+    The ``dt`` factors in the integral and duration cancel. Do not replace
+    this with a raw sum: that would make the metric scale as ``1 / dt``.
+    """
     mask = jnp.asarray(mask, dtype=values.dtype)
     denominator = jnp.maximum(jnp.sum(mask, axis=-1), 1.0)
     return jnp.sum(mask * values, axis=-1) / denominator
@@ -211,6 +216,8 @@ def soft_spike_train_mse(
     difference = (
         filtered_crossings(predicted) - filtered_crossings(observed)
     ) / scale
+    # Time integral divided by the fixed physical filter timescale. The
+    # explicit dt prevents energy growing with the number of samples.
     normalized_dt = dt_ms / kernel_tau_ms
     selected_next = jnp.concatenate(
         (

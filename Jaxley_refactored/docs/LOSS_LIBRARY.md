@@ -1,5 +1,15 @@
 # Loss-function library
 
+All component weights are defined in physical units and are independent of the
+simulation timestep. Waveform-like terms are time averages (never raw sums),
+derivatives divide finite differences by `dt_ms`, rates divide event counts by
+duration in seconds, spike widths multiply sample occupancy by `dt_ms`, and
+filtered spike-train energy includes its integration factor `dt_ms / tau_ms`.
+Event-count terms are dimensionless and do not grow with the number of samples.
+Changing `dataset.resampling.target_dt_ms` can still change values through
+ordinary integration and interpolation error, but it does not implicitly
+reweight one configured metric relative to another.
+
 Every objective consumes the same simulated traces and returns one scalar per
 trace. Protocol-balanced trace weights and component weights reduce those
 values to one scalar objective. Gradients from both natural-shape trace buckets

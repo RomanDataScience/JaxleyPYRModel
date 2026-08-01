@@ -207,6 +207,75 @@ def test_supported_loss_configs_use_their_explicit_simulation_horizons():
     assert hyper.dataset.score_post_ms == 100.0
 
 
+def test_sample_based_metrics_keep_their_scale_when_dt_changes():
+    """Component weights must not implicitly depend on samples per ms."""
+
+    registry = default_loss_registry()
+    results = {}
+    for dt_ms in (0.1, 0.05, 0.025):
+        time_ms = jnp.arange(round(10.0 / dt_ms) + 1) * dt_ms
+        observed = jnp.broadcast_to(-65.0 + 0.2 * time_ms, (1, time_ms.size))
+        predicted = observed + 2.0 + 0.1 * time_ms
+        mask = jnp.ones_like(observed, dtype=bool)
+        results[dt_ms] = {
+            "mse": float(
+                registry.get("voltage_mse")(
+                    observed + 2.0, observed, mask, dt_ms=dt_ms
+                )[0]
+            ),
+            "mae": float(
+                registry.get("voltage_mae")(
+                    observed + 2.0, observed, mask, dt_ms=dt_ms
+                )[0]
+            ),
+            "derivative": float(
+                registry.get("derivative_mse")(
+                    predicted, observed, mask, dt_ms=dt_ms
+                )[0]
+            ),
+        }
+
+    reference = results[0.05]
+    for result in results.values():
+        np.testing.assert_allclose(result["mse"], reference["mse"], rtol=1e-6)
+        np.testing.assert_allclose(result["mae"], reference["mae"], rtol=1e-6)
+        np.testing.assert_allclose(
+            result["derivative"], reference["derivative"], rtol=2e-5
+        )
+
+
+def test_event_metrics_use_physical_time_not_sample_count():
+    """Rates and filtered train energy remain stable under grid refinement."""
+
+    registry = default_loss_registry()
+    results = {}
+    for dt_ms in (0.1, 0.05, 0.025):
+        time_ms = jnp.arange(round(100.0 / dt_ms) + 1) * dt_ms
+
+        def pulse(center_ms):
+            return -65.0 + 95.0 * jnp.exp(-((time_ms - center_ms) / 0.8) ** 2)
+
+        observed = pulse(30.0)[None, :]
+        predicted = pulse(35.0)[None, :]
+        mask = jnp.ones_like(observed, dtype=bool)
+        results[dt_ms] = (
+            float(
+                registry.get("soft_firing_rate_error")(
+                    predicted, observed, mask, dt_ms=dt_ms
+                )[0]
+            ),
+            float(
+                registry.get("soft_spike_train_mse")(
+                    predicted, observed, mask, dt_ms=dt_ms
+                )[0]
+            ),
+        )
+
+    finest = np.asarray(results[0.025])
+    for result in results.values():
+        np.testing.assert_allclose(result, finest, rtol=0.02, atol=1e-7)
+
+
 def test_registered_waveform_losses_are_finite_and_differentiable():
     registry = default_loss_registry()
     observed = jnp.asarray([[0.0, 1.0, 2.0, 3.0]])
