@@ -92,7 +92,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     component = lsu.fit.components[0]
     assert component.label == "hyperpolarizing_trough_depth"
     assert component.kind == "soft_trough_depth_error"
-    assert component.weight == 4.0
+    assert component.weight == 8.0
     assert component.protocols == ("hyperpolarizing_pulse",)
     assert component.window == "stimulus"
     assert component.scale == 1.0
@@ -114,7 +114,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     firing_rate = lsu.fit.components[3]
     assert firing_rate.label == "depolarizing_firing_rate"
     assert firing_rate.kind == "soft_firing_rate_error"
-    assert firing_rate.weight == 1.0
+    assert firing_rate.weight == 0.2
     assert firing_rate.protocols == ("depolarizing_step",)
     assert firing_rate.window == "stimulus"
     assert firing_rate.threshold_mV == -20.0

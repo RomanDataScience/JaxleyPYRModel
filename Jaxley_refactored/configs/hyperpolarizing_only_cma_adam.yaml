@@ -123,7 +123,8 @@ fit:
       # Primary feature: stable-baseline-to-trough voltage depth.
       - kind: soft_trough_depth_error
         label: hyperpolarizing_trough_depth
-        weight: 4.0
+        # Strongly prioritize matching the experimental valley depth.
+        weight: 8.0
         protocols: [hyperpolarizing_pulse]
         window: stimulus
         temperature_mV: 0.5

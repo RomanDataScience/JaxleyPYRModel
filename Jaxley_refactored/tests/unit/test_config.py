@@ -232,7 +232,7 @@ def test_hyperpolarizing_only_config_has_isolated_data_loss_and_output():
     assert trough.label == "hyperpolarizing_trough_depth"
     assert trough.protocols == ("hyperpolarizing_pulse",)
     assert trough.window == "stimulus"
-    assert trough.weight == 4.0
+    assert trough.weight == 8.0
     assert trough.scale == 1.0
     assert trough.temperature_mV == 0.5
     assert waveform.kind == "voltage_mse"
