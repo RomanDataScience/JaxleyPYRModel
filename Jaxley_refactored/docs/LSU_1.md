@@ -60,10 +60,11 @@ otherwise expressed in mV.
 
 | Component | Biological role | Protocol/window |
 |---|---|---|
-| `hyperpolarizing_trough_depth` | Primary hyperpolarizing target: stable-baseline-to-smooth-trough depth; weight `8.0` | Hyperpolarizing, `stimulus` |
+| `hyperpolarizing_trough_depth` | Primary hyperpolarizing target: stable-baseline-to-smooth-trough depth; weight `2.0` | Hyperpolarizing, `stimulus` |
 | `hyperpolarizing_waveform_mse` | Hyperpolarizing voltage trajectory | Hyperpolarizing, `score` |
 | `hyperpolarizing_derivative_mse` | Hyperpolarizing dV/dt trajectory, including onset, sag, offset, and recovery kinetics | Hyperpolarizing, `score` |
-| `depolarizing_firing_rate` | Firing frequency; raw weight `0.2` (one-fifth of the unit-weight feature terms) | Depolarizing, `stimulus` |
+| `depolarizing_firing_rate` | Firing frequency; raw weight `0.5` | Depolarizing, `stimulus` |
+| `depolarizing_block` | Excess fraction of the current step held above −35 mV; explicitly rejects sustained depolarized plateaus | Depolarizing, `stimulus` |
 | `depolarizing_spike_timing_adaptation` | First-spike latency and the sequence of interspike intervals | Depolarizing, `stimulus` |
 | `depolarizing_forbidden_spikes` | No spikes before or after depolarizing pulse | Depolarizing, `outside_stimulus` |
 | `hyperpolarizing_forbidden_spikes` | No spikes anywhere in hyperpolarizing trace | Hyperpolarizing, `full_trace` |

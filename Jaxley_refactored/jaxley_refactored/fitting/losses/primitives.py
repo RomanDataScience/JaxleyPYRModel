@@ -163,6 +163,35 @@ def soft_firing_rate_error(
     return (difference_hz / scale) ** 2
 
 
+def soft_depolarization_block_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    scale=0.1,
+    threshold_mV=-35.0,
+    temperature_mV=5.0,
+    **_,
+):
+    """Penalize excess sustained depolarization during a stimulus.
+
+    Mean smooth occupancy above ``threshold_mV`` is small for ordinary spikes
+    but large for a trace that remains on a depolarized plateau. Only occupancy
+    in excess of the experimental trace is penalized.
+    """
+
+    def depolarized_fraction(voltage):
+        occupancy = jnn.sigmoid(
+            (voltage - threshold_mV) / temperature_mV
+        )
+        return _masked_mean(occupancy, mask)
+
+    excess = jnn.relu(
+        depolarized_fraction(predicted) - depolarized_fraction(observed)
+    )
+    return (excess / scale) ** 2
+
+
 def soft_spike_train_mse(
     predicted,
     observed,

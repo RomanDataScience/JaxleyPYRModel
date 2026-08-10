@@ -685,6 +685,7 @@ _LOSS_KINDS = {
     "mean_window_difference_error",
     "experimental_voltage_band_mse",
     "soft_firing_rate_error",
+    "soft_depolarization_block_error",
     "soft_spike_train_mse",
     "soft_forbidden_spike_count_error",
     "subthreshold_mean_error",

@@ -43,6 +43,10 @@ def default_loss_registry() -> LossRegistry:
         "mean_window_difference_error", primitives.mean_window_difference_error
     )
     registry.register("soft_firing_rate_error", primitives.soft_firing_rate_error)
+    registry.register(
+        "soft_depolarization_block_error",
+        primitives.soft_depolarization_block_error,
+    )
     registry.register("soft_spike_train_mse", primitives.soft_spike_train_mse)
     registry.register(
         "soft_forbidden_spike_count_error",

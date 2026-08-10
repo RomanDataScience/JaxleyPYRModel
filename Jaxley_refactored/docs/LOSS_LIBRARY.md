@@ -30,6 +30,7 @@ are summed before one update to the shared parameter vector.
 | `steady_state_error` | Squared error between window means | `stimulus_end` window |
 | `mean_window_difference_error` | Squared error between simulated and experimental differences of two configurable time-window means | Window boundaries and `scale_mV` |
 | `soft_firing_rate_error` | Squared difference between positive smooth-threshold occupancy rates | `threshold_mV`, `temperature_mV`, `scale_hz` |
+| `soft_depolarization_block_error` | Squared excess smooth occupancy above a depolarized threshold | `threshold_mV`, `temperature_mV`, `scale` |
 | `soft_spike_train_mse` | Exponentially filtered soft-crossing mismatch for spike timing and adaptation | `kernel_tau_ms`, `threshold_mV`, `temperature_mV` |
 | `soft_forbidden_spike_count_error` | Squared smooth crossing count in a forbidden window | `threshold_mV`, `temperature_mV`, `scale` |
 | `subthreshold_mean_error` | Squared inter-spike mean-voltage error using an experimental subthreshold mask | `threshold_mV`, `scale_mV` |

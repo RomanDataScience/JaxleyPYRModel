@@ -51,6 +51,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
             "hyperpolarizing_waveform_mse",
             "hyperpolarizing_derivative_mse",
             "depolarizing_firing_rate",
+            "depolarizing_block",
             "depolarizing_spike_timing_adaptation",
             "depolarizing_forbidden_spikes",
             "hyperpolarizing_forbidden_spikes",
@@ -88,11 +89,11 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     assert penalties["hyperpolarizing_any_spikes"].protocols == (
         "hyperpolarizing_pulse",
     )
-    assert len(lsu.fit.components) == 19
+    assert len(lsu.fit.components) == 20
     component = lsu.fit.components[0]
     assert component.label == "hyperpolarizing_trough_depth"
     assert component.kind == "soft_trough_depth_error"
-    assert component.weight == 8.0
+    assert component.weight == 2.0
     assert component.protocols == ("hyperpolarizing_pulse",)
     assert component.window == "stimulus"
     assert component.scale == 1.0
@@ -114,13 +115,21 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     firing_rate = lsu.fit.components[3]
     assert firing_rate.label == "depolarizing_firing_rate"
     assert firing_rate.kind == "soft_firing_rate_error"
-    assert firing_rate.weight == 0.2
+    assert firing_rate.weight == 0.5
     assert firing_rate.protocols == ("depolarizing_step",)
     assert firing_rate.window == "stimulus"
     assert firing_rate.threshold_mV == -20.0
     assert firing_rate.temperature_mV == 2.0
     assert firing_rate.scale == 1.0
     components = {item.label: item for item in lsu.fit.components}
+    block = components["depolarizing_block"]
+    assert block.kind == "soft_depolarization_block_error"
+    assert block.weight == 1.0
+    assert block.protocols == ("depolarizing_step",)
+    assert block.window == "stimulus"
+    assert block.threshold_mV == -35.0
+    assert block.temperature_mV == 5.0
+    assert block.scale == 0.1
     timing = components["depolarizing_spike_timing_adaptation"]
     assert timing.kind == "soft_spike_train_mse"
     assert timing.window == "stimulus"
@@ -293,6 +302,7 @@ def test_registered_waveform_losses_are_finite_and_differentiable():
         "steady_state_error",
         "mean_window_difference_error",
         "soft_firing_rate_error",
+        "soft_depolarization_block_error",
         "soft_spike_train_mse",
         "soft_forbidden_spike_count_error",
         "subthreshold_mean_error",
@@ -575,6 +585,29 @@ def test_soft_firing_rate_error_prefers_matching_spike_count():
     missing_loss = term(missing_spike, observed, mask, **kwargs)
 
     assert float(matching_loss[0]) < float(missing_loss[0])
+
+
+def test_depolarization_block_error_rejects_sustained_plateau():
+    term = default_loss_registry().get("soft_depolarization_block_error")
+    observed = jnp.asarray(
+        [[-65.0, -65.0, 20.0, -65.0, -65.0, 20.0, -65.0, -65.0]]
+    )
+    blocked = jnp.asarray(
+        [[-65.0, -40.0, -20.0, -10.0, -10.0, -10.0, -10.0, -10.0]]
+    )
+    mask = jnp.ones_like(observed, dtype=bool)
+    kwargs = {
+        "dt_ms": 0.1,
+        "scale": 0.1,
+        "threshold_mV": -35.0,
+        "temperature_mV": 5.0,
+    }
+
+    matching_loss = term(observed, observed, mask, **kwargs)
+    blocked_loss = term(blocked, observed, mask, **kwargs)
+
+    assert float(matching_loss[0]) == 0.0
+    assert float(blocked_loss[0]) > 1.0
 
 
 def test_soft_firing_rate_does_not_count_a_stationary_near_threshold_plateau():

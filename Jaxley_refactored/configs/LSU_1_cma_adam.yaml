@@ -100,7 +100,7 @@ dataset:
     ignore_absolute_manifest_output_paths: true
 
   resampling:
-    target_dt_ms: 0.05
+    target_dt_ms: 0.2
     voltage_method: linear
     current_method: zero_order_hold
 
@@ -155,8 +155,8 @@ fit:
       # --- Hyperpolarizing response ---------------------------------------
       - kind: soft_trough_depth_error
         label: hyperpolarizing_trough_depth
-        # Strongly prioritize matching the experimental valley depth.
-        weight: 8.0
+        # Moderately prioritize matching the experimental valley depth.
+        weight: 2.0
         protocols: [hyperpolarizing_pulse]
         window: stimulus
         temperature_mV: 0.5
@@ -181,12 +181,22 @@ fit:
         label: depolarizing_firing_rate
         # Keep firing rate influential without letting it dominate the
         # depolarizing waveform, spike-shape, plateau, and recovery terms.
-        weight: 0.2
+        weight: 0.5
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
         temperature_mV: 2.0
         scale_hz: 1.0
+
+      - kind: soft_depolarization_block_error
+        label: depolarizing_block
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -35.0
+        temperature_mV: 5.0
+        # A 10% excess in sustained depolarized occupancy contributes 1.0.
+        scale: 0.1
 
       - kind: soft_spike_train_mse
         label: depolarizing_spike_timing_adaptation
