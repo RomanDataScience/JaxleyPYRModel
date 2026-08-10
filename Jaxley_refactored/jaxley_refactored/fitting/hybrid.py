@@ -198,6 +198,7 @@ def run_hybrid(
         checkpoint = CheckpointManager(
             stage_dir / "checkpoints",
             f"{compatibility_hash}:exploration:{candidate_id}",
+            tuple(spec.name for spec in specs),
         )
         local_trainer.configure_optimizer(exploration_fit, checkpoint)
         result = local_trainer.train(
@@ -218,6 +219,7 @@ def run_hybrid(
         checkpoint = CheckpointManager(
             stage_dir / "checkpoints",
             f"{compatibility_hash}:refinement:{candidate_id}",
+            tuple(spec.name for spec in specs),
         )
         local_trainer.configure_optimizer(refinement_fit, checkpoint)
         result = local_trainer.train(

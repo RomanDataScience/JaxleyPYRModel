@@ -249,6 +249,18 @@ fixed during fitting. This keeps one implementation of every Combe profile.
 See [docs/KINETIC_PARAMETERS.md](docs/KINETIC_PARAMETERS.md) for the kinetic
 equations, regional targets, bounds, and interpretation caveats.
 
+Initial values, bounds, and optimizer-vector order are maintained in
+`jaxley_refactored/parameters/combe2023.yaml`. Keep experiment-specific choices
+in `model.parameters.fit`: use `include_tags` for broad groups and `include` or
+`exclude` for exact parameter names. The catalog loader validates the complete
+list before model construction, including duplicate/missing names, numeric
+bounds, and initial values outside their bounds.
+
+Every epoch in `metrics.jsonl` includes a `parameters` object containing
+physical values keyed by canonical parameter name. Checkpoints also persist
+their parameter names and restore parameter and Adam-state vectors by name, so
+resuming does not depend on catalog or serialization order.
+
 Changing morphology, discretization, enabled mechanisms, or profile family is
 a static change and causes a new model signature/JAX compilation. Parameter
 values, stimuli, masks, observations, and initial voltages remain dynamic.

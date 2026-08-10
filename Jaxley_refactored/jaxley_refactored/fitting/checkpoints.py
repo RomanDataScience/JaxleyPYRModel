@@ -16,9 +16,17 @@ CHECKPOINT_VERSION = 1
 
 
 class CheckpointManager:
-    def __init__(self, directory: Path, compatibility_hash: str):
+    def __init__(
+        self,
+        directory: Path,
+        compatibility_hash: str,
+        parameter_names: tuple[str, ...] = (),
+    ):
         self.directory = directory
         self.compatibility_hash = compatibility_hash
+        self.parameter_names = tuple(parameter_names)
+        if len(set(self.parameter_names)) != len(self.parameter_names):
+            raise ValueError("Checkpoint parameter names must be unique.")
         self.directory.mkdir(parents=True, exist_ok=True)
 
     @property
@@ -50,11 +58,28 @@ class CheckpointManager:
             "best_normalized": np.asarray(best_normalized),
             "best_loss": np.asarray(best_loss),
         }
+        if self.parameter_names:
+            if len(self.parameter_names) != len(arrays["normalized"]):
+                raise ValueError(
+                    "Checkpoint parameter-name count does not match parameter vector."
+                )
+            arrays["parameter_names"] = np.asarray(self.parameter_names)
         metadata = {
             "version": CHECKPOINT_VERSION,
             "epoch": epoch,
             "compatibility_hash": self.compatibility_hash,
         }
+        if self.parameter_names:
+            metadata["parameters_normalized"] = dict(
+                zip(self.parameter_names, arrays["normalized"].tolist(), strict=True)
+            )
+            metadata["best_parameters_normalized"] = dict(
+                zip(
+                    self.parameter_names,
+                    arrays["best_normalized"].tolist(),
+                    strict=True,
+                )
+            )
         self._atomic_npz(self.latest_path, arrays)
         self._atomic_json(self.directory / "latest.json", metadata)
         if is_best:
@@ -74,13 +99,14 @@ class CheckpointManager:
         with np.load(self.latest_path, allow_pickle=False) as arrays:
             if int(arrays["version"]) != CHECKPOINT_VERSION:
                 raise ValueError("Unsupported checkpoint version.")
+            order = self._load_order(arrays)
             return {
                 "epoch": int(arrays["epoch"]),
-                "normalized": arrays["normalized"],
+                "normalized": arrays["normalized"][order],
                 "optimizer": AdamState(
                     step=int(arrays["optimizer_step"]),
-                    first_moment=arrays["first_moment"],
-                    second_moment=arrays["second_moment"],
+                    first_moment=arrays["first_moment"][order],
+                    second_moment=arrays["second_moment"][order],
                     current_learning_rate=(
                         None
                         if "optimizer_learning_rate" not in arrays.files
@@ -88,9 +114,24 @@ class CheckpointManager:
                         else float(arrays["optimizer_learning_rate"])
                     ),
                 ),
-                "best_normalized": arrays["best_normalized"],
+                "best_normalized": arrays["best_normalized"][order],
                 "best_loss": float(arrays["best_loss"]),
             }
+
+    def _load_order(self, arrays) -> np.ndarray:
+        """Map saved vectors into the current catalog order by parameter name."""
+        size = len(arrays["normalized"])
+        if "parameter_names" not in arrays.files:
+            return np.arange(size)
+        saved = tuple(str(name) for name in arrays["parameter_names"].tolist())
+        if not self.parameter_names:
+            return np.arange(size)
+        if len(set(saved)) != len(saved) or set(saved) != set(self.parameter_names):
+            raise ValueError(
+                "Checkpoint parameter names are incompatible with the current fit."
+            )
+        positions = {name: index for index, name in enumerate(saved)}
+        return np.asarray([positions[name] for name in self.parameter_names])
 
     @staticmethod
     def _atomic_npz(path: Path, arrays: dict[str, np.ndarray]) -> None:

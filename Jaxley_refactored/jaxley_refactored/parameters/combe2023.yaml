@@ -1,0 +1,48 @@
+# Ordered calibration catalog. Order here is the optimizer-vector order.
+# Edit `initial` and `bounds` here; select fitted subsets in the run config
+# under model.parameters.fit (include_tags/include/exclude).
+parameters:
+  - {name: soma_hbar, initial: 3.0e-05, bounds: [0.0, 3.0e-04]}
+  - {name: KirGbar, initial: 0.00101535, bounds: [0.0, 0.005]}
+  - {name: soma_caL, initial: 6.0e-05, bounds: [0.0, 6.0e-04]}
+  - {name: soma_car, initial: 3.0e-05, bounds: [0.0, 3.0e-04]}
+  - {name: gsomacar, initial: 8.0e-05, bounds: [0.0, 8.0e-04]}
+  - {name: soma_caLH, initial: 0.0, bounds: [0.0, 0.001]}
+  - {name: soma_caT, initial: 3.0e-04, bounds: [0.0, 0.003]}
+  - {name: soma_km, initial: 0.0, bounds: [0.0, 0.01]}
+  - {name: mykca_init, initial: 0.0, bounds: [0.0, 0.01]}
+  - {name: soma_kca, initial: 0.0, bounds: [0.0, 0.01]}
+  - {name: AXNa, initial: 3.5, bounds: [0.1, 10.0]}
+  - {name: gkdrsoma, initial: 0.0, bounds: [0.0, 0.02]}
+  - {name: gkdrdend, initial: 0.0, bounds: [0.0, 0.02]}
+  - {name: soma_kap, initial: 0.0385, bounds: [0.0, 0.2]}
+  - {name: axon_kap, initial: 0.056, bounds: [0.0, 0.2]}
+  - {name: basal_kap, initial: 0.0025036, bounds: [0.0, 0.05]}
+  - {name: soma_kad, initial: 0.0385, bounds: [0.0, 0.2]}
+  - {name: gna, initial: 0.035, bounds: [0.0, 0.1]}
+  - {name: axongkdr, initial: 0.011, bounds: [0.0, 0.05]}
+  - {name: gnadend, initial: 0.0225, bounds: [0.0, 0.1]}
+  - {name: gkdrapical, initial: 5.0e-04, bounds: [0.0, 0.01]}
+  - {name: gkv2soma, initial: 0.0132, bounds: [0.0, 0.1]}
+  - {name: gkv2, initial: 0.0198, bounds: [0.0, 0.1]}
+  - {name: gkv2axon, initial: 0.0198, bounds: [0.0, 0.1]}
+  - {name: gkv2scale, initial: 0.3, bounds: [0.0, 2.0]}
+  - {name: scale_Na_conduct, initial: 14.0, bounds: [1.0, 30.0]}
+  - {name: icangbar, initial: 0.045, bounds: [0.0, 0.2]}
+  - {name: nap_gnabar, initial: 0.0, bounds: [0.0, 0.001]}
+  - {name: RmSoma, initial: 149999.0, bounds: [50000.0, 300000.0]}
+  - {name: RaSoma, initial: 42.562, bounds: [20.0, 150.0]}
+  - {name: RmTuft, initial: 45373.4, bounds: [10000.0, 150000.0]}
+  - {name: RaTuft, initial: 35.0, bounds: [20.0, 150.0]}
+  - {name: DistHalfRm, initial: 151.741, bounds: [20.0, 500.0]}
+  - {name: DistHalfRa, initial: 90.8296, bounds: [20.0, 300.0]}
+  - {name: SlopeRm, initial: 13.8656, bounds: [1.0, 80.0]}
+  - {name: SlopeRa, initial: 7.76766, bounds: [1.0, 80.0]}
+  - {name: Epas, initial: -71.9879, bounds: [-90.0, -50.0]}
+  - {name: CmSoma, initial: 1.0, bounds: [0.3, 5.0]}
+  - {name: SpineFactorBasal, initial: 3.5, bounds: [1.0, 6.0]}
+  - {name: SpineFactorTuft, initial: 3.5, bounds: [1.0, 6.0]}
+  - {name: kd_deactivation_tau_scale, initial: 1.0, bounds: [0.25, 4.0]}
+  - {name: nat_fast_inactivation_tau_scale, initial: 1.0, bounds: [0.5, 2.0]}
+  - {name: nat_slow_recovery_tau_scale, initial: 1.0, bounds: [0.5, 2.0]}
+  - {name: h_tau_scale, initial: 1.0, bounds: [0.5, 2.0]}

@@ -25,6 +25,9 @@ jaxley-refactored = "jaxley_refactored.cli.bootstrap:main"
 where = ["."]
 include = ["jaxley_refactored*"]
 
+[tool.setuptools.package-data]
+"jaxley_refactored.parameters" = ["*.yaml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"

@@ -483,6 +483,13 @@ class Trainer:
                 "bucket_losses": bucket_losses,
                 "component_losses": component_losses,
                 "penalty_metrics": penalty_metrics,
+                "parameters": dict(
+                    zip(
+                        (spec.name for spec in self.model.parameterizer.specs),
+                        np.asarray(self.space.physical(loss_parameters)).tolist(),
+                        strict=True,
+                    )
+                ),
             }
             if on_epoch is not None:
                 on_epoch(metrics, bucket_predictions)

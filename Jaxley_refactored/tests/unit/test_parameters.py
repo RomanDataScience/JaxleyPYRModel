@@ -1,6 +1,8 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
+import yaml
 
 from jaxley_refactored.config import load_config
 from jaxley_refactored.parameters import (
@@ -39,6 +41,29 @@ def test_catalog_preserves_the_legacy_40_and_appends_four_kinetic_scales():
     assert legacy[-1].name == "SpineFactorTuft"
     assert len(selected) == 44
     assert tuple(spec.name for spec in selected[-4:]) == KINETIC_NAMES
+
+
+def test_catalog_can_be_loaded_from_an_editable_yaml(tmp_path):
+    source = PROJECT / "jaxley_refactored/parameters/combe2023.yaml"
+    document = yaml.safe_load(source.read_text(encoding="utf-8"))
+    document["parameters"][0]["initial"] = 4.0e-5
+    path = tmp_path / "parameters.yaml"
+    path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+
+    catalog = combe2023_catalog(path)
+
+    assert catalog.get("soma_hbar").default == 4.0e-5
+
+
+def test_catalog_yaml_rejects_an_initial_value_outside_bounds(tmp_path):
+    source = PROJECT / "jaxley_refactored/parameters/combe2023.yaml"
+    document = yaml.safe_load(source.read_text(encoding="utf-8"))
+    document["parameters"][0]["initial"] = 1.0
+    path = tmp_path / "parameters.yaml"
+    path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="initial value is outside"):
+        combe2023_catalog(path)
 
 
 def test_kinetic_metadata_and_persistent_sodium_remain_explicit():

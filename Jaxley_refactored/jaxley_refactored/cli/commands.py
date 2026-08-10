@@ -340,7 +340,9 @@ def _fit(config, args) -> int:
         return 0
 
     checkpoints = CheckpointManager(
-        output.path / "checkpoints", compatibility_hash
+        output.path / "checkpoints",
+        compatibility_hash,
+        tuple(spec.name for spec in model.parameterizer.specs),
     )
     trainer = Trainer(
         model,
