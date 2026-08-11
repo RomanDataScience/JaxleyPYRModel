@@ -44,14 +44,14 @@ def test_hybrid_lsu_config_is_standalone_and_explicit():
     }
     assert raw["dataset"]["selection"]["trace_indices"] == [1, 3]
     assert raw["dataset"]["selection"]["validation_trace_indices"] == [2, 4]
-    assert raw["dataset"]["resampling"]["target_dt_ms"] == 0.1
+    assert raw["dataset"]["resampling"]["target_dt_ms"] == 0.2
     assert raw["dataset"]["simulation_window"] == {
         "post_stimulus_ms": 500.0,
         "post_stimulus_ms_by_protocol": {
             "hyperpolarizing_pulse": 100.0,
         },
     }
-    assert len(raw["fit"]["objective"]["components"]) == 19
+    assert len(raw["fit"]["objective"]["components"]) == 21
     assert len(raw["fit"]["objective"]["penalties"]) == 2
     assert raw["fit"]["checkpoint"]["reject_incompatible_hashes"] is True
     assert raw["output"]["provenance"]["include_resolved_config"] is True
@@ -62,6 +62,7 @@ def test_hybrid_lsu_config_is_standalone_and_explicit():
     assert config.model.parameters.bound_expansion_factor == 1.0
     assert config.fit.initialization.mode == "jittered_reference"
     assert config.fit.initialization.scale == 0.10
+    assert config.protocol.equilibrate_ms == 500.0
     assert config.fit.optimizer.line_search.enabled is True
     assert config.runtime.backend == "cpu"
     assert config.runtime.precision == "float64"

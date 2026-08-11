@@ -45,9 +45,10 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
             "hyperpolarizing_trough_depth",
             "hyperpolarizing_waveform_mse",
             "hyperpolarizing_derivative_mse",
-        ),
-        FULL_CONFIG: (
-            "hyperpolarizing_trough_depth",
+            ),
+            FULL_CONFIG: (
+                "resting_baseline_voltage",
+                "hyperpolarizing_trough_depth",
             "hyperpolarizing_waveform_mse",
             "hyperpolarizing_derivative_mse",
             "depolarizing_firing_rate",
@@ -89,7 +90,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     assert penalties["hyperpolarizing_any_spikes"].protocols == (
         "hyperpolarizing_pulse",
     )
-    assert len(lsu.fit.components) == 20
+    assert len(lsu.fit.components) == 21
     component = lsu.fit.components[0]
     assert component.label == "hyperpolarizing_trough_depth"
     assert component.kind == "soft_trough_depth_error"

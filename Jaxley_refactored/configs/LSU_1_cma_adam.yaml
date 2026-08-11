@@ -70,6 +70,9 @@ protocol:
   initial_state:
     mode: observed_first_sample
     fixed_voltage_mV: -71.9879
+    # Relax every candidate under the trace's recorded holding current before
+    # scoring so baseline errors reflect its true resting equilibrium.
+    equilibrate_ms: 500.0
 
   alignment: prefix
 
@@ -157,6 +160,15 @@ fit:
         temperature_mV: 2.0
 
     components:
+      # Explicitly constrain the resting equilibrium; otherwise spike-shape
+      # terms dominate and CMA-ES can tolerate a strongly depolarized baseline.
+      - kind: resting_voltage_error
+        label: resting_baseline_voltage
+        weight: 5.0
+        protocols: [depolarizing_step, hyperpolarizing_pulse]
+        window: baseline
+        scale_mV: 1.0
+
       # --- Hyperpolarizing response ---------------------------------------
       - kind: soft_trough_depth_error
         label: hyperpolarizing_trough_depth

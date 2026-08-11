@@ -346,6 +346,7 @@ class ProtocolSpec:
     recording_site: SiteSpec
     initial_state_mode: str = "observed_first_sample"
     fixed_voltage_mV: float = -71.9879
+    equilibrate_ms: float = 0.0
     alignment: str = "prefix"
 
     @classmethod
@@ -362,12 +363,15 @@ class ProtocolSpec:
         initial = _mapping(data.get("initial_state"), "protocol.initial_state")
         _strict(
             initial,
-            {"mode", "fixed_voltage_mV"},
+            {"mode", "fixed_voltage_mV", "equilibrate_ms"},
             "protocol.initial_state",
         )
         mode = str(initial.get("mode", "observed_first_sample"))
         if mode not in {"observed_first_sample", "fixed"}:
             raise ConfigError(f"Unsupported initial-state mode: {mode}")
+        equilibrate_ms = float(initial.get("equilibrate_ms", 0.0))
+        if equilibrate_ms < 0.0:
+            raise ConfigError("protocol.initial_state.equilibrate_ms must be nonnegative.")
         alignment = str(data.get("alignment", "prefix"))
         if alignment not in {"prefix", "drop_initial"}:
             raise ConfigError(f"Unsupported sample alignment: {alignment}")
@@ -380,6 +384,7 @@ class ProtocolSpec:
             ),
             initial_state_mode=mode,
             fixed_voltage_mV=float(initial.get("fixed_voltage_mV", -71.9879)),
+            equilibrate_ms=equilibrate_ms,
             alignment=alignment,
         )
 

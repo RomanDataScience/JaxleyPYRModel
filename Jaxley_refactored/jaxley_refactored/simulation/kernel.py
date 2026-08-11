@@ -32,16 +32,19 @@ class SimulationKernel:
         self._injection_site = resolve_site(self.cell, self.protocol.injection_site)
         recording = resolve_site(self.cell, self.protocol.recording_site)
         recording.record(self.protocol.recording_site.state, verbose=False)
+        self._checkpoint_lengths = self._checkpoints_for(self.n_steps)
+
+    def _checkpoints_for(self, steps):
         checkpoint = max(
             1,
             int(
                 math.ceil(
-                    self.n_steps
+                    steps
                     ** (1.0 / max(1, self.runtime.checkpoint_levels))
                 )
             ),
         )
-        self._checkpoint_lengths = [checkpoint] * max(
+        return [checkpoint] * max(
             1, self.runtime.checkpoint_levels
         )
 
@@ -57,6 +60,27 @@ class SimulationKernel:
 
     def simulate_one(self, physical_parameters, current_nA, initial_states):
         parameter_state = self.parameterizer.state(physical_parameters)
+        equilibrate_steps = int(
+            math.ceil(self.protocol.equilibrate_ms / self.dt_ms)
+        )
+        if equilibrate_steps:
+            holding_current = jnp.full(
+                (equilibrate_steps,), current_nA[0], dtype=current_nA.dtype
+            )
+            holding_stimuli = self._injection_site.data_stimulate(
+                holding_current, None
+            )
+            _, initial_states = jx.integrate(
+                self.cell,
+                param_state=parameter_state,
+                data_stimuli=holding_stimuli,
+                all_states=initial_states,
+                delta_t=self.dt_ms,
+                solver=self.runtime.solver,
+                voltage_solver=self.runtime.voltage_solver,
+                checkpoint_lengths=self._checkpoints_for(equilibrate_steps),
+                return_states=True,
+            )
         data_stimuli = self._injection_site.data_stimulate(current_nA, None)
         voltage = jx.integrate(
             self.cell,

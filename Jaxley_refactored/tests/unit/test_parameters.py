@@ -83,7 +83,7 @@ def test_kinetic_metadata_and_persistent_sodium_remain_explicit():
 
     persistent_sodium = catalog.get("nap_gnabar")
     assert persistent_sodium.default == 0.0
-    assert persistent_sodium.bounds == (0.0, 0.001)
+    assert persistent_sodium.bounds == (0.0, 0.0003)
     assert persistent_sodium.tags == ("conductance",)
     assert persistent_sodium.targets == (
         "soma.nap_gnabar",
@@ -126,9 +126,9 @@ def test_parameter_bounds_can_be_expanded_without_changing_defaults():
     resistance = catalog.get("RmSoma").with_expanded_bounds(2.0)
     reversal = catalog.get("Epas").with_expanded_bounds(2.0)
 
-    assert conductance.bounds == (0.0, 0.0006)
+    assert conductance.bounds == (0.0, 0.0002)
     assert resistance.bounds == (25_000.0, 600_000.0)
-    np.testing.assert_allclose(reversal.bounds, (-108.0121, -28.0121))
+    np.testing.assert_allclose(reversal.bounds, (-78.0121, -54.0121))
     assert conductance.default == catalog.get("soma_hbar").default
     assert resistance.default == catalog.get("RmSoma").default
     assert reversal.default == catalog.get("Epas").default

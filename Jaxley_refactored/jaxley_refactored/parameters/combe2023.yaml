@@ -2,7 +2,7 @@
 # Edit `initial` and `bounds` here; select fitted subsets in the run config
 # under model.parameters.fit (include_tags/include/exclude).
 parameters:
-  - {name: soma_hbar, initial: 3.0e-05, bounds: [0.0, 3.0e-04]}
+  - {name: soma_hbar, initial: 3.0e-05, bounds: [0.0, 1.0e-04]}
   - {name: KirGbar, initial: 0.00101535, bounds: [0.0, 0.005]}
   - {name: soma_caL, initial: 6.0e-05, bounds: [0.0, 6.0e-04]}
   - {name: soma_car, initial: 3.0e-05, bounds: [0.0, 3.0e-04]}
@@ -29,7 +29,7 @@ parameters:
   - {name: gkv2scale, initial: 0.3, bounds: [0.0, 2.0]}
   - {name: scale_Na_conduct, initial: 14.0, bounds: [1.0, 30.0]}
   - {name: icangbar, initial: 0.045, bounds: [0.0, 0.2]}
-  - {name: nap_gnabar, initial: 0.0, bounds: [0.0, 0.001]}
+  - {name: nap_gnabar, initial: 0.0, bounds: [0.0, 3.0e-04]}
   - {name: RmSoma, initial: 149999.0, bounds: [50000.0, 300000.0]}
   - {name: RaSoma, initial: 42.562, bounds: [20.0, 150.0]}
   - {name: RmTuft, initial: 45373.4, bounds: [10000.0, 150000.0]}
@@ -38,7 +38,7 @@ parameters:
   - {name: DistHalfRa, initial: 90.8296, bounds: [20.0, 300.0]}
   - {name: SlopeRm, initial: 13.8656, bounds: [1.0, 80.0]}
   - {name: SlopeRa, initial: 7.76766, bounds: [1.0, 80.0]}
-  - {name: Epas, initial: -71.9879, bounds: [-90.0, -50.0]}
+  - {name: Epas, initial: -71.9879, bounds: [-75.0, -63.0]}
   - {name: CmSoma, initial: 1.0, bounds: [0.3, 5.0]}
   - {name: SpineFactorBasal, initial: 3.5, bounds: [1.0, 6.0]}
   - {name: SpineFactorTuft, initial: 3.5, bounds: [1.0, 6.0]}
