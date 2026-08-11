@@ -198,7 +198,7 @@ fit:
         label: depolarizing_firing_rate
         # Robust priority objective: quadratic near the target but only linear
         # for the large rate mismatches common during early global search.
-        weight: 10.0
+        weight: 50.0
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0

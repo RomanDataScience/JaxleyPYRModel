@@ -121,7 +121,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     firing_rate = lsu.fit.components[4]
     assert firing_rate.label == "depolarizing_firing_rate"
     assert firing_rate.kind == "soft_firing_rate_pseudo_huber_error"
-    assert firing_rate.weight == 10.0
+    assert firing_rate.weight == 50.0
     assert firing_rate.protocols == ("depolarizing_step",)
     assert firing_rate.window == "stimulus"
     assert firing_rate.threshold_mV == -20.0
@@ -186,7 +186,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
         "hyperpolarizing_trough_depth": 49.2,
         "hyperpolarizing_waveform_mse": 108.0,
         "hyperpolarizing_derivative_mse": 5328.0,
-        "depolarizing_firing_rate": 10.0,
+        "depolarizing_firing_rate": 50.0,
         "depolarizing_block": 70.7,
         "depolarizing_spike_timing_adaptation": 2.53,
         "depolarizing_forbidden_spikes": 1.0,
