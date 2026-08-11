@@ -198,7 +198,7 @@ fit:
         label: depolarizing_firing_rate
         # Keep firing rate influential without letting it dominate the
         # depolarizing waveform, spike-shape, plateau, and recovery terms.
-        weight: 0.5
+        weight: 1.2
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0

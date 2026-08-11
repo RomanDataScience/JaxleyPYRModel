@@ -121,7 +121,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     firing_rate = lsu.fit.components[4]
     assert firing_rate.label == "depolarizing_firing_rate"
     assert firing_rate.kind == "soft_firing_rate_error"
-    assert firing_rate.weight == 0.5
+    assert firing_rate.weight == 1.2
     assert firing_rate.protocols == ("depolarizing_step",)
     assert firing_rate.window == "stimulus"
     assert firing_rate.threshold_mV == -20.0
