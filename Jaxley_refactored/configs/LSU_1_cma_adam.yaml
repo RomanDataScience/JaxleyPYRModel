@@ -108,7 +108,7 @@ dataset:
     ignore_absolute_manifest_output_paths: true
 
   resampling:
-    target_dt_ms: 0.1
+    target_dt_ms: 0.2
     voltage_method: linear
     current_method: zero_order_hold
 
@@ -441,9 +441,9 @@ search:
     algorithm: cma_es
     # Empty means every parameter selected by model.parameters.fit (44 total).
     parameter_names: []
-    population_size: 20
+    population_size: 40
     # Recombine the best 12 candidates: 30% of 40.
-    parent_fraction: 0.50
+    parent_fraction: 0.30
     generations: 100
     sigma0: 0.15
     boundary_policy: resample
