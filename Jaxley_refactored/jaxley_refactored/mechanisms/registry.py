@@ -42,6 +42,16 @@ class MechanismRegistry:
         for channel in tuple(cell.channels) + tuple(cell.pumps):
             if channel._name not in selected:
                 cell.delete(channel)
+        # Jaxley 0.13 recomputes this list from ``base.channels`` only inside
+        # Module.delete(), dropping the current accumulators owned by pumps.
+        # Restore the complete inventory after filtering or initialization
+        # fails when a retained pump (for example Cal4) writes its current.
+        cell.base.membrane_current_names = list(
+            dict.fromkeys(
+                mechanism.current_name
+                for mechanism in tuple(cell.base.channels) + tuple(cell.base.pumps)
+            )
+        )
         return selected
 
 

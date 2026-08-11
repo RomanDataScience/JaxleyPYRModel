@@ -91,9 +91,8 @@ def test_kinetic_metadata_and_persistent_sodium_remain_explicit():
     )
 
 
-def test_supported_configs_select_the_same_44_parameters():
+def test_supported_configs_select_expected_parameters():
     catalog = combe2023_catalog()
-    expected = None
     for path in SUPPORTED_CONFIGS:
         config = load_config(path)
         specs = catalog.select(
@@ -102,11 +101,14 @@ def test_supported_configs_select_the_same_44_parameters():
             exclude=config.model.parameters.exclude,
         )
         names = tuple(spec.name for spec in specs)
-        assert len(names) == 44
+        if path == PROJECT / "configs/LSU_1_cma_adam.yaml":
+            assert len(names) == 43
+            assert "icangbar" not in names
+        else:
+            assert len(names) == 44
+            assert "icangbar" in names
         assert names[-4:] == KINETIC_NAMES
         assert "nap_gnabar" in names
-        expected = names if expected is None else expected
-        assert names == expected
         assert config.search.global_search.parameter_names == ()
 
 

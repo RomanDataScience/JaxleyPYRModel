@@ -27,7 +27,10 @@ model:
 
   mechanisms:
     include: [all_from_preset]
-    exclude: []
+    # Control recordings should have negligible calcium-activated
+    # nonspecific cation current. Remove the mechanism instead of merely
+    # initializing its conductance near zero so optimization cannot restore it.
+    exclude: [icand]
     calcium_diffusion:
       enabled: true
       axial_diffusion: 0.22
@@ -42,10 +45,12 @@ model:
     # 1.0 keeps the catalog bounds unchanged. Values above 1.0 expand them.
     bound_expansion_factor: 1.0
     fit:
-      # Fits all 44 conductance, passive, and kinetic parameters.
+      # Fit all otherwise selected conductance, passive, and kinetic parameters.
+      # icangbar targets the disabled icand mechanism and must not enter the
+      # optimizer vector.
       include_tags: [conductance, passive, kinetics]
       include: []
-      exclude: []
+      exclude: [icangbar]
 
 # ---------------------------------------------------------------------------
 # Stimulation, recording, and initial state
