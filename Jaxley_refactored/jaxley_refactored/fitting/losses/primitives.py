@@ -136,6 +136,17 @@ def _soft_upward_crossings(
     return jnn.relu(above[..., 1:] - above[..., :-1])
 
 
+def _soft_firing_rate(voltage, mask, dt_ms, threshold_mV, temperature_mV):
+    pair_mask = mask[..., 1:] & mask[..., :-1]
+    soft_crossings = _soft_upward_crossings(
+        voltage,
+        threshold_mV=threshold_mV,
+        temperature_mV=temperature_mV,
+    )
+    duration_s = jnp.maximum(jnp.sum(pair_mask, axis=-1) * dt_ms * 1e-3, 1e-9)
+    return jnp.sum(pair_mask * soft_crossings, axis=-1) / duration_s
+
+
 def soft_firing_rate_error(
     predicted,
     observed,
@@ -149,18 +160,38 @@ def soft_firing_rate_error(
 ):
     """Squared error between continuous upward-crossing rate surrogates."""
 
-    def soft_rate(voltage):
-        pair_mask = mask[..., 1:] & mask[..., :-1]
-        soft_crossings = _soft_upward_crossings(
-            voltage,
-            threshold_mV=threshold_mV,
-            temperature_mV=temperature_mV,
-        )
-        duration_s = jnp.maximum(jnp.sum(pair_mask, axis=-1) * dt_ms * 1e-3, 1e-9)
-        return jnp.sum(pair_mask * soft_crossings, axis=-1) / duration_s
-
-    difference_hz = soft_rate(predicted) - soft_rate(observed)
+    predicted_hz = _soft_firing_rate(
+        predicted, mask, dt_ms, threshold_mV, temperature_mV
+    )
+    observed_hz = _soft_firing_rate(
+        observed, mask, dt_ms, threshold_mV, temperature_mV
+    )
+    difference_hz = predicted_hz - observed_hz
     return (difference_hz / scale) ** 2
+
+
+def soft_firing_rate_pseudo_huber_error(
+    predicted,
+    observed,
+    mask,
+    *,
+    dt_ms,
+    scale=5.0,
+    delta=1.0,
+    threshold_mV=-20.0,
+    temperature_mV=2.0,
+    **_,
+):
+    """Robust rate error: quadratic nearby and linear for large Hz mismatch."""
+
+    predicted_hz = _soft_firing_rate(
+        predicted, mask, dt_ms, threshold_mV, temperature_mV
+    )
+    observed_hz = _soft_firing_rate(
+        observed, mask, dt_ms, threshold_mV, temperature_mV
+    )
+    residual = (predicted_hz - observed_hz) / scale
+    return delta**2 * (jnp.sqrt(1.0 + (residual / delta) ** 2) - 1.0)
 
 
 def soft_depolarization_block_error(

@@ -44,6 +44,10 @@ def default_loss_registry() -> LossRegistry:
     )
     registry.register("soft_firing_rate_error", primitives.soft_firing_rate_error)
     registry.register(
+        "soft_firing_rate_pseudo_huber_error",
+        primitives.soft_firing_rate_pseudo_huber_error,
+    )
+    registry.register(
         "soft_depolarization_block_error",
         primitives.soft_depolarization_block_error,
     )

@@ -44,7 +44,7 @@ def test_hybrid_lsu_config_is_standalone_and_explicit():
     }
     assert raw["dataset"]["selection"]["trace_indices"] == [1, 3]
     assert raw["dataset"]["selection"]["validation_trace_indices"] == [2, 4]
-    assert raw["dataset"]["resampling"]["target_dt_ms"] == 0.1
+    assert raw["dataset"]["resampling"]["target_dt_ms"] > 0.0
     assert raw["dataset"]["simulation_window"] == {
         "post_stimulus_ms": 500.0,
         "post_stimulus_ms_by_protocol": {

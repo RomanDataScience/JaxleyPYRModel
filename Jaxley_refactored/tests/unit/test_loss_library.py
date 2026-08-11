@@ -120,13 +120,14 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     assert derivative.scale == 1.0
     firing_rate = lsu.fit.components[4]
     assert firing_rate.label == "depolarizing_firing_rate"
-    assert firing_rate.kind == "soft_firing_rate_error"
-    assert firing_rate.weight == 12.8
+    assert firing_rate.kind == "soft_firing_rate_pseudo_huber_error"
+    assert firing_rate.weight == 10.0
     assert firing_rate.protocols == ("depolarizing_step",)
     assert firing_rate.window == "stimulus"
     assert firing_rate.threshold_mV == -20.0
     assert firing_rate.temperature_mV == 2.0
-    assert firing_rate.scale == 1.0
+    assert firing_rate.scale == 5.0
+    assert firing_rate.delta == 1.0
     components = {item.label: item for item in lsu.fit.components}
     block = components["depolarizing_block"]
     assert block.kind == "soft_depolarization_block_error"
@@ -185,7 +186,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
         "hyperpolarizing_trough_depth": 49.2,
         "hyperpolarizing_waveform_mse": 108.0,
         "hyperpolarizing_derivative_mse": 5328.0,
-        "depolarizing_firing_rate": 12.8,
+        "depolarizing_firing_rate": 10.0,
         "depolarizing_block": 70.7,
         "depolarizing_spike_timing_adaptation": 2.53,
         "depolarizing_forbidden_spikes": 1.0,
@@ -207,7 +208,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     assert all(
         item.scale == 1.0
         for item in lsu.fit.components
-        if item.label != "depolarizing_block"
+        if item.label not in {"depolarizing_block", "depolarizing_firing_rate"}
     )
     early_late = components["depolarizing_early_late_voltage_difference"]
     assert early_late.kind == "mean_window_difference_error"
@@ -328,6 +329,7 @@ def test_registered_waveform_losses_are_finite_and_differentiable():
         "steady_state_error",
         "mean_window_difference_error",
         "soft_firing_rate_error",
+        "soft_firing_rate_pseudo_huber_error",
         "soft_depolarization_block_error",
         "soft_spike_train_mse",
         "soft_forbidden_spike_count_error",
@@ -611,6 +613,32 @@ def test_soft_firing_rate_error_prefers_matching_spike_count():
     missing_loss = term(missing_spike, observed, mask, **kwargs)
 
     assert float(matching_loss[0]) < float(missing_loss[0])
+
+
+def test_robust_firing_rate_loss_limits_large_mismatch_growth():
+    registry = default_loss_registry()
+    squared = registry.get("soft_firing_rate_error")
+    robust = registry.get("soft_firing_rate_pseudo_huber_error")
+    observed = jnp.asarray(
+        [[-65.0, 20.0, -65.0, 20.0, -65.0, 20.0, -65.0]]
+    )
+    missing = jnp.full_like(observed, -65.0)
+    mask = jnp.ones_like(observed, dtype=bool)
+    kwargs = {
+        "dt_ms": 1.0,
+        "scale": 5.0,
+        "delta": 1.0,
+        "threshold_mV": -20.0,
+        "temperature_mV": 2.0,
+    }
+
+    matching = robust(observed, observed, mask, **kwargs)
+    squared_mismatch = squared(missing, observed, mask, **kwargs)
+    robust_mismatch = robust(missing, observed, mask, **kwargs)
+
+    np.testing.assert_allclose(matching, 0.0, atol=1e-8)
+    assert float(robust_mismatch[0]) > 0.0
+    assert float(robust_mismatch[0]) < float(squared_mismatch[0])
 
 
 def test_depolarization_block_error_rejects_sustained_plateau():

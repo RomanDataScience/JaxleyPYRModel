@@ -194,16 +194,17 @@ fit:
         scale_mV_per_ms: 1.0
 
       # --- Depolarizing spike count and timing ----------------------------
-      - kind: soft_firing_rate_error
+      - kind: soft_firing_rate_pseudo_huber_error
         label: depolarizing_firing_rate
-        # Priority objective: calibrated to contribute about 10x an ordinary
-        # component on the reference best candidate.
-        weight: 12.8
+        # Robust priority objective: quadratic near the target but only linear
+        # for the large rate mismatches common during early global search.
+        weight: 10.0
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
         temperature_mV: 2.0
-        scale_hz: 1.0
+        scale_hz: 5.0
+        delta: 1.0
 
       - kind: soft_depolarization_block_error
         label: depolarizing_block
