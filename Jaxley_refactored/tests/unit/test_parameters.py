@@ -72,7 +72,7 @@ def test_kinetic_metadata_and_persistent_sodium_remain_explicit():
         "kd_deactivation_tau_scale": (0.25, 4.0),
         "nat_fast_inactivation_tau_scale": (0.5, 2.0),
         "nat_slow_recovery_tau_scale": (0.5, 2.0),
-        "h_tau_scale": (0.5, 2.0),
+        "h_tau_scale": (0.5, 1.3),
     }
     for name, bounds in expected_bounds.items():
         spec = catalog.get(name)

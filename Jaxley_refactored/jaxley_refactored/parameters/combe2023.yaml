@@ -45,4 +45,4 @@ parameters:
   - {name: kd_deactivation_tau_scale, initial: 1.0, bounds: [0.25, 4.0]}
   - {name: nat_fast_inactivation_tau_scale, initial: 1.0, bounds: [0.5, 2.0]}
   - {name: nat_slow_recovery_tau_scale, initial: 1.0, bounds: [0.5, 2.0]}
-  - {name: h_tau_scale, initial: 1.0, bounds: [0.5, 2.0]}
+  - {name: h_tau_scale, initial: 1.0, bounds: [0.5, 1.3]}
