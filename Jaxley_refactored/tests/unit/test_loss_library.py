@@ -91,7 +91,12 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
         "hyperpolarizing_pulse",
     )
     assert len(lsu.fit.components) == 21
-    component = lsu.fit.components[0]
+    resting = lsu.fit.components[0]
+    assert resting.label == "resting_baseline_voltage"
+    assert resting.kind == "resting_voltage_error"
+    assert resting.weight == 5.0
+    assert resting.window == "baseline"
+    component = lsu.fit.components[1]
     assert component.label == "hyperpolarizing_trough_depth"
     assert component.kind == "soft_trough_depth_error"
     assert component.weight == 2.0
@@ -99,21 +104,21 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     assert component.window == "stimulus"
     assert component.scale == 1.0
     assert component.temperature_mV == 0.5
-    waveform = lsu.fit.components[1]
+    waveform = lsu.fit.components[2]
     assert waveform.label == "hyperpolarizing_waveform_mse"
     assert waveform.kind == "voltage_mse"
     assert waveform.weight == 1.0
     assert waveform.protocols == ("hyperpolarizing_pulse",)
     assert waveform.window == "score"
     assert waveform.scale == 1.0
-    derivative = lsu.fit.components[2]
+    derivative = lsu.fit.components[3]
     assert derivative.label == "hyperpolarizing_derivative_mse"
     assert derivative.kind == "derivative_mse"
     assert derivative.weight == 1.0
     assert derivative.protocols == ("hyperpolarizing_pulse",)
     assert derivative.window == "score"
     assert derivative.scale == 1.0
-    firing_rate = lsu.fit.components[3]
+    firing_rate = lsu.fit.components[4]
     assert firing_rate.label == "depolarizing_firing_rate"
     assert firing_rate.kind == "soft_firing_rate_error"
     assert firing_rate.weight == 0.5
@@ -179,11 +184,17 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
         for item in lsu.fit.components
         if item.label
         not in {
+            "resting_baseline_voltage",
             "hyperpolarizing_trough_depth",
+            "depolarizing_firing_rate",
             "depolarizing_minus50_minus40_voltage_mse",
         }
     )
-    assert all(item.scale == 1.0 for item in lsu.fit.components)
+    assert all(
+        item.scale == 1.0
+        for item in lsu.fit.components
+        if item.label != "depolarizing_block"
+    )
     early_late = components["depolarizing_early_late_voltage_difference"]
     assert early_late.kind == "mean_window_difference_error"
     assert early_late.protocols == ("depolarizing_step",)
