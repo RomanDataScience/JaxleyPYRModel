@@ -15,6 +15,7 @@ from .checkpoints import CheckpointManager
 from .global_search import CMAES
 from .global_search.checkpoints import CMACheckpoint
 from .initialization import initial_normalized_values
+from .metrics import spike_feature_metrics
 from .trainer import Trainer
 
 
@@ -104,11 +105,15 @@ def run_hybrid(
             error_message = None
             component_losses = {}
             penalty_metrics = {}
+            feature_metrics = {}
             try:
                 result = evaluator.evaluate(full, gradient=False)
                 loss = float(result[0])
                 component_losses = result[4]
                 penalty_metrics = result[6]
+                feature_metrics = spike_feature_metrics(
+                    training_buckets, result[3]
+                )
                 if not np.isfinite(loss):
                     raise FloatingPointError("nonfinite objective")
                 if generation_best is None or loss < generation_best[0]:
@@ -125,6 +130,7 @@ def run_hybrid(
                 "training_loss": loss,
                 "component_losses": component_losses,
                 "penalty_metrics": penalty_metrics,
+                "feature_metrics": feature_metrics,
                 "status": status,
                 "error": error_message,
                 "normalized": full.tolist(),
@@ -243,9 +249,15 @@ def run_hybrid(
                 "candidate_id": candidate_id,
                 "training_loss": float(training_loss),
                 "training_penalty_metrics": training_evaluation[6],
+                "training_feature_metrics": spike_feature_metrics(
+                    training_buckets, training_evaluation[3]
+                ),
                 "validation_loss": float(evaluation[0]),
                 "validation_component_losses": evaluation[4],
                 "validation_penalty_metrics": evaluation[6],
+                "validation_feature_metrics": spike_feature_metrics(
+                    validation_buckets, evaluation[3]
+                ),
                 "validation_rmse_mV": float(evaluation[5]) ** 0.5,
                 "normalized": normalized.tolist(),
             }

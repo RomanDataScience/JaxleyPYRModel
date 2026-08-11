@@ -198,7 +198,7 @@ fit:
         label: depolarizing_firing_rate
         # Robust priority objective: quadratic near the target but only linear
         # for the large rate mismatches common during early global search.
-        weight: 50.0
+        weight: 250.0
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -345,7 +345,9 @@ fit:
 
       - kind: mean_window_difference_error
         label: depolarizing_terminal_baseline_difference
-        weight: 2706.0
+        # Keep terminal recovery relevant without letting normalization of a
+        # tiny reference error overwhelm firing and interspike priorities.
+        weight: 200.0
         protocols: [depolarizing_step]
         window: full_trace
         first_window_start_ms: 100.0
