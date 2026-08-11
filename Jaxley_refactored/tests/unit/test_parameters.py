@@ -90,6 +90,8 @@ def test_kinetic_metadata_and_persistent_sodium_remain_explicit():
         "basal.nap_gnabar",
     )
 
+    assert catalog.get("soma_kca").bounds == (0.0, 0.005)
+
 
 def test_supported_configs_select_expected_parameters():
     catalog = combe2023_catalog()

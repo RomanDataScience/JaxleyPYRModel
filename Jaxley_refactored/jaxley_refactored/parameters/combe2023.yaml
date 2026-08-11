@@ -11,7 +11,7 @@ parameters:
   - {name: soma_caT, initial: 3.0e-04, bounds: [0.0, 0.003]}
   - {name: soma_km, initial: 0.0, bounds: [0.0, 0.01]}
   - {name: mykca_init, initial: 0.0, bounds: [0.0, 0.01]}
-  - {name: soma_kca, initial: 0.0, bounds: [0.0, 0.01]}
+  - {name: soma_kca, initial: 0.0, bounds: [0.0, 0.005]}
   - {name: AXNa, initial: 3.5, bounds: [0.1, 10.0]}
   - {name: gkdrsoma, initial: 0.0, bounds: [0.0, 0.02]}
   - {name: gkdrdend, initial: 0.0, bounds: [0.0, 0.02]}
