@@ -337,7 +337,9 @@ class Trainer:
             bucket_predictions[prepared.bucket.key] = np.asarray(predicted)
             evaluation_mse += float(bucket_evaluation_mse)
             for label, value in components.items():
-                component_losses[label] += float(value) * multiplier_value
+                # Report interpretable raw contributions. The global penalty
+                # and final penalized loss are reported separately below.
+                component_losses[label] += float(value)
 
         penalty_metrics = {
             "base_loss": float(base_loss),

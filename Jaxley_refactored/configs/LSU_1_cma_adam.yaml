@@ -143,7 +143,8 @@ fit:
       - kind: soft_spike_count_mismatch_multiplier
         label: depolarizing_spike_count_mismatch
         factor_per_spike: 5.0
-        maximum_multiplier: 1.0e6
+        # Keep this influential without turning ordinary losses into millions.
+        maximum_multiplier: 25.0
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -176,14 +177,14 @@ fit:
       # count and timing provide gradients when action potentials are displaced.
       - kind: resting_voltage_error
         label: resting_baseline_voltage
-        weight: 2.0
+        weight: 0.2
         protocols: [depolarizing_step, hyperpolarizing_pulse]
         window: baseline
         scale_mV: 2.0
 
       - kind: pseudo_huber
         label: hyperpolarizing_trace_waveform
-        weight: 1.0
+        weight: 0.1
         protocols: [hyperpolarizing_pulse]
         window: full_trace
         scale_mV: 5.0
@@ -191,7 +192,7 @@ fit:
 
       - kind: pseudo_huber
         label: depolarizing_trace_waveform
-        weight: 1.0
+        weight: 0.1
         protocols: [depolarizing_step]
         window: full_trace
         scale_mV: 5.0
@@ -199,7 +200,7 @@ fit:
 
       - kind: soft_firing_rate_pseudo_huber_error
         label: depolarizing_firing_rate
-        weight: 10.0
+        weight: 1.0
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -207,9 +208,20 @@ fit:
         scale_hz: 2.0
         delta: 1.0
 
+      # Match the sustained depolarized voltage between action potentials.
+      # The experimental voltage defines the subthreshold samples, preventing
+      # spike peaks from being mistaken for a good plateau.
+      - kind: subthreshold_mean_error
+        label: depolarizing_plateau_voltage
+        weight: 0.5
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        scale_mV: 2.0
+
       - kind: soft_spike_train_mse
         label: depolarizing_spike_timing
-        weight: 2.0
+        weight: 0.2
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0

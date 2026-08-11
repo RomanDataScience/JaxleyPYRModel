@@ -52,6 +52,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
             "hyperpolarizing_trace_waveform",
             "depolarizing_trace_waveform",
             "depolarizing_firing_rate",
+            "depolarizing_plateau_voltage",
             "depolarizing_spike_timing",
         ),
     }
@@ -68,6 +69,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     mismatch = penalties["depolarizing_spike_count_mismatch"]
     assert mismatch.kind == "soft_spike_count_mismatch_multiplier"
     assert mismatch.factor_per_spike == 5.0
+    assert mismatch.maximum_multiplier == 25.0
     assert mismatch.tolerance_spikes == 2.0
     assert mismatch.window == "stimulus"
     assert penalties["depolarizing_outside_step_spikes"].factor_per_spike == 10.0
@@ -77,11 +79,12 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
 
     components = {item.label: item for item in lsu.fit.components}
     assert {label: item.weight for label, item in components.items()} == {
-        "resting_baseline_voltage": 2.0,
-        "hyperpolarizing_trace_waveform": 1.0,
-        "depolarizing_trace_waveform": 1.0,
-        "depolarizing_firing_rate": 10.0,
-        "depolarizing_spike_timing": 2.0,
+        "resting_baseline_voltage": 0.2,
+        "hyperpolarizing_trace_waveform": 0.1,
+        "depolarizing_trace_waveform": 0.1,
+        "depolarizing_firing_rate": 1.0,
+        "depolarizing_plateau_voltage": 0.5,
+        "depolarizing_spike_timing": 0.2,
     }
     assert components["resting_baseline_voltage"].scale == 2.0
     assert components["hyperpolarizing_trace_waveform"].kind == "pseudo_huber"
@@ -92,6 +95,11 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     assert firing.kind == "soft_firing_rate_pseudo_huber_error"
     assert firing.scale == 2.0
     assert firing.delta == 1.0
+    plateau = components["depolarizing_plateau_voltage"]
+    assert plateau.kind == "subthreshold_mean_error"
+    assert plateau.window == "stimulus"
+    assert plateau.threshold_mV == -20.0
+    assert plateau.scale == 2.0
     timing = components["depolarizing_spike_timing"]
     assert timing.kind == "soft_spike_train_mse"
     assert timing.kernel_tau_ms == 10.0
@@ -1451,7 +1459,7 @@ def test_trainer_applies_one_global_multiplier_across_shape_buckets():
     assert np.isclose(sum(evaluation[2].values()), float(total_loss))
     assert np.isclose(
         evaluation[4]["base"],
-        evaluation[6]["base_loss"] * evaluation[6]["loss_multiplier"],
+        evaluation[6]["base_loss"],
     )
 
 
