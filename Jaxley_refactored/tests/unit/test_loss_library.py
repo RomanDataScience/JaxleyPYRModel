@@ -28,6 +28,7 @@ from jaxley_refactored.fitting.losses import (
     soft_mean_spike_peak_voltage_error,
     soft_spike_width_slope_error,
     soft_spike_train_mse,
+    soft_spike_count_mismatch_excess,
     soft_trough_depth_error,
     soft_upward_crossing_count,
 )
@@ -78,14 +79,19 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
 
     lsu = load_config(FULL_CONFIG)
     assert not lsu.fit.renormalize_protocol_filtered_components
-    assert len(lsu.fit.penalties) == 2
+    assert len(lsu.fit.penalties) == 3
     penalties = {penalty.label: penalty for penalty in lsu.fit.penalties}
-    assert penalties["depolarizing_outside_step_spikes"].factor_per_spike == 1.1
+    mismatch = penalties["depolarizing_spike_count_mismatch"]
+    assert mismatch.kind == "soft_spike_count_mismatch_multiplier"
+    assert mismatch.factor_per_spike == 5.0
+    assert mismatch.tolerance_spikes == 2.0
+    assert mismatch.window == "stimulus"
+    assert penalties["depolarizing_outside_step_spikes"].factor_per_spike == 10.0
     assert penalties["depolarizing_outside_step_spikes"].window == "outside_stimulus"
     assert penalties["depolarizing_outside_step_spikes"].protocols == (
         "depolarizing_step",
     )
-    assert penalties["hyperpolarizing_any_spikes"].factor_per_spike == 1.1
+    assert penalties["hyperpolarizing_any_spikes"].factor_per_spike == 10.0
     assert penalties["hyperpolarizing_any_spikes"].window == "full_trace"
     assert penalties["hyperpolarizing_any_spikes"].protocols == (
         "hyperpolarizing_pulse",
@@ -1413,6 +1419,49 @@ def test_outside_spike_multiplier_has_a_finite_numerical_ceiling():
     assert np.isfinite(float(value))
     assert float(multiplier) <= 1e6 * (1.0 + 1e-6)
     assert float(slopes["outside"]) == 0.0
+
+
+def test_spike_count_mismatch_multiplier_allows_two_spikes():
+    low, high = -80.0, 20.0
+    observed = jnp.asarray([[low] * 9])
+    mask = jnp.ones_like(observed, dtype=bool)
+
+    def trace_with_spikes(count):
+        values = [low]
+        for _ in range(count):
+            values.extend((high, low))
+        values.extend([low] * (9 - len(values)))
+        return jnp.asarray([values])
+
+    kwargs = {
+        "tolerance_spikes": 2.0,
+        "threshold_mV": -20.0,
+        "temperature_mV": 0.1,
+    }
+    two_excess = soft_spike_count_mismatch_excess(
+        trace_with_spikes(2), observed, mask, **kwargs
+    )[0]
+    three_excess = soft_spike_count_mismatch_excess(
+        trace_with_spikes(3), observed, mask, **kwargs
+    )[0]
+    four_excess = soft_spike_count_mismatch_excess(
+        trace_with_spikes(4), observed, mask, **kwargs
+    )[0]
+
+    assert np.isclose(float(two_excess), 0.0, atol=1e-6)
+    assert np.isclose(float(three_excess), 1.0, atol=1e-6)
+    assert np.isclose(float(four_excess), 2.0, atol=1e-6)
+
+    penalty = LossPenaltySpec(
+        kind="soft_spike_count_mismatch_multiplier",
+        label="mismatch",
+        factor_per_spike=5.0,
+        tolerance_spikes=2.0,
+    )
+    _, multiplier, _ = apply_multiplicative_penalties(
+        jnp.asarray(1.0), {"mismatch": three_excess}, (penalty,)
+    )
+    assert np.isclose(float(multiplier), 5.0, rtol=1e-6)
 
 
 def test_global_penalty_chain_coefficients_match_direct_gradient():

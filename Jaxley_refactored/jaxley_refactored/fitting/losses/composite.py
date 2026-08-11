@@ -454,17 +454,27 @@ class BucketObjective:
             total = total + contribution
         return total, contributions
 
-    def penalty_counts(self, predicted):
-        """Return raw soft spike counts for this bucket, without trace weights."""
+    def penalty_counts(self, predicted, observed):
+        """Return differentiable penalty exponents without trace weights."""
 
         counts = {}
         for penalty in self.penalties:
-            per_trace = primitives.soft_upward_crossing_count(
-                predicted,
-                penalty.event_mask,
-                threshold_mV=penalty.spec.threshold_mV,
-                temperature_mV=penalty.spec.temperature_mV,
-            )
+            if penalty.spec.kind == "soft_spike_count_mismatch_multiplier":
+                per_trace = primitives.soft_spike_count_mismatch_excess(
+                    predicted,
+                    observed,
+                    penalty.event_mask,
+                    tolerance_spikes=penalty.spec.tolerance_spikes,
+                    threshold_mV=penalty.spec.threshold_mV,
+                    temperature_mV=penalty.spec.temperature_mV,
+                )
+            else:
+                per_trace = primitives.soft_upward_crossing_count(
+                    predicted,
+                    penalty.event_mask,
+                    threshold_mV=penalty.spec.threshold_mV,
+                    temperature_mV=penalty.spec.temperature_mV,
+                )
             counts[penalty.spec.label] = jnp.sum(
                 penalty.protocol_selector * per_trace
             )

@@ -19,6 +19,7 @@ def spike_feature_metrics(
 
     traces = []
     rate_errors = []
+    total_forbidden_spikes = 0
     for bucket in buckets:
         predicted = np.asarray(predictions[bucket.key])
         stimulus_masks = np.asarray(bucket.window_masks["stimulus"], dtype=bool)
@@ -29,14 +30,25 @@ def spike_feature_metrics(
             simulated = predicted[row, :size]
             pair_mask = mask[:-1] & mask[1:]
 
-            def count(voltage):
+            def count(voltage, crossing_mask):
                 crossings = (voltage[:-1] < threshold_mV) & (
                     voltage[1:] >= threshold_mV
                 )
-                return int(np.sum(pair_mask & crossings))
+                return int(np.sum(crossing_mask & crossings))
 
-            observed_count = count(observed)
-            simulated_count = count(simulated)
+            observed_count = count(observed, pair_mask)
+            simulated_count = count(simulated, pair_mask)
+            if record.protocol == "depolarizing_step":
+                forbidden_mask = np.asarray(
+                    bucket.window_masks["outside_stimulus"][row, :size],
+                    dtype=bool,
+                )[1:]
+            elif record.protocol == "hyperpolarizing_pulse":
+                forbidden_mask = np.ones(size - 1, dtype=bool)
+            else:
+                forbidden_mask = np.zeros(size - 1, dtype=bool)
+            forbidden_count = count(simulated, forbidden_mask)
+            total_forbidden_spikes += forbidden_count
             duration_s = max(float(np.sum(pair_mask) * record.dt_ms * 1e-3), 1e-9)
             observed_rate = observed_count / duration_s
             simulated_rate = simulated_count / duration_s
@@ -52,6 +64,7 @@ def spike_feature_metrics(
                     "experimental_rate_hz": observed_rate,
                     "simulated_rate_hz": simulated_rate,
                     "rate_error_hz": error,
+                    "forbidden_spike_count": forbidden_count,
                 }
             )
     errors = np.asarray(rate_errors, dtype=float)
@@ -65,5 +78,9 @@ def spike_feature_metrics(
                 float(np.mean(np.abs(errors))) if len(errors) else 0.0
             ),
             "traces": traces,
-        }
+        },
+        "constraints": {
+            "eligible": total_forbidden_spikes == 0,
+            "forbidden_spike_count": total_forbidden_spikes,
+        },
     }

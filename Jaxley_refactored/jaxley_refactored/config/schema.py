@@ -716,7 +716,10 @@ _LOSS_WINDOWS = {
     "recovery",
     "stimulus_end",
 }
-_LOSS_PENALTY_KINDS = {"soft_outside_stimulus_spike_multiplier"}
+_LOSS_PENALTY_KINDS = {
+    "soft_outside_stimulus_spike_multiplier",
+    "soft_spike_count_mismatch_multiplier",
+}
 
 
 @dataclass(frozen=True)
@@ -898,6 +901,7 @@ class LossPenaltySpec:
     window: str = "outside_stimulus"
     threshold_mV: float = -20.0
     temperature_mV: float = 2.0
+    tolerance_spikes: float = 0.0
     label: str = ""
 
     @classmethod
@@ -914,6 +918,7 @@ class LossPenaltySpec:
                 "window",
                 "threshold_mV",
                 "temperature_mV",
+                "tolerance_spikes",
                 "label",
             },
             where,
@@ -937,6 +942,11 @@ class LossPenaltySpec:
         window = str(data.get("window", "outside_stimulus"))
         if window not in _LOSS_WINDOWS:
             raise ConfigError(f"Unsupported loss penalty window: {window}")
+        tolerance = float(data.get("tolerance_spikes", 0.0))
+        if not math.isfinite(tolerance) or tolerance < 0.0:
+            raise ConfigError(
+                f"{where}.tolerance_spikes must be finite and nonnegative."
+            )
         return cls(
             kind=kind,
             factor_per_spike=factor,
@@ -947,6 +957,7 @@ class LossPenaltySpec:
             temperature_mV=_positive(
                 data.get("temperature_mV", 2.0), f"{where}.temperature_mV"
             ),
+            tolerance_spikes=tolerance,
             label=str(data.get("label", kind)),
         )
 

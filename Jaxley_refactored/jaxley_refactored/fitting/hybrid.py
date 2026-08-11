@@ -19,6 +19,10 @@ from .metrics import spike_feature_metrics
 from .trainer import Trainer
 
 
+def _spike_constraints_satisfied(feature_metrics: dict) -> bool:
+    return bool(feature_metrics.get("constraints", {}).get("eligible", False))
+
+
 def _append_jsonl(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -89,9 +93,17 @@ def run_hybrid(
             for line in handle:
                 row = json.loads(line)
                 if row.get("status") == "ok":
-                    candidates.append(
-                        (float(row["training_loss"]), np.asarray(row["normalized"]), row["candidate_id"])
-                    )
+                    normalized = np.asarray(row["normalized"])
+                    features = row.get("feature_metrics", {})
+                    if "constraints" not in features:
+                        previous = evaluator.evaluate(normalized, gradient=False)
+                        features = spike_feature_metrics(
+                            training_buckets, previous[3]
+                        )
+                    if _spike_constraints_satisfied(features):
+                        candidates.append(
+                            (float(row["training_loss"]), normalized, row["candidate_id"])
+                        )
 
     for generation in range(cma.state.generation, search.global_search.generations):
         population = cma.ask()
@@ -116,7 +128,11 @@ def run_hybrid(
                 )
                 if not np.isfinite(loss):
                     raise FloatingPointError("nonfinite objective")
-                if generation_best is None or loss < generation_best[0]:
+                if not _spike_constraints_satisfied(feature_metrics):
+                    loss = search.global_search.invalid_loss
+                    status = "constraint:forbidden_spikes"
+                    error_message = "Spike outside depolarizing step or in hyperpolarizing trace."
+                elif generation_best is None or loss < generation_best[0]:
                     generation_best = (loss, result[3])
             except Exception as error:
                 loss = search.global_search.invalid_loss
@@ -214,7 +230,12 @@ def run_hybrid(
         if result.stopped_by_signal:
             raise InterruptedError("Hybrid search interrupted during Adam exploration.")
         best = np.asarray(local_trainer.space.normalize(result.best_parameters))
-        explored.append((result.best_loss, best, candidate_id))
+        best_evaluation = evaluator.evaluate(best, gradient=False)
+        best_features = spike_feature_metrics(training_buckets, best_evaluation[3])
+        if _spike_constraints_satisfied(best_features):
+            explored.append((result.best_loss, best, candidate_id))
+    if not explored:
+        raise RuntimeError("No locally explored candidate satisfied spike constraints.")
     explored.sort(key=lambda item: item[0])
     explored = explored[: search.keep_after_exploration]
 
@@ -235,7 +256,12 @@ def run_hybrid(
         if result.stopped_by_signal:
             raise InterruptedError("Hybrid search interrupted during Adam refinement.")
         best = np.asarray(local_trainer.space.normalize(result.best_parameters))
-        refined.append((result.best_loss, best, candidate_id))
+        best_evaluation = evaluator.evaluate(best, gradient=False)
+        best_features = spike_feature_metrics(training_buckets, best_evaluation[3])
+        if _spike_constraints_satisfied(best_features):
+            refined.append((result.best_loss, best, candidate_id))
+    if not refined:
+        raise RuntimeError("No refined candidate satisfied spike constraints.")
 
     validation_evaluator = Trainer(
         model, validation_buckets, config.protocol, config.fit, config.runtime, None
@@ -244,20 +270,27 @@ def run_hybrid(
     for training_loss, normalized, candidate_id in refined:
         training_evaluation = evaluator.evaluate(normalized, gradient=False)
         evaluation = validation_evaluator.evaluate(normalized, gradient=False)
+        training_features = spike_feature_metrics(
+            training_buckets, training_evaluation[3]
+        )
+        validation_features = spike_feature_metrics(
+            validation_buckets, evaluation[3]
+        )
+        if not (
+            _spike_constraints_satisfied(training_features)
+            and _spike_constraints_satisfied(validation_features)
+        ):
+            continue
         comparison.append(
             {
                 "candidate_id": candidate_id,
                 "training_loss": float(training_loss),
                 "training_penalty_metrics": training_evaluation[6],
-                "training_feature_metrics": spike_feature_metrics(
-                    training_buckets, training_evaluation[3]
-                ),
+                "training_feature_metrics": training_features,
                 "validation_loss": float(evaluation[0]),
                 "validation_component_losses": evaluation[4],
                 "validation_penalty_metrics": evaluation[6],
-                "validation_feature_metrics": spike_feature_metrics(
-                    validation_buckets, evaluation[3]
-                ),
+                "validation_feature_metrics": validation_features,
                 "validation_rmse_mV": float(evaluation[5]) ** 0.5,
                 "normalized": normalized.tolist(),
             }
@@ -284,6 +317,11 @@ def run_hybrid(
                 experimental_alpha=0.6,
                 filename="validation.png",
             )
+    if not comparison:
+        raise RuntimeError(
+            "No final candidate satisfied spike constraints on both training "
+            "and validation traces."
+        )
     comparison.sort(key=lambda item: item["validation_loss"])
     selected = comparison[0]
     space = ProjectedBoxSpace.from_specs(specs)

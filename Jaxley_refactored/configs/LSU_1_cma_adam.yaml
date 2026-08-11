@@ -138,11 +138,23 @@ fit:
     renormalize_protocol_filtered_components: false
 
     penalties:
+      # Ignore mismatches through two spikes, then strongly multiply the full
+      # objective: three spikes off -> ~5x, four spikes off -> ~25x, per trace.
+      - kind: soft_spike_count_mismatch_multiplier
+        label: depolarizing_spike_count_mismatch
+        factor_per_spike: 5.0
+        maximum_multiplier: 1.0e6
+        protocols: [depolarizing_step]
+        window: stimulus
+        threshold_mV: -20.0
+        temperature_mV: 2.0
+        tolerance_spikes: 2.0
+
       # Multiply the total loss by 1.1 for each depolarizing spike outside the
       # current step.
       - kind: soft_outside_stimulus_spike_multiplier
         label: depolarizing_outside_step_spikes
-        factor_per_spike: 1.1
+        factor_per_spike: 10.0
         maximum_multiplier: 1.0e12
         protocols: [depolarizing_step]
         window: outside_stimulus
@@ -152,7 +164,7 @@ fit:
       # Hyperpolarizing traces must remain spike-free for the complete trace.
       - kind: soft_outside_stimulus_spike_multiplier
         label: hyperpolarizing_any_spikes
-        factor_per_spike: 1.1
+        factor_per_spike: 10.0
         maximum_multiplier: 1.0e12
         protocols: [hyperpolarizing_pulse]
         window: full_trace

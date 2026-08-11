@@ -332,6 +332,33 @@ def soft_upward_crossing_count(
     return jnp.sum(destinations * soft_crossings, axis=-1)
 
 
+def soft_spike_count_mismatch_excess(
+    predicted,
+    observed,
+    event_destination_mask,
+    *,
+    tolerance_spikes=0.0,
+    threshold_mV=-20.0,
+    temperature_mV=2.0,
+):
+    """Return spike-count mismatch exceeding an inclusive tolerance."""
+
+    count_kwargs = {
+        "threshold_mV": threshold_mV,
+        "temperature_mV": temperature_mV,
+    }
+    predicted_count = soft_upward_crossing_count(
+        predicted, event_destination_mask, **count_kwargs
+    )
+    observed_count = soft_upward_crossing_count(
+        observed, event_destination_mask, **count_kwargs
+    )
+    return jnp.maximum(
+        jnp.abs(predicted_count - observed_count) - tolerance_spikes,
+        0.0,
+    )
+
+
 def soft_forbidden_spike_count_error(
     predicted,
     observed,

@@ -161,7 +161,7 @@ class Trainer:
             evaluation_mse = weighted_bucket_loss(
                 predicted, observed, score_masks, trace_weights
             )
-            penalty_counts = objective.penalty_counts(predicted)
+            penalty_counts = objective.penalty_counts(predicted, observed)
             return objective_loss, (
                 predicted,
                 components,
