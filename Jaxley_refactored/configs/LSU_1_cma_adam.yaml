@@ -172,211 +172,50 @@ fit:
         temperature_mV: 2.0
 
     components:
-      # Explicitly constrain the resting equilibrium; otherwise spike-shape
-      # terms dominate and CMA-ES can tolerate a strongly depolarized baseline.
+      # A small, orthogonal objective: reproduce voltage directly, while spike
+      # count and timing provide gradients when action potentials are displaced.
       - kind: resting_voltage_error
         label: resting_baseline_voltage
-        weight: 1.01
+        weight: 2.0
         protocols: [depolarizing_step, hyperpolarizing_pulse]
         window: baseline
-        scale_mV: 1.0
+        scale_mV: 2.0
 
-      # --- Hyperpolarizing response ---------------------------------------
-      - kind: soft_trough_depth_error
-        label: hyperpolarizing_trough_depth
-        # Moderately prioritize matching the experimental valley depth.
-        weight: 49.2
+      - kind: pseudo_huber
+        label: hyperpolarizing_trace_waveform
+        weight: 1.0
         protocols: [hyperpolarizing_pulse]
-        window: stimulus
-        temperature_mV: 0.5
-        scale_mV: 1.0
+        window: full_trace
+        scale_mV: 5.0
+        delta: 1.0
 
-      - kind: voltage_mse
-        label: hyperpolarizing_waveform_mse
-        weight: 108.0
-        protocols: [hyperpolarizing_pulse]
-        window: score
-        scale_mV: 1.0
+      - kind: pseudo_huber
+        label: depolarizing_trace_waveform
+        weight: 1.0
+        protocols: [depolarizing_step]
+        window: full_trace
+        scale_mV: 5.0
+        delta: 1.0
 
-      - kind: derivative_mse
-        label: hyperpolarizing_derivative_mse
-        weight: 5328.0
-        protocols: [hyperpolarizing_pulse]
-        window: score
-        scale_mV_per_ms: 1.0
-
-      # --- Depolarizing spike count and timing ----------------------------
       - kind: soft_firing_rate_pseudo_huber_error
         label: depolarizing_firing_rate
-        # Robust priority objective: quadratic near the target but only linear
-        # for the large rate mismatches common during early global search.
-        weight: 250.0
+        weight: 10.0
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
         temperature_mV: 2.0
-        scale_hz: 5.0
+        scale_hz: 2.0
         delta: 1.0
 
-      - kind: soft_depolarization_block_error
-        label: depolarizing_block
-        weight: 70.7
-        protocols: [depolarizing_step]
-        window: stimulus
-        threshold_mV: -35.0
-        temperature_mV: 5.0
-        # A 10% excess in sustained depolarized occupancy contributes 1.0.
-        scale: 0.1
-
       - kind: soft_spike_train_mse
-        label: depolarizing_spike_timing_adaptation
-        weight: 2.53
+        label: depolarizing_spike_timing
+        weight: 2.0
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
         temperature_mV: 2.0
         kernel_tau_ms: 10.0
         scale: 1.0
-
-      - kind: soft_forbidden_spike_count_error
-        label: depolarizing_forbidden_spikes
-        weight: 1.0
-        protocols: [depolarizing_step]
-        window: outside_stimulus
-        threshold_mV: -20.0
-        temperature_mV: 2.0
-        scale: 1.0
-
-      - kind: soft_forbidden_spike_count_error
-        label: hyperpolarizing_forbidden_spikes
-        weight: 1.0
-        protocols: [hyperpolarizing_pulse]
-        window: full_trace
-        threshold_mV: -20.0
-        temperature_mV: 2.0
-        scale: 1.0
-
-      # --- Interspike plateau and trough geometry -------------------------
-      - kind: soft_interspike_minimum_voltage_error
-        label: depolarizing_interspike_minimum_voltage
-        weight: 7.04
-        protocols: [depolarizing_step]
-        window: stimulus
-        threshold_mV: -20.0
-        temperature_mV: 1.0
-        scale_mV: 1.0
-
-      - kind: soft_interspike_trough_shape_error
-        label: depolarizing_interspike_trough_shape
-        weight: 17227.0
-        protocols: [depolarizing_step]
-        window: stimulus
-        threshold_mV: -20.0
-        temperature_mV: 1.0
-        scale: 1.0
-
-      - kind: pseudo_huber
-        label: depolarizing_spike_waveform
-        weight: 1.03
-        protocols: [depolarizing_step]
-        window: stimulus
-        scale_mV: 1.0
-        delta: 1.0
-
-      # --- Action-potential height and kinetics ---------------------------
-      - kind: soft_mean_spike_peak_voltage_error
-        label: depolarizing_spike_height
-        # Retain peak-voltage guidance without allowing it to dominate firing
-        # rate merely because its unscaled squared error is much larger.
-        weight: 0.00295
-        protocols: [depolarizing_step]
-        window: stimulus
-        threshold_mV: -20.0
-        temperature_mV: 1.0
-        spike_window_half_width_ms: 3.0
-        scale_mV: 1.0
-
-      - kind: soft_spike_width_slope_error
-        label: depolarizing_spike_width_slopes
-        weight: 4.66
-        protocols: [depolarizing_step]
-        window: stimulus
-        threshold_mV: -20.0
-        temperature_mV: 1.0
-        spike_window_half_width_ms: 4.0
-        width_scale_ms: 0.5
-        upstroke_scale_mV_per_ms: 50.0
-        repolarization_scale_mV_per_ms: 20.0
-        slope_temperature_mV_per_ms: 10.0
-        amplitude_gate_mV: 20.0
-        amplitude_gate_temperature_mV: 5.0
-
-      # --- Post-step AHP and slow return to baseline ----------------------
-      - kind: pseudo_huber
-        label: depolarizing_recovery_waveform
-        weight: 4.31
-        protocols: [depolarizing_step]
-        window: recovery
-        scale_mV: 1.0
-        delta: 1.0
-
-      - kind: soft_ahp_depth_error
-        label: depolarizing_ahp_depth
-        weight: 94.5
-        protocols: [depolarizing_step]
-        window: recovery
-        temperature_mV: 1.0
-        scale_mV: 1.0
-
-      - kind: soft_ahp_deficit_error
-        label: depolarizing_ahp_duration
-        weight: 252.0
-        protocols: [depolarizing_step]
-        window: recovery
-        temperature_mV: 1.0
-        scale_mV: 1.0
-
-      - kind: soft_ahp_timing_moment_error
-        label: depolarizing_ahp_recovery_timing
-        weight: 478.0
-        protocols: [depolarizing_step]
-        window: recovery
-        temperature_mV: 1.0
-        scale_mV: 1.0
-
-      - kind: mean_window_difference_error
-        label: depolarizing_early_late_voltage_difference
-        weight: 48.6
-        protocols: [depolarizing_step]
-        window: full_trace
-        first_window_start_ms: 100.0
-        first_window_end_ms: 200.0
-        second_window_start_ms: 600.0
-        second_window_end_ms: 700.0
-        scale_mV: 1.0
-
-      - kind: mean_window_difference_error
-        label: depolarizing_terminal_baseline_difference
-        # Keep terminal recovery relevant without letting normalization of a
-        # tiny reference error overwhelm firing and interspike priorities.
-        weight: 200.0
-        protocols: [depolarizing_step]
-        window: full_trace
-        first_window_start_ms: 100.0
-        first_window_end_ms: 200.0
-        second_window_start_ms: 900.0
-        second_window_end_ms: 1000.0
-        scale_mV: 1.0
-
-      # Pointwise plateau-region comparison using a fixed experimental mask.
-      - kind: experimental_voltage_band_mse
-        label: depolarizing_minus50_minus40_voltage_mse
-        weight: 0.0471
-        protocols: [depolarizing_step]
-        window: stimulus
-        voltage_band_lower_mV: -50.0
-        voltage_band_upper_mV: -40.0
-        scale_mV: 1.0
 
   parameter_transform:
     default: projected_box

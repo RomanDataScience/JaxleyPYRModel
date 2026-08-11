@@ -51,7 +51,7 @@ def test_hybrid_lsu_config_is_standalone_and_explicit():
             "hyperpolarizing_pulse": 100.0,
         },
     }
-    assert len(raw["fit"]["objective"]["components"]) == 21
+    assert len(raw["fit"]["objective"]["components"]) == 5
     assert len(raw["fit"]["objective"]["penalties"]) == 3
     assert raw["fit"]["checkpoint"]["reject_incompatible_hashes"] is True
     assert raw["output"]["provenance"]["include_resolved_config"] is True

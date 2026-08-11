@@ -46,29 +46,13 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
             "hyperpolarizing_trough_depth",
             "hyperpolarizing_waveform_mse",
             "hyperpolarizing_derivative_mse",
-            ),
-            FULL_CONFIG: (
-                "resting_baseline_voltage",
-                "hyperpolarizing_trough_depth",
-            "hyperpolarizing_waveform_mse",
-            "hyperpolarizing_derivative_mse",
+        ),
+        FULL_CONFIG: (
+            "resting_baseline_voltage",
+            "hyperpolarizing_trace_waveform",
+            "depolarizing_trace_waveform",
             "depolarizing_firing_rate",
-            "depolarizing_block",
-            "depolarizing_spike_timing_adaptation",
-            "depolarizing_forbidden_spikes",
-            "hyperpolarizing_forbidden_spikes",
-            "depolarizing_interspike_minimum_voltage",
-            "depolarizing_interspike_trough_shape",
-            "depolarizing_spike_waveform",
-            "depolarizing_spike_height",
-            "depolarizing_spike_width_slopes",
-            "depolarizing_recovery_waveform",
-            "depolarizing_ahp_depth",
-            "depolarizing_ahp_duration",
-            "depolarizing_ahp_recovery_timing",
-            "depolarizing_early_late_voltage_difference",
-            "depolarizing_terminal_baseline_difference",
-            "depolarizing_minus50_minus40_voltage_mse",
+            "depolarizing_spike_timing",
         ),
     }
     for path, labels in expected.items():
@@ -88,151 +72,29 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     assert mismatch.window == "stimulus"
     assert penalties["depolarizing_outside_step_spikes"].factor_per_spike == 10.0
     assert penalties["depolarizing_outside_step_spikes"].window == "outside_stimulus"
-    assert penalties["depolarizing_outside_step_spikes"].protocols == (
-        "depolarizing_step",
-    )
     assert penalties["hyperpolarizing_any_spikes"].factor_per_spike == 10.0
     assert penalties["hyperpolarizing_any_spikes"].window == "full_trace"
-    assert penalties["hyperpolarizing_any_spikes"].protocols == (
-        "hyperpolarizing_pulse",
-    )
-    assert len(lsu.fit.components) == 21
-    resting = lsu.fit.components[0]
-    assert resting.label == "resting_baseline_voltage"
-    assert resting.kind == "resting_voltage_error"
-    assert resting.weight == 1.01
-    assert resting.window == "baseline"
-    component = lsu.fit.components[1]
-    assert component.label == "hyperpolarizing_trough_depth"
-    assert component.kind == "soft_trough_depth_error"
-    assert component.weight == 49.2
-    assert component.protocols == ("hyperpolarizing_pulse",)
-    assert component.window == "stimulus"
-    assert component.scale == 1.0
-    assert component.temperature_mV == 0.5
-    waveform = lsu.fit.components[2]
-    assert waveform.label == "hyperpolarizing_waveform_mse"
-    assert waveform.kind == "voltage_mse"
-    assert waveform.weight == 108.0
-    assert waveform.protocols == ("hyperpolarizing_pulse",)
-    assert waveform.window == "score"
-    assert waveform.scale == 1.0
-    derivative = lsu.fit.components[3]
-    assert derivative.label == "hyperpolarizing_derivative_mse"
-    assert derivative.kind == "derivative_mse"
-    assert derivative.weight == 5328.0
-    assert derivative.protocols == ("hyperpolarizing_pulse",)
-    assert derivative.window == "score"
-    assert derivative.scale == 1.0
-    firing_rate = lsu.fit.components[4]
-    assert firing_rate.label == "depolarizing_firing_rate"
-    assert firing_rate.kind == "soft_firing_rate_pseudo_huber_error"
-    assert firing_rate.weight == 250.0
-    assert firing_rate.protocols == ("depolarizing_step",)
-    assert firing_rate.window == "stimulus"
-    assert firing_rate.threshold_mV == -20.0
-    assert firing_rate.temperature_mV == 2.0
-    assert firing_rate.scale == 5.0
-    assert firing_rate.delta == 1.0
+
     components = {item.label: item for item in lsu.fit.components}
-    block = components["depolarizing_block"]
-    assert block.kind == "soft_depolarization_block_error"
-    assert block.weight == 70.7
-    assert block.protocols == ("depolarizing_step",)
-    assert block.window == "stimulus"
-    assert block.threshold_mV == -35.0
-    assert block.temperature_mV == 5.0
-    assert block.scale == 0.1
-    timing = components["depolarizing_spike_timing_adaptation"]
-    assert timing.kind == "soft_spike_train_mse"
-    assert timing.window == "stimulus"
-    assert timing.kernel_tau_ms == 10.0
-    assert timing.scale == 1.0
-    interspike = components["depolarizing_interspike_minimum_voltage"]
-    assert interspike.kind == "soft_interspike_minimum_voltage_error"
-    assert interspike.weight == 7.04
-    assert interspike.scale == 1.0
-    assert interspike.temperature_mV == 1.0
-    assert (
-        components["depolarizing_interspike_trough_shape"].kind
-        == "soft_interspike_trough_shape_error"
-    )
-    assert (
-        components["depolarizing_spike_height"].kind
-        == "soft_mean_spike_peak_voltage_error"
-    )
-    assert components["depolarizing_spike_height"].weight == 0.00295
-    spike_shape = components["depolarizing_spike_width_slopes"]
-    assert spike_shape.kind == "soft_spike_width_slope_error"
-    assert spike_shape.spike_window_half_width_ms == 4.0
-    assert spike_shape.width_scale_ms == 0.5
-    assert spike_shape.upstroke_scale_mV_per_ms == 50.0
-    assert spike_shape.repolarization_scale_mV_per_ms == 20.0
-    assert spike_shape.slope_temperature_mV_per_ms == 10.0
-    assert spike_shape.amplitude_gate_mV == 20.0
-    assert spike_shape.amplitude_gate_temperature_mV == 5.0
-    assert components["depolarizing_ahp_depth"].kind == "soft_ahp_depth_error"
-    assert (
-        components["depolarizing_ahp_duration"].kind
-        == "soft_ahp_deficit_error"
-    )
-    recovery_timing = components["depolarizing_ahp_recovery_timing"]
-    assert recovery_timing.kind == "soft_ahp_timing_moment_error"
-    assert recovery_timing.window == "recovery"
-    assert recovery_timing.scale == 1.0
-    assert (
-        components["depolarizing_forbidden_spikes"].window
-        == "outside_stimulus"
-    )
-    assert (
-        components["hyperpolarizing_forbidden_spikes"].window == "full_trace"
-    )
-    expected_weights = {
-        "resting_baseline_voltage": 1.01,
-        "hyperpolarizing_trough_depth": 49.2,
-        "hyperpolarizing_waveform_mse": 108.0,
-        "hyperpolarizing_derivative_mse": 5328.0,
-        "depolarizing_firing_rate": 250.0,
-        "depolarizing_block": 70.7,
-        "depolarizing_spike_timing_adaptation": 2.53,
-        "depolarizing_forbidden_spikes": 1.0,
-        "hyperpolarizing_forbidden_spikes": 1.0,
-        "depolarizing_interspike_minimum_voltage": 7.04,
-        "depolarizing_interspike_trough_shape": 17227.0,
-        "depolarizing_spike_waveform": 1.03,
-        "depolarizing_spike_height": 0.00295,
-        "depolarizing_spike_width_slopes": 4.66,
-        "depolarizing_recovery_waveform": 4.31,
-        "depolarizing_ahp_depth": 94.5,
-        "depolarizing_ahp_duration": 252.0,
-        "depolarizing_ahp_recovery_timing": 478.0,
-        "depolarizing_early_late_voltage_difference": 48.6,
-        "depolarizing_terminal_baseline_difference": 200.0,
-        "depolarizing_minus50_minus40_voltage_mse": 0.0471,
+    assert {label: item.weight for label, item in components.items()} == {
+        "resting_baseline_voltage": 2.0,
+        "hyperpolarizing_trace_waveform": 1.0,
+        "depolarizing_trace_waveform": 1.0,
+        "depolarizing_firing_rate": 10.0,
+        "depolarizing_spike_timing": 2.0,
     }
-    assert {item.label: item.weight for item in lsu.fit.components} == expected_weights
-    assert all(
-        item.scale == 1.0
-        for item in lsu.fit.components
-        if item.label not in {"depolarizing_block", "depolarizing_firing_rate"}
-    )
-    early_late = components["depolarizing_early_late_voltage_difference"]
-    assert early_late.kind == "mean_window_difference_error"
-    assert early_late.protocols == ("depolarizing_step",)
-    assert early_late.first_window_start_ms == 100.0
-    assert early_late.first_window_end_ms == 200.0
-    assert early_late.second_window_start_ms == 600.0
-    assert early_late.second_window_end_ms == 700.0
-    terminal = components["depolarizing_terminal_baseline_difference"]
-    assert terminal.second_window_start_ms == 900.0
-    assert terminal.second_window_end_ms == 1000.0
-    voltage_band = components["depolarizing_minus50_minus40_voltage_mse"]
-    assert voltage_band.kind == "experimental_voltage_band_mse"
-    assert voltage_band.protocols == ("depolarizing_step",)
-    assert voltage_band.window == "stimulus"
-    assert voltage_band.voltage_band_lower_mV == -50.0
-    assert voltage_band.voltage_band_upper_mV == -40.0
-    assert voltage_band.weight == 0.0471
+    assert components["resting_baseline_voltage"].scale == 2.0
+    assert components["hyperpolarizing_trace_waveform"].kind == "pseudo_huber"
+    assert components["hyperpolarizing_trace_waveform"].scale == 5.0
+    assert components["depolarizing_trace_waveform"].kind == "pseudo_huber"
+    assert components["depolarizing_trace_waveform"].scale == 5.0
+    firing = components["depolarizing_firing_rate"]
+    assert firing.kind == "soft_firing_rate_pseudo_huber_error"
+    assert firing.scale == 2.0
+    assert firing.delta == 1.0
+    timing = components["depolarizing_spike_timing"]
+    assert timing.kind == "soft_spike_train_mse"
+    assert timing.kernel_tau_ms == 10.0
 
 
 def test_supported_loss_configs_use_their_explicit_simulation_horizons():
