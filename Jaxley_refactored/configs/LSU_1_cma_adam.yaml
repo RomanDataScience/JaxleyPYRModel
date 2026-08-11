@@ -108,7 +108,7 @@ dataset:
     ignore_absolute_manifest_output_paths: true
 
   resampling:
-    target_dt_ms: 0.2
+    target_dt_ms: 0.1
     voltage_method: linear
     current_method: zero_order_hold
 
@@ -164,7 +164,7 @@ fit:
       # terms dominate and CMA-ES can tolerate a strongly depolarized baseline.
       - kind: resting_voltage_error
         label: resting_baseline_voltage
-        weight: 5.0
+        weight: 1.01
         protocols: [depolarizing_step, hyperpolarizing_pulse]
         window: baseline
         scale_mV: 1.0
@@ -173,7 +173,7 @@ fit:
       - kind: soft_trough_depth_error
         label: hyperpolarizing_trough_depth
         # Moderately prioritize matching the experimental valley depth.
-        weight: 2.0
+        weight: 49.2
         protocols: [hyperpolarizing_pulse]
         window: stimulus
         temperature_mV: 0.5
@@ -181,14 +181,14 @@ fit:
 
       - kind: voltage_mse
         label: hyperpolarizing_waveform_mse
-        weight: 1.0
+        weight: 108.0
         protocols: [hyperpolarizing_pulse]
         window: score
         scale_mV: 1.0
 
       - kind: derivative_mse
         label: hyperpolarizing_derivative_mse
-        weight: 1.0
+        weight: 5328.0
         protocols: [hyperpolarizing_pulse]
         window: score
         scale_mV_per_ms: 1.0
@@ -196,9 +196,9 @@ fit:
       # --- Depolarizing spike count and timing ----------------------------
       - kind: soft_firing_rate_error
         label: depolarizing_firing_rate
-        # Keep firing rate influential without letting it dominate the
-        # depolarizing waveform, spike-shape, plateau, and recovery terms.
-        weight: 1.2
+        # Priority objective: calibrated to contribute about 10x an ordinary
+        # component on the reference best candidate.
+        weight: 12.8
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -207,7 +207,7 @@ fit:
 
       - kind: soft_depolarization_block_error
         label: depolarizing_block
-        weight: 1.0
+        weight: 70.7
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -35.0
@@ -217,7 +217,7 @@ fit:
 
       - kind: soft_spike_train_mse
         label: depolarizing_spike_timing_adaptation
-        weight: 1.0
+        weight: 2.53
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -246,7 +246,7 @@ fit:
       # --- Interspike plateau and trough geometry -------------------------
       - kind: soft_interspike_minimum_voltage_error
         label: depolarizing_interspike_minimum_voltage
-        weight: 1.0
+        weight: 7.04
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -255,7 +255,7 @@ fit:
 
       - kind: soft_interspike_trough_shape_error
         label: depolarizing_interspike_trough_shape
-        weight: 1.0
+        weight: 17227.0
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -264,7 +264,7 @@ fit:
 
       - kind: pseudo_huber
         label: depolarizing_spike_waveform
-        weight: 1.0
+        weight: 1.03
         protocols: [depolarizing_step]
         window: stimulus
         scale_mV: 1.0
@@ -273,7 +273,9 @@ fit:
       # --- Action-potential height and kinetics ---------------------------
       - kind: soft_mean_spike_peak_voltage_error
         label: depolarizing_spike_height
-        weight: 1.0
+        # Retain peak-voltage guidance without allowing it to dominate firing
+        # rate merely because its unscaled squared error is much larger.
+        weight: 0.00295
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -283,7 +285,7 @@ fit:
 
       - kind: soft_spike_width_slope_error
         label: depolarizing_spike_width_slopes
-        weight: 1.0
+        weight: 4.66
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -299,7 +301,7 @@ fit:
       # --- Post-step AHP and slow return to baseline ----------------------
       - kind: pseudo_huber
         label: depolarizing_recovery_waveform
-        weight: 1.0
+        weight: 4.31
         protocols: [depolarizing_step]
         window: recovery
         scale_mV: 1.0
@@ -307,7 +309,7 @@ fit:
 
       - kind: soft_ahp_depth_error
         label: depolarizing_ahp_depth
-        weight: 1.0
+        weight: 94.5
         protocols: [depolarizing_step]
         window: recovery
         temperature_mV: 1.0
@@ -315,7 +317,7 @@ fit:
 
       - kind: soft_ahp_deficit_error
         label: depolarizing_ahp_duration
-        weight: 1.0
+        weight: 252.0
         protocols: [depolarizing_step]
         window: recovery
         temperature_mV: 1.0
@@ -323,7 +325,7 @@ fit:
 
       - kind: soft_ahp_timing_moment_error
         label: depolarizing_ahp_recovery_timing
-        weight: 1.0
+        weight: 478.0
         protocols: [depolarizing_step]
         window: recovery
         temperature_mV: 1.0
@@ -331,7 +333,7 @@ fit:
 
       - kind: mean_window_difference_error
         label: depolarizing_early_late_voltage_difference
-        weight: 1.0
+        weight: 48.6
         protocols: [depolarizing_step]
         window: full_trace
         first_window_start_ms: 100.0
@@ -342,7 +344,7 @@ fit:
 
       - kind: mean_window_difference_error
         label: depolarizing_terminal_baseline_difference
-        weight: 1.0
+        weight: 2706.0
         protocols: [depolarizing_step]
         window: full_trace
         first_window_start_ms: 100.0
@@ -354,7 +356,7 @@ fit:
       # Pointwise plateau-region comparison using a fixed experimental mask.
       - kind: experimental_voltage_band_mse
         label: depolarizing_minus50_minus40_voltage_mse
-        weight: 0.75
+        weight: 0.0471
         protocols: [depolarizing_step]
         window: stimulus
         voltage_band_lower_mV: -50.0
@@ -439,9 +441,9 @@ search:
     algorithm: cma_es
     # Empty means every parameter selected by model.parameters.fit (44 total).
     parameter_names: []
-    population_size: 40
+    population_size: 20
     # Recombine the best 12 candidates: 30% of 40.
-    parent_fraction: 0.30
+    parent_fraction: 0.50
     generations: 100
     sigma0: 0.15
     boundary_policy: resample

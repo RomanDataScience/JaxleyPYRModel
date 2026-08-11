@@ -94,12 +94,12 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     resting = lsu.fit.components[0]
     assert resting.label == "resting_baseline_voltage"
     assert resting.kind == "resting_voltage_error"
-    assert resting.weight == 5.0
+    assert resting.weight == 1.01
     assert resting.window == "baseline"
     component = lsu.fit.components[1]
     assert component.label == "hyperpolarizing_trough_depth"
     assert component.kind == "soft_trough_depth_error"
-    assert component.weight == 2.0
+    assert component.weight == 49.2
     assert component.protocols == ("hyperpolarizing_pulse",)
     assert component.window == "stimulus"
     assert component.scale == 1.0
@@ -107,21 +107,21 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     waveform = lsu.fit.components[2]
     assert waveform.label == "hyperpolarizing_waveform_mse"
     assert waveform.kind == "voltage_mse"
-    assert waveform.weight == 1.0
+    assert waveform.weight == 108.0
     assert waveform.protocols == ("hyperpolarizing_pulse",)
     assert waveform.window == "score"
     assert waveform.scale == 1.0
     derivative = lsu.fit.components[3]
     assert derivative.label == "hyperpolarizing_derivative_mse"
     assert derivative.kind == "derivative_mse"
-    assert derivative.weight == 1.0
+    assert derivative.weight == 5328.0
     assert derivative.protocols == ("hyperpolarizing_pulse",)
     assert derivative.window == "score"
     assert derivative.scale == 1.0
     firing_rate = lsu.fit.components[4]
     assert firing_rate.label == "depolarizing_firing_rate"
     assert firing_rate.kind == "soft_firing_rate_error"
-    assert firing_rate.weight == 1.2
+    assert firing_rate.weight == 12.8
     assert firing_rate.protocols == ("depolarizing_step",)
     assert firing_rate.window == "stimulus"
     assert firing_rate.threshold_mV == -20.0
@@ -130,7 +130,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     components = {item.label: item for item in lsu.fit.components}
     block = components["depolarizing_block"]
     assert block.kind == "soft_depolarization_block_error"
-    assert block.weight == 1.0
+    assert block.weight == 70.7
     assert block.protocols == ("depolarizing_step",)
     assert block.window == "stimulus"
     assert block.threshold_mV == -35.0
@@ -143,7 +143,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     assert timing.scale == 1.0
     interspike = components["depolarizing_interspike_minimum_voltage"]
     assert interspike.kind == "soft_interspike_minimum_voltage_error"
-    assert interspike.weight == 1.0
+    assert interspike.weight == 7.04
     assert interspike.scale == 1.0
     assert interspike.temperature_mV == 1.0
     assert (
@@ -154,6 +154,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
         components["depolarizing_spike_height"].kind
         == "soft_mean_spike_peak_voltage_error"
     )
+    assert components["depolarizing_spike_height"].weight == 0.00295
     spike_shape = components["depolarizing_spike_width_slopes"]
     assert spike_shape.kind == "soft_spike_width_slope_error"
     assert spike_shape.spike_window_half_width_ms == 4.0
@@ -179,17 +180,30 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     assert (
         components["hyperpolarizing_forbidden_spikes"].window == "full_trace"
     )
-    assert all(
-        item.weight == 1.0
-        for item in lsu.fit.components
-        if item.label
-        not in {
-            "resting_baseline_voltage",
-            "hyperpolarizing_trough_depth",
-            "depolarizing_firing_rate",
-            "depolarizing_minus50_minus40_voltage_mse",
-        }
-    )
+    expected_weights = {
+        "resting_baseline_voltage": 1.01,
+        "hyperpolarizing_trough_depth": 49.2,
+        "hyperpolarizing_waveform_mse": 108.0,
+        "hyperpolarizing_derivative_mse": 5328.0,
+        "depolarizing_firing_rate": 12.8,
+        "depolarizing_block": 70.7,
+        "depolarizing_spike_timing_adaptation": 2.53,
+        "depolarizing_forbidden_spikes": 1.0,
+        "hyperpolarizing_forbidden_spikes": 1.0,
+        "depolarizing_interspike_minimum_voltage": 7.04,
+        "depolarizing_interspike_trough_shape": 17227.0,
+        "depolarizing_spike_waveform": 1.03,
+        "depolarizing_spike_height": 0.00295,
+        "depolarizing_spike_width_slopes": 4.66,
+        "depolarizing_recovery_waveform": 4.31,
+        "depolarizing_ahp_depth": 94.5,
+        "depolarizing_ahp_duration": 252.0,
+        "depolarizing_ahp_recovery_timing": 478.0,
+        "depolarizing_early_late_voltage_difference": 48.6,
+        "depolarizing_terminal_baseline_difference": 2706.0,
+        "depolarizing_minus50_minus40_voltage_mse": 0.0471,
+    }
+    assert {item.label: item.weight for item in lsu.fit.components} == expected_weights
     assert all(
         item.scale == 1.0
         for item in lsu.fit.components
@@ -211,7 +225,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     assert voltage_band.window == "stimulus"
     assert voltage_band.voltage_band_lower_mV == -50.0
     assert voltage_band.voltage_band_upper_mV == -40.0
-    assert voltage_band.weight == 0.75
+    assert voltage_band.weight == 0.0471
 
 
 def test_supported_loss_configs_use_their_explicit_simulation_horizons():
