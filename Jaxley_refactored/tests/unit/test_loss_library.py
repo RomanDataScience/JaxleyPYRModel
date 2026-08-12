@@ -53,7 +53,7 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
             "depolarizing_trace_waveform",
             "depolarizing_firing_rate",
             "depolarizing_plateau_voltage",
-            "depolarizing_spike_timing",
+            "depolarizing_spike_shape",
         ),
     }
     for path, labels in expected.items():
@@ -80,11 +80,11 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     components = {item.label: item for item in lsu.fit.components}
     assert {label: item.weight for label, item in components.items()} == {
         "resting_baseline_voltage": 0.2,
-        "hyperpolarizing_trace_waveform": 0.1,
-        "depolarizing_trace_waveform": 0.1,
-        "depolarizing_firing_rate": 1.0,
+        "hyperpolarizing_trace_waveform": 0.5,
+        "depolarizing_trace_waveform": 0.2,
+        "depolarizing_firing_rate": 2.0,
         "depolarizing_plateau_voltage": 0.5,
-        "depolarizing_spike_timing": 0.2,
+        "depolarizing_spike_shape": 0.3,
     }
     assert components["resting_baseline_voltage"].scale == 2.0
     assert components["hyperpolarizing_trace_waveform"].kind == "pseudo_huber"
@@ -100,9 +100,10 @@ def test_supported_loss_configs_are_valid_and_have_unique_components():
     assert plateau.window == "stimulus"
     assert plateau.threshold_mV == -20.0
     assert plateau.scale == 2.0
-    timing = components["depolarizing_spike_timing"]
-    assert timing.kind == "soft_spike_train_mse"
-    assert timing.kernel_tau_ms == 10.0
+    shape = components["depolarizing_spike_shape"]
+    assert shape.kind == "soft_spike_width_slope_error"
+    assert shape.window == "stimulus"
+    assert shape.spike_window_half_width_ms == 4.0
 
 
 def test_supported_loss_configs_use_their_explicit_simulation_horizons():

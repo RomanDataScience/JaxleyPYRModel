@@ -184,7 +184,7 @@ fit:
 
       - kind: pseudo_huber
         label: hyperpolarizing_trace_waveform
-        weight: 0.1
+        weight: 0.5
         protocols: [hyperpolarizing_pulse]
         window: full_trace
         scale_mV: 5.0
@@ -192,7 +192,7 @@ fit:
 
       - kind: pseudo_huber
         label: depolarizing_trace_waveform
-        weight: 0.1
+        weight: 0.2
         protocols: [depolarizing_step]
         window: full_trace
         scale_mV: 5.0
@@ -200,7 +200,10 @@ fit:
 
       - kind: soft_firing_rate_pseudo_huber_error
         label: depolarizing_firing_rate
-        weight: 1.0
+        # Calibrated so its raw contribution is comparable to plateau and
+        # baseline terms, while the separate count multiplier handles large
+        # spike-count mismatches.
+        weight: 2.0
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
@@ -219,15 +222,22 @@ fit:
         threshold_mV: -20.0
         scale_mV: 2.0
 
-      - kind: soft_spike_train_mse
-        label: depolarizing_spike_timing
-        weight: 0.2
+      # Mildly favor the experimental action-potential width and slopes
+      # without allowing spike morphology to outrank rate or plateau voltage.
+      - kind: soft_spike_width_slope_error
+        label: depolarizing_spike_shape
+        weight: 0.3
         protocols: [depolarizing_step]
         window: stimulus
         threshold_mV: -20.0
-        temperature_mV: 2.0
-        kernel_tau_ms: 10.0
-        scale: 1.0
+        temperature_mV: 1.0
+        spike_window_half_width_ms: 4.0
+        width_scale_ms: 0.5
+        upstroke_scale_mV_per_ms: 50.0
+        repolarization_scale_mV_per_ms: 20.0
+        slope_temperature_mV_per_ms: 10.0
+        amplitude_gate_mV: 20.0
+        amplitude_gate_temperature_mV: 5.0
 
   parameter_transform:
     default: projected_box
