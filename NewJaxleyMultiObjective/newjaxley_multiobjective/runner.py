@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from dataclasses import replace
 import json
 from pathlib import Path
 import time
@@ -35,12 +36,18 @@ def _json(value: Any) -> Any:
 
 def _write_experimental(path: Path, records: tuple[Any, ...], values: dict[str, Any]) -> None:
     rows = []
+    json_values = {}
     for record in records:
         item = values[record.trace_key]
+        json_values[record.trace_key] = {
+            **item,
+            "fitness_window_requested_ms": record.metadata.get("fitness_window_requested_ms"),
+            "fitness_window_actual_ms": record.metadata.get("fitness_window_actual_ms"),
+        }
         row = {"trace_key": record.trace_key, "protocol": record.protocol, **item["features"]}
         rows.append(row)
     with path.with_suffix(".json").open("w", encoding="utf-8") as handle:
-        json.dump(_json(values), handle, indent=2, sort_keys=True)
+        json.dump(_json(json_values), handle, indent=2, sort_keys=True)
         handle.write("\n")
     with path.with_suffix(".csv").open("w", newline="", encoding="utf-8") as handle:
         fields = ["trace_key", "protocol", *SCALAR_FEATURE_LABELS]
@@ -61,47 +68,100 @@ class JaxleyEvaluator:
         from jaxley_refactored.simulation import InitialStateFactory, SimulationKernel
 
         self.config = config
-        self.records = tuple(SegmentedTraceLoader().load(config.app_config.dataset))
-        if not self.records:
-            raise ValueError("No traces were selected")
-        self.buckets = bucket_records(self.records, pad_to_longest=False)
+        loader = SegmentedTraceLoader()
+        self.records = self._prepare_records(loader.load(config.app_config.dataset))
+        test_dataset = replace(
+            config.app_config.dataset,
+            traces=(),
+            trace_indices=config.test_trace_indices,
+        )
+        self.test_records = self._prepare_records(loader.load(test_dataset))
         self.model = default_builder().build(config.app_config.model)
         self.jnp = jnp
-        self.kernels = []
-        self.states = []
-        for bucket in self.buckets:
-            states = InitialStateFactory(self.model.cell, bucket.dt_ms).build(bucket.initial_voltage_mV)
-            kernel = SimulationKernel(
-                self.model.cell,
-                self.model.parameterizer,
-                config.app_config.protocol,
-                config.app_config.runtime,
-                bucket.dt_ms,
-                bucket.n_steps,
-            )
-            self.states.append(states)
-            self.kernels.append(kernel)
+        self.buckets, self.kernels, self.states = self._make_simulations(
+            self.records, InitialStateFactory, SimulationKernel, bucket_records
+        )
+        self.test_buckets, self.test_kernels, self.test_states = self._make_simulations(
+            self.test_records, InitialStateFactory, SimulationKernel, bucket_records
+        )
         self.experimental = {
             record.trace_key: extract_features(record, record.voltage_mV, config.feature)
             for record in self.records
         }
+        self.test_experimental = {
+            record.trace_key: extract_features(record, record.voltage_mV, config.feature)
+            for record in self.test_records
+        }
 
-    def simulate(self, parameters: dict[str, float]) -> dict[tuple[float, int], np.ndarray]:
+    def _prepare_records(self, records: tuple[Any, ...]) -> tuple[Any, ...]:
+        if not records:
+            raise ValueError("No traces were selected")
+        prepared = []
+        for record in records:
+            pre_ms, post_ms = self.config.fitness_windows.for_protocol(record.protocol)
+            time = np.asarray(record.time_ms, dtype=float)
+            start = float(record.metadata["epoch_start_ms"])
+            stop = float(record.metadata["epoch_stop_ms"])
+            score_start = max(float(time[0]), start - pre_ms)
+            score_stop = min(float(time[-1]), stop + post_ms)
+            score_mask = (time >= score_start) & (time <= score_stop)
+            if not np.any(score_mask):
+                raise ValueError(f"Fitness window is empty for {record.trace_key}")
+            prepared.append(
+                replace(
+                    record,
+                    score_mask=np.asarray(score_mask, dtype=bool),
+                    metadata={
+                        **record.metadata,
+                        "fitness_window_requested_ms": [start - pre_ms, stop + post_ms],
+                        "fitness_window_actual_ms": [score_start, score_stop],
+                    },
+                )
+            )
+        return tuple(prepared)
+
+    def _make_simulations(self, records, initial_state_factory, simulation_kernel, bucket_records):
+        buckets = bucket_records(records, pad_to_longest=False)
+        kernels = []
+        states = []
+        for bucket in buckets:
+            states.append(initial_state_factory(self.model.cell, bucket.dt_ms).build(bucket.initial_voltage_mV))
+            kernels.append(
+                simulation_kernel(
+                    self.model.cell,
+                    self.model.parameterizer,
+                    self.config.app_config.protocol,
+                    self.config.app_config.runtime,
+                    bucket.dt_ms,
+                    bucket.n_steps,
+                )
+            )
+        return buckets, kernels, states
+
+    def simulate(self, parameters: dict[str, float], split: str = "optimization") -> dict[tuple[float, int], np.ndarray]:
+        if split == "test":
+            buckets, kernels, states = self.test_buckets, self.test_kernels, self.test_states
+        else:
+            buckets, kernels, states = self.buckets, self.kernels, self.states
         vector = self.jnp.asarray([parameters[name] for name in self.model.parameterizer.keys])
         predictions = {}
-        for bucket, kernel, states in zip(self.buckets, self.kernels, self.states, strict=True):
+        for bucket, kernel, initial_states in zip(buckets, kernels, states, strict=True):
             predictions[bucket.key] = np.asarray(
-                kernel.simulate_batch(vector, self.jnp.asarray(bucket.currents_nA), states)
+                kernel.simulate_batch(vector, self.jnp.asarray(bucket.currents_nA), initial_states)
             )
         return predictions
 
-    def evaluate(self, parameters: dict[str, float]) -> tuple[tuple[float, ...], dict[str, Any], dict[tuple[float, int], np.ndarray]]:
-        predictions = self.simulate(parameters)
+    def evaluate(self, parameters: dict[str, float], split: str = "optimization") -> tuple[tuple[float, ...], dict[str, Any], dict[tuple[float, int], np.ndarray]]:
+        if split == "test":
+            records, buckets, experimental = self.test_records, self.test_buckets, self.test_experimental
+        else:
+            records, buckets, experimental = self.records, self.buckets, self.experimental
+        predictions = self.simulate(parameters, split=split)
         values, details = evaluate_objectives(
-            self.records,
+            records,
             predictions,
-            self.buckets,
-            self.experimental,
+            buckets,
+            experimental,
             self.config.feature,
             self.config.objectives,
         )
@@ -111,20 +171,39 @@ class JaxleyEvaluator:
 def _write_solution(output: Path, evaluator: JaxleyEvaluator, trial: Any, row: dict[str, Any]) -> None:
     trial_dir = output / "solutions" / f"trial_{trial.number:06d}"
     trial_dir.mkdir(parents=True, exist_ok=True)
-    values, details, predictions = evaluator.evaluate({key: float(value) for key, value in trial.params.items()})
-    objective_values = {label: float(value) for label, value in zip(OBJECTIVE_LABELS, values, strict=True)}
-    with (trial_dir / "objective_values.json").open("w", encoding="utf-8") as handle:
-        json.dump(_json(objective_values), handle, indent=2, sort_keys=True)
-        handle.write("\n")
-    with (trial_dir / "features_simulated.json").open("w", encoding="utf-8") as handle:
-        json.dump(_json(details), handle, indent=2, sort_keys=True)
-        handle.write("\n")
-    with (trial_dir / "features_simulated.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["trace_key", "protocol", *SCALAR_FEATURE_LABELS])
-        writer.writeheader()
-        for record in evaluator.records:
-            feature_values = details["features_by_trace"][record.trace_key]["simulated"]["features"]
-            writer.writerow({"trace_key": record.trace_key, "protocol": record.protocol, **{label: _json(feature_values.get(label)) for label in SCALAR_FEATURE_LABELS}})
+    parameters = {key: float(value) for key, value in trial.params.items()}
+    values, details, predictions = evaluator.evaluate(parameters)
+    test_values, test_details, test_predictions = evaluator.evaluate(parameters, split="test")
+
+    def write_evaluation(prefix, records, buckets, values, details, predictions):
+        objective_values = {label: float(value) for label, value in zip(OBJECTIVE_LABELS, values, strict=True)}
+        with (trial_dir / f"{prefix}objective_values.json").open("w", encoding="utf-8") as handle:
+            json.dump(_json(objective_values), handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        with (trial_dir / f"{prefix}features_simulated.json").open("w", encoding="utf-8") as handle:
+            json.dump(_json(details), handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        with (trial_dir / f"{prefix}features_simulated.csv").open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=["trace_key", "protocol", *SCALAR_FEATURE_LABELS])
+            writer.writeheader()
+            for record in records:
+                feature_values = details["features_by_trace"][record.trace_key]["simulated"]["features"]
+                writer.writerow({"trace_key": record.trace_key, "protocol": record.protocol, **{label: _json(feature_values.get(label)) for label in SCALAR_FEATURE_LABELS}})
+        arrays = {}
+        index = {}
+        for bucket in buckets:
+            array = predictions[bucket.key]
+            for item, record in enumerate(bucket.records):
+                key = f"trace_{len(index):04d}"
+                arrays[key] = array[item, : len(record.time_ms)]
+                index[key] = record.trace_key
+        np.savez_compressed(trial_dir / f"{prefix}predictions.npz", **arrays)
+        with (trial_dir / f"{prefix}prediction_index.json").open("w", encoding="utf-8") as handle:
+            json.dump(index, handle, indent=2, sort_keys=True)
+        return objective_values
+
+    objective_values = write_evaluation("", evaluator.records, evaluator.buckets, values, details, predictions)
+    test_objective_values = write_evaluation("test_", evaluator.test_records, evaluator.test_buckets, test_values, test_details, test_predictions)
     with (trial_dir / "objective_ranks.json").open("w", encoding="utf-8") as handle:
         json.dump(_json({"objective_ranks": row["objective_ranks"], "objective_gaps_from_front_best": row["objective_gaps_from_front_best"], "objective_percentiles": row["objective_percentiles"], "best_for_objectives": row["best_for_objectives"]}), handle, indent=2, sort_keys=True)
         handle.write("\n")
@@ -133,17 +212,6 @@ def _write_solution(output: Path, evaluator: JaxleyEvaluator, trial: Any, row: d
         writer.writerow(["parameter", "value"])
         for key, value in trial.params.items():
             writer.writerow([key, float(value)])
-    arrays = {}
-    index = {}
-    for bucket in evaluator.buckets:
-        array = predictions[bucket.key]
-        for item, record in enumerate(bucket.records):
-            key = f"trace_{len(index):04d}"
-            arrays[key] = array[item, : len(record.time_ms)]
-            index[key] = record.trace_key
-    np.savez_compressed(trial_dir / "predictions.npz", **arrays)
-    with (trial_dir / "prediction_index.json").open("w", encoding="utf-8") as handle:
-        json.dump(index, handle, indent=2, sort_keys=True)
     plot_solution(
         trial_dir / "solution.png",
         evaluator.records,
@@ -153,6 +221,16 @@ def _write_solution(output: Path, evaluator: JaxleyEvaluator, trial: Any, row: d
         trial.number,
         objective_values,
         row["best_for_objectives"],
+    )
+    plot_solution(
+        trial_dir / "test_solution.png",
+        evaluator.test_records,
+        test_predictions,
+        evaluator.test_buckets,
+        test_details,
+        trial.number,
+        test_objective_values,
+        [],
     )
 
 
@@ -179,6 +257,14 @@ def _run_hash(config: PipelineConfig, app_hash: str) -> str:
                 "overlap_sigma_mV": config.objectives.overlap_sigma_mV,
                 "overlap_window_weights": dict(config.objectives.overlap_window_weights),
             },
+            "fitness_windows": {
+                "depolarizing_pre_ms": config.fitness_windows.depolarizing_pre_ms,
+                "depolarizing_post_ms": config.fitness_windows.depolarizing_post_ms,
+                "hyperpolarizing_pre_ms": config.fitness_windows.hyperpolarizing_pre_ms,
+                "hyperpolarizing_post_ms": config.fitness_windows.hyperpolarizing_post_ms,
+            },
+            "optimization_trace_indices": config.optimization_trace_indices,
+            "test_trace_indices": config.test_trace_indices,
             "seed": config.seed,
             "population_size": config.population_size,
         }
@@ -208,6 +294,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
     output.mkdir(parents=True, exist_ok=True)
     (output / "solutions").mkdir(exist_ok=True)
     _write_experimental(output / "experimental_features.csv", evaluator.records, evaluator.experimental)
+    _write_experimental(output / "test_experimental_features.csv", evaluator.test_records, evaluator.test_experimental)
 
     parameter_specs = tuple(evaluator.model.parameterizer.specs)
     search_space = {
@@ -323,7 +410,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
     write_front_csv(output / "pareto_front.csv", front, labels)
 
     with (output / "objective_definitions.json").open("w", encoding="utf-8") as handle:
-        json.dump(_json({"labels": labels, "directions": ["minimize"] * len(labels), "scales": config.objectives.scales, "overlap_sigma_mV": config.objectives.overlap_sigma_mV, "overlap_window_weights": config.objectives.overlap_window_weights, "tie_tolerance": config.objectives.tie_tolerance}), handle, indent=2, sort_keys=True)
+        json.dump(_json({"labels": labels, "directions": ["minimize"] * len(labels), "scales": config.objectives.scales, "overlap_sigma_mV": config.objectives.overlap_sigma_mV, "overlap_window_weights": config.objectives.overlap_window_weights, "fitness_windows": {"depolarizing_pre_ms": config.fitness_windows.depolarizing_pre_ms, "depolarizing_post_ms": config.fitness_windows.depolarizing_post_ms, "hyperpolarizing_pre_ms": config.fitness_windows.hyperpolarizing_pre_ms, "hyperpolarizing_post_ms": config.fitness_windows.hyperpolarizing_post_ms}, "tie_tolerance": config.objectives.tie_tolerance}), handle, indent=2, sort_keys=True)
         handle.write("\n")
     with (output / "resolved_config.yaml").open("w", encoding="utf-8") as handle:
         import yaml
@@ -343,7 +430,10 @@ def run_pipeline(config: PipelineConfig) -> Path:
         "population_size": config.population_size,
         "model_signature": evaluator.model.signature,
         "parameter_names": list(evaluator.model.parameterizer.keys),
-        "trace_keys": [record.trace_key for record in evaluator.records],
+        "optimization_trace_indices": config.optimization_trace_indices,
+        "test_trace_indices": config.test_trace_indices,
+        "optimization_trace_keys": [record.trace_key for record in evaluator.records],
+        "test_trace_keys": [record.trace_key for record in evaluator.test_records],
         "config_hash": stable_hash(config_as_dict(config.app_config)),
         **collect_provenance(Path(__file__).resolve().parents[2], device),
     }

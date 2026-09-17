@@ -58,6 +58,20 @@ def _positive(value: Any, name: str) -> float:
     return result
 
 
+def _positive_ints(value: Any, name: str) -> tuple[int, ...]:
+    if value is None:
+        return ()
+    try:
+        result = tuple(int(item) for item in value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{name} must contain positive integers") from error
+    if not result or any(item <= 0 for item in result):
+        raise ValueError(f"{name} must contain positive integers")
+    if len(set(result)) != len(result):
+        raise ValueError(f"{name} must not contain duplicates")
+    return result
+
+
 @dataclass(frozen=True)
 class FeatureConfig:
     threshold_mV: float = -20.0
@@ -130,12 +144,42 @@ class ObjectiveConfig:
 
 
 @dataclass(frozen=True)
+class FitnessWindowConfig:
+    """Time-course window around each current stimulus, in milliseconds."""
+
+    depolarizing_pre_ms: float = 200.0
+    depolarizing_post_ms: float = 600.0
+    hyperpolarizing_pre_ms: float = 200.0
+    hyperpolarizing_post_ms: float = 200.0
+
+    @classmethod
+    def from_mapping(cls, value: Any) -> "FitnessWindowConfig":
+        data = _mapping(value, "multi_objective.fitness_windows")
+        depolarizing = _mapping(data.get("depolarizing"), "fitness_windows.depolarizing")
+        hyperpolarizing = _mapping(data.get("hyperpolarizing"), "fitness_windows.hyperpolarizing")
+        return cls(
+            depolarizing_pre_ms=_positive(depolarizing.get("pre_ms", 200.0), "depolarizing pre_ms"),
+            depolarizing_post_ms=_positive(depolarizing.get("post_ms", 600.0), "depolarizing post_ms"),
+            hyperpolarizing_pre_ms=_positive(hyperpolarizing.get("pre_ms", 200.0), "hyperpolarizing pre_ms"),
+            hyperpolarizing_post_ms=_positive(hyperpolarizing.get("post_ms", 200.0), "hyperpolarizing post_ms"),
+        )
+
+    def for_protocol(self, protocol: str) -> tuple[float, float]:
+        if protocol == "depolarizing_step":
+            return self.depolarizing_pre_ms, self.depolarizing_post_ms
+        return self.hyperpolarizing_pre_ms, self.hyperpolarizing_post_ms
+
+
+@dataclass(frozen=True)
 class PipelineConfig:
     source_path: Path
     base_config_path: Path
     app_config: Any
     feature: FeatureConfig
     objectives: ObjectiveConfig
+    fitness_windows: FitnessWindowConfig
+    optimization_trace_indices: tuple[int, ...]
+    test_trace_indices: tuple[int, ...]
     seed: int
     population_size: int
     trials: int
@@ -176,11 +220,41 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
 
     from dataclasses import replace
 
+    trace_selection = _mapping(multi.get("trace_selection"), "multi_objective.trace_selection")
+    optimization_trace_indices = _positive_ints(
+        trace_selection.get("optimization_indices", (2, 4)),
+        "trace_selection.optimization_indices",
+    )
+    test_trace_indices = _positive_ints(
+        trace_selection.get("test_indices", (1, 3)),
+        "trace_selection.test_indices",
+    )
+    if set(optimization_trace_indices) & set(test_trace_indices):
+        raise ValueError("Optimization and test trace indices must be disjoint")
+
+    fitness_windows = FitnessWindowConfig.from_mapping(multi.get("fitness_windows"))
     dataset = app_config.dataset
     if "cell_id" in multi:
         dataset = replace(dataset, cell_id=str(multi["cell_id"]))
-    if bool(multi.get("all_traces", True)):
-        dataset = replace(dataset, traces=("*",), trace_indices=())
+    dataset = replace(
+        dataset,
+        traces=(),
+        trace_indices=optimization_trace_indices,
+        validation_trace_indices=test_trace_indices,
+        score_pre_ms=min(
+            fitness_windows.depolarizing_pre_ms,
+            fitness_windows.hyperpolarizing_pre_ms,
+        ),
+        score_post_ms=max(
+            fitness_windows.depolarizing_post_ms,
+            fitness_windows.hyperpolarizing_post_ms,
+        ),
+        # Keep the complete segmented recording. Some hyperpolarizing
+        # segments contain only 100 ms after the pulse, so the evaluator can
+        # clip the requested 200 ms window to what is actually available.
+        simulation_post_ms=None,
+        simulation_post_ms_by_protocol={},
+    )
     runtime = replace(app_config.runtime, seed=seed)
     output_value = raw.get("output_root", "runs")
     output_root = Path(output_value)
@@ -201,6 +275,9 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
         app_config=app_config,
         feature=FeatureConfig.from_mapping(multi.get("feature_detection")),
         objectives=ObjectiveConfig.from_mapping(multi.get("objectives")),
+        fitness_windows=fitness_windows,
+        optimization_trace_indices=optimization_trace_indices,
+        test_trace_indices=test_trace_indices,
         seed=seed,
         population_size=population_size,
         trials=trials,
@@ -210,5 +287,5 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
         heartbeat_interval_s=heartbeat,
         grace_period_s=grace_period,
         output_root=output_root,
-        all_traces=bool(multi.get("all_traces", True)),
+        all_traces=False,
     )

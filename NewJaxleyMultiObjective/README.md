@@ -24,10 +24,18 @@ study with a new output/study name. Changing model, objective, seed, or
 population settings for an existing study is rejected by the run hash check.
 
 For a quick check, copy the config and reduce `multi_objective.trials` to 1 or
-2. The normal configuration uses all traces for the selected cell and 4,000
-trials. Set `PYTHON_EXECUTABLE` when the Jaxley environment is not the shell's
-default Python.
+2. The default configuration optimizes trace indices 2 and 4 independently
+within each protocol, and holds out traces 1 and 3 for testing. Set
+`PYTHON_EXECUTABLE` when the Jaxley environment is not the shell's default
+Python.
+
+The time-course fitness window is protocol-specific: 200 ms before through
+600 ms after the depolarizing step, and 200 ms before through 200 ms after the
+hyperpolarizing pulse. If a recording starts before the requested pre-window,
+the available portion is used and recorded in the trace metadata.
 
 Outputs are written under `NewJaxleyMultiObjective/runs/`. Each Pareto solution
-contains its parameters, features, predictions, objective ranking, and a
-figure with full traces plus the first 100 ms after depolarizing-step onset.
+contains its parameters, optimization-trace features/predictions, objective
+ranking, and a figure with full traces plus the first 100 ms after
+depolarizing-step onset. The same candidate is evaluated on the held-out
+traces and written as `test_*` files, including `test_solution.png`.

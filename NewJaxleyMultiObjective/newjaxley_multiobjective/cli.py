@@ -21,7 +21,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "validate":
         print(
             f"valid sampler=mocma objectives=11 parameters=from-model "
-            f"cell={config.app_config.dataset.cell_id}"
+            f"cell={config.app_config.dataset.cell_id} "
+            f"optimization_traces={config.optimization_trace_indices} "
+            f"test_traces={config.test_trace_indices}"
         )
         return 0
 

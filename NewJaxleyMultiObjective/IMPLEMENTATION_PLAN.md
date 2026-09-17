@@ -263,6 +263,13 @@ record. Write the resulting target table, feature validity, detector settings,
 window coordinates, and checksums to `experimental_features.json` and
 `experimental_features.csv`.
 
+The MOCMA pipeline uses an explicit train/test split within every protocol:
+trace indices 2 and 4 are optimization traces, while indices 1 and 3 are
+held-out test traces. The time-course fitness masks use 200 ms before and 600
+ms after the depolarizing step, and 200 ms before and 200 ms after the
+hyperpolarizing pulse. Masks are clipped to the available recording and the
+requested and actual coordinates are stored in trace metadata.
+
 Prefer the direct segmented trace measurement as the optimization target. Where
 an existing IPFX metric has an equivalent definition, compare it in a validation
 report and record the difference; do not mix IPFX and direct-detector values in
