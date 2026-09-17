@@ -140,7 +140,10 @@ class PipelineConfig:
     population_size: int
     trials: int
     study_name: str
-    storage: str | None
+    storage: str
+    resume: bool
+    heartbeat_interval_s: int
+    grace_period_s: int
     output_root: Path
     all_traces: bool
 
@@ -185,6 +188,13 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
         output_root = (source.parent / output_root).resolve()
     app_config = replace(app_config, dataset=dataset, runtime=runtime)
 
+    storage = multi.get("storage", "auto")
+    if storage is None:
+        storage = "auto"
+    heartbeat = int(multi.get("heartbeat_interval_s", 60))
+    grace_period = int(multi.get("grace_period_s", max(heartbeat * 5, 300)))
+    if heartbeat <= 0 or grace_period <= 0:
+        raise ValueError("heartbeat_interval_s and grace_period_s must be positive")
     return PipelineConfig(
         source_path=source,
         base_config_path=base_path,
@@ -195,7 +205,10 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
         population_size=population_size,
         trials=trials,
         study_name=str(multi.get("study_name", "mocma_features")),
-        storage=multi.get("storage"),
+        storage=str(storage),
+        resume=bool(multi.get("resume", True)),
+        heartbeat_interval_s=heartbeat,
+        grace_period_s=grace_period,
         output_root=output_root,
         all_traces=bool(multi.get("all_traces", True)),
     )

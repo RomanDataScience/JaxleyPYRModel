@@ -156,6 +156,45 @@ def _write_solution(output: Path, evaluator: JaxleyEvaluator, trial: Any, row: d
     )
 
 
+def _storage_url(storage: str, output: Path) -> str:
+    if storage in {"", "auto"}:
+        database = (output / "study.db").resolve()
+        return f"sqlite:///{database.as_posix()}"
+    return storage
+
+
+def _run_hash(config: PipelineConfig, app_hash: str) -> str:
+    from dataclasses import asdict
+
+    from jaxley_refactored.config.hashing import stable_hash
+
+    return stable_hash(
+        {
+            "app_config": app_hash,
+            "feature": asdict(config.feature),
+            "objectives": {
+                "labels": config.objectives.labels,
+                "scales": dict(config.objectives.scales),
+                "invalid_feature_penalty": config.objectives.invalid_feature_penalty,
+                "overlap_sigma_mV": config.objectives.overlap_sigma_mV,
+                "overlap_window_weights": dict(config.objectives.overlap_window_weights),
+            },
+            "seed": config.seed,
+            "population_size": config.population_size,
+        }
+    )
+
+
+def _write_run_state(output: Path, **values: Any) -> None:
+    with (output / "run_state.json").open("w", encoding="utf-8") as handle:
+        json.dump(_json(values), handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
+def _completed_trials(study: Any) -> int:
+    return sum(1 for trial in study.trials if str(trial.state).endswith("COMPLETE"))
+
+
 def run_pipeline(config: PipelineConfig) -> Path:
     """Run MOCMA and write the complete annotated Pareto front."""
     import optuna
@@ -177,13 +216,32 @@ def run_pipeline(config: PipelineConfig) -> Path:
     }
     module = optunahub.load_module("samplers/mocma")
     sampler = module.MoCmaSampler(search_space=search_space, popsize=config.population_size, seed=config.seed)
+    storage_url = _storage_url(config.storage, output)
+    storage = optuna.storages.RDBStorage(
+        storage_url,
+        heartbeat_interval=config.heartbeat_interval_s,
+        grace_period=config.grace_period_s,
+    )
+    app_hash = stable_hash(config_as_dict(config.app_config))
+    run_hash = _run_hash(config, app_hash)
     study = optuna.create_study(
         study_name=config.study_name,
         directions=["minimize"] * len(OBJECTIVE_LABELS),
         sampler=sampler,
-        storage=config.storage,
-        load_if_exists=config.storage is not None,
+        storage=storage,
+        load_if_exists=config.resume,
     )
+    stored_hash = study.user_attrs.get("run_hash")
+    if stored_hash is not None and stored_hash != run_hash:
+        raise ValueError(
+            "Existing study configuration does not match this run. "
+            "Use a new study_name/output directory or keep the original settings."
+        )
+    study.set_user_attr("run_hash", run_hash)
+    study.set_user_attr("population_size", config.population_size)
+    study.set_user_attr("objective_labels", list(OBJECTIVE_LABELS))
+    optuna.storages.fail_stale_trials(study)
+    initial_trial_count = _completed_trials(study)
 
     def objective(trial: Any) -> tuple[float, ...]:
         parameters = {spec.name: trial.suggest_float(spec.name, float(spec.bounds[0]), float(spec.bounds[1])) for spec in parameter_specs}
@@ -196,7 +254,67 @@ def run_pipeline(config: PipelineConfig) -> Path:
             trial.set_user_attr("error", f"{type(error).__name__}: {error}")
             return tuple([config.objectives.invalid_feature_penalty] * len(OBJECTIVE_LABELS))
 
-    study.optimize(objective, n_trials=config.trials, gc_after_trial=True)
+    remaining_trials = max(0, config.trials - _completed_trials(study))
+    _write_run_state(
+        output,
+        status="running" if remaining_trials else "complete",
+        target_trials=config.trials,
+        trials_recorded=len(study.trials),
+        completed_trials=_completed_trials(study),
+        remaining_trials=remaining_trials,
+        storage=storage_url,
+    )
+    try:
+        if remaining_trials:
+            study.optimize(
+                objective,
+                n_trials=remaining_trials,
+                gc_after_trial=True,
+                callbacks=[
+                    lambda current_study, trial: _write_run_state(
+                        output,
+                        status="running",
+                        target_trials=config.trials,
+                        trials_recorded=len(current_study.trials),
+                        completed_trials=_completed_trials(current_study),
+                        remaining_trials=max(0, config.trials - _completed_trials(current_study)),
+                        last_trial=int(trial.number),
+                        storage=storage_url,
+                    )
+                ],
+            )
+    except KeyboardInterrupt:
+        _write_run_state(
+            output,
+            status="interrupted",
+            target_trials=config.trials,
+            trials_recorded=len(study.trials),
+            completed_trials=_completed_trials(study),
+            remaining_trials=max(0, config.trials - _completed_trials(study)),
+            storage=storage_url,
+        )
+        raise
+    except Exception as error:
+        _write_run_state(
+            output,
+            status="failed",
+            target_trials=config.trials,
+            trials_recorded=len(study.trials),
+            completed_trials=_completed_trials(study),
+            remaining_trials=max(0, config.trials - _completed_trials(study)),
+            error=f"{type(error).__name__}: {error}",
+            storage=storage_url,
+        )
+        raise
+    _write_run_state(
+        output,
+        status="complete",
+        target_trials=config.trials,
+        trials_recorded=len(study.trials),
+        completed_trials=_completed_trials(study),
+        remaining_trials=max(0, config.trials - _completed_trials(study)),
+        storage=storage_url,
+    )
     labels = OBJECTIVE_LABELS
     all_rows = [trial_row(trial, labels) for trial in study.trials if trial.values is not None]
     write_jsonl(output / "all_trials.jsonl", all_rows)
@@ -218,7 +336,10 @@ def run_pipeline(config: PipelineConfig) -> Path:
         "sampler": "mocma",
         "seed": config.seed,
         "trials_requested": config.trials,
-        "trials_completed": len(study.trials),
+        "trials_completed": _completed_trials(study),
+        "trials_recorded": len(study.trials),
+        "storage": storage_url,
+        "resumed": initial_trial_count > 0,
         "population_size": config.population_size,
         "model_signature": evaluator.model.signature,
         "parameter_names": list(evaluator.model.parameterizer.keys),

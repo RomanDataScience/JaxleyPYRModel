@@ -92,7 +92,10 @@ multi_objective:
   seed: 1234
   population_size: 40
   trials: 4000
-  storage: null             # optional Optuna RDB storage for resumable runs
+  storage: auto             # SQLite study.db in the run directory
+  resume: true
+  heartbeat_interval_s: 60
+  grace_period_s: 300
   study_name: mocma_features
 
   parameters:

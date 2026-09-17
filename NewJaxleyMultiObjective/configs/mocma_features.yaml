@@ -9,7 +9,11 @@ multi_objective:
   population_size: 40
   trials: 4000
   study_name: mocma_features
-  storage: null
+  # Persistent SQLite storage enables trial-level resume/checkpointing.
+  storage: auto
+  resume: true
+  heartbeat_interval_s: 60
+  grace_period_s: 300
   cell_id: m20240527cd
   all_traces: true
 
