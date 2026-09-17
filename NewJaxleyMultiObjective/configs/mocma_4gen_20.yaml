@@ -8,7 +8,7 @@ multi_objective:
   seed: 1234
   population_size: 60
   trials: 180
-  study_name: mocma_features_4_20_train24_test13
+  study_name: mocma_features_4_20_train24
   # Persistent SQLite storage enables trial-level resume/checkpointing.
   storage: auto
   resume: true
@@ -19,6 +19,8 @@ multi_objective:
     # Trace numbers are counted independently within each protocol.
     optimization_indices: [2, 4]
     test_indices: [1, 3]
+  # This run only scores and plots the optimization traces.
+  evaluate_test: false
 
   fitness_windows:
     depolarizing:

@@ -180,6 +180,7 @@ class PipelineConfig:
     fitness_windows: FitnessWindowConfig
     optimization_trace_indices: tuple[int, ...]
     test_trace_indices: tuple[int, ...]
+    evaluate_test: bool
     seed: int
     population_size: int
     trials: int
@@ -231,6 +232,7 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
     )
     if set(optimization_trace_indices) & set(test_trace_indices):
         raise ValueError("Optimization and test trace indices must be disjoint")
+    evaluate_test = bool(multi.get("evaluate_test", True))
 
     fitness_windows = FitnessWindowConfig.from_mapping(multi.get("fitness_windows"))
     dataset = app_config.dataset
@@ -278,6 +280,7 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
         fitness_windows=fitness_windows,
         optimization_trace_indices=optimization_trace_indices,
         test_trace_indices=test_trace_indices,
+        evaluate_test=evaluate_test,
         seed=seed,
         population_size=population_size,
         trials=trials,

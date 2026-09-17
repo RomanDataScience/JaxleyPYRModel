@@ -25,7 +25,8 @@ population settings for an existing study is rejected by the run hash check.
 
 For a quick check, copy the config and reduce `multi_objective.trials` to 1 or
 2. The default configuration optimizes trace indices 2 and 4 independently
-within each protocol, and holds out traces 1 and 3 for testing. Set
+within each protocol. The test indices 1 and 3 remain configured for optional
+held-out evaluation, but it is disabled in the supplied training configs. Set
 `PYTHON_EXECUTABLE` when the Jaxley environment is not the shell's default
 Python.
 
@@ -37,5 +38,5 @@ the available portion is used and recorded in the trace metadata.
 Outputs are written under `NewJaxleyMultiObjective/runs/`. Each Pareto solution
 contains its parameters, optimization-trace features/predictions, objective
 ranking, and a figure with full traces plus the first 100 ms after
-depolarizing-step onset. The same candidate is evaluated on the held-out
-traces and written as `test_*` files, including `test_solution.png`.
+depolarizing-step onset. Set `evaluate_test: true` to additionally evaluate
+the configured held-out traces and write the `test_*` files.

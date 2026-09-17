@@ -265,7 +265,10 @@ window coordinates, and checksums to `experimental_features.json` and
 
 The MOCMA pipeline uses an explicit train/test split within every protocol:
 trace indices 2 and 4 are optimization traces, while indices 1 and 3 are
-held-out test traces. The time-course fitness masks use 200 ms before and 600
+held-out test traces. The supplied training configurations disable test
+evaluation, so each training trial uses exactly four records: depolarizing 2
+and 4 plus hyperpolarizing 2 and 4. Set `evaluate_test: true` to enable the
+held-out evaluation. The time-course fitness masks use 200 ms before and 600
 ms after the depolarizing step, and 200 ms before and 200 ms after the
 hyperpolarizing pulse. Masks are clipped to the available recording and the
 requested and actual coordinates are stored in trace metadata.

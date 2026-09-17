@@ -70,20 +70,26 @@ class JaxleyEvaluator:
         self.config = config
         loader = SegmentedTraceLoader()
         self.records = self._prepare_records(loader.load(config.app_config.dataset))
-        test_dataset = replace(
-            config.app_config.dataset,
-            traces=(),
-            trace_indices=config.test_trace_indices,
-        )
-        self.test_records = self._prepare_records(loader.load(test_dataset))
+        if config.evaluate_test:
+            test_dataset = replace(
+                config.app_config.dataset,
+                traces=(),
+                trace_indices=config.test_trace_indices,
+            )
+            self.test_records = self._prepare_records(loader.load(test_dataset))
+        else:
+            self.test_records = ()
         self.model = default_builder().build(config.app_config.model)
         self.jnp = jnp
         self.buckets, self.kernels, self.states = self._make_simulations(
             self.records, InitialStateFactory, SimulationKernel, bucket_records
         )
-        self.test_buckets, self.test_kernels, self.test_states = self._make_simulations(
-            self.test_records, InitialStateFactory, SimulationKernel, bucket_records
-        )
+        if self.test_records:
+            self.test_buckets, self.test_kernels, self.test_states = self._make_simulations(
+                self.test_records, InitialStateFactory, SimulationKernel, bucket_records
+            )
+        else:
+            self.test_buckets, self.test_kernels, self.test_states = (), (), ()
         self.experimental = {
             record.trace_key: extract_features(record, record.voltage_mV, config.feature)
             for record in self.records
@@ -153,6 +159,8 @@ class JaxleyEvaluator:
 
     def evaluate(self, parameters: dict[str, float], split: str = "optimization") -> tuple[tuple[float, ...], dict[str, Any], dict[tuple[float, int], np.ndarray]]:
         if split == "test":
+            if not self.test_records:
+                raise ValueError("Test evaluation is disabled")
             records, buckets, experimental = self.test_records, self.test_buckets, self.test_experimental
         else:
             records, buckets, experimental = self.records, self.buckets, self.experimental
@@ -173,7 +181,9 @@ def _write_solution(output: Path, evaluator: JaxleyEvaluator, trial: Any, row: d
     trial_dir.mkdir(parents=True, exist_ok=True)
     parameters = {key: float(value) for key, value in trial.params.items()}
     values, details, predictions = evaluator.evaluate(parameters)
-    test_values, test_details, test_predictions = evaluator.evaluate(parameters, split="test")
+    test_values = test_details = test_predictions = None
+    if evaluator.test_records:
+        test_values, test_details, test_predictions = evaluator.evaluate(parameters, split="test")
 
     def write_evaluation(prefix, records, buckets, values, details, predictions):
         objective_values = {label: float(value) for label, value in zip(OBJECTIVE_LABELS, values, strict=True)}
@@ -203,7 +213,9 @@ def _write_solution(output: Path, evaluator: JaxleyEvaluator, trial: Any, row: d
         return objective_values
 
     objective_values = write_evaluation("", evaluator.records, evaluator.buckets, values, details, predictions)
-    test_objective_values = write_evaluation("test_", evaluator.test_records, evaluator.test_buckets, test_values, test_details, test_predictions)
+    test_objective_values = None
+    if evaluator.test_records:
+        test_objective_values = write_evaluation("test_", evaluator.test_records, evaluator.test_buckets, test_values, test_details, test_predictions)
     with (trial_dir / "objective_ranks.json").open("w", encoding="utf-8") as handle:
         json.dump(_json({"objective_ranks": row["objective_ranks"], "objective_gaps_from_front_best": row["objective_gaps_from_front_best"], "objective_percentiles": row["objective_percentiles"], "best_for_objectives": row["best_for_objectives"]}), handle, indent=2, sort_keys=True)
         handle.write("\n")
@@ -222,16 +234,17 @@ def _write_solution(output: Path, evaluator: JaxleyEvaluator, trial: Any, row: d
         objective_values,
         row["best_for_objectives"],
     )
-    plot_solution(
-        trial_dir / "test_solution.png",
-        evaluator.test_records,
-        test_predictions,
-        evaluator.test_buckets,
-        test_details,
-        trial.number,
-        test_objective_values,
-        [],
-    )
+    if evaluator.test_records:
+        plot_solution(
+            trial_dir / "test_solution.png",
+            evaluator.test_records,
+            test_predictions,
+            evaluator.test_buckets,
+            test_details,
+            trial.number,
+            test_objective_values,
+            [],
+        )
 
 
 def _storage_url(storage: str, output: Path) -> str:
@@ -265,6 +278,7 @@ def _run_hash(config: PipelineConfig, app_hash: str) -> str:
             },
             "optimization_trace_indices": config.optimization_trace_indices,
             "test_trace_indices": config.test_trace_indices,
+            "evaluate_test": config.evaluate_test,
             "seed": config.seed,
             "population_size": config.population_size,
         }
@@ -294,7 +308,8 @@ def run_pipeline(config: PipelineConfig) -> Path:
     output.mkdir(parents=True, exist_ok=True)
     (output / "solutions").mkdir(exist_ok=True)
     _write_experimental(output / "experimental_features.csv", evaluator.records, evaluator.experimental)
-    _write_experimental(output / "test_experimental_features.csv", evaluator.test_records, evaluator.test_experimental)
+    if evaluator.test_records:
+        _write_experimental(output / "test_experimental_features.csv", evaluator.test_records, evaluator.test_experimental)
 
     parameter_specs = tuple(evaluator.model.parameterizer.specs)
     search_space = {
@@ -432,6 +447,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
         "parameter_names": list(evaluator.model.parameterizer.keys),
         "optimization_trace_indices": config.optimization_trace_indices,
         "test_trace_indices": config.test_trace_indices,
+        "evaluate_test": config.evaluate_test,
         "optimization_trace_keys": [record.trace_key for record in evaluator.records],
         "test_trace_keys": [record.trace_key for record in evaluator.test_records],
         "config_hash": stable_hash(config_as_dict(config.app_config)),
