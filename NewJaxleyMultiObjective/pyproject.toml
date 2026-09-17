@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "newjaxley-multiobjective"
+version = "0.1.0"
+description = "Jaxley feature-based multi-objective MOCMA fitting"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy",
+  "PyYAML",
+  "optuna>=4.0",
+  "optunahub",
+]
+
+[project.scripts]
+jaxley-mocma = "newjaxley_multiobjective.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["newjaxley_multiobjective*"]
