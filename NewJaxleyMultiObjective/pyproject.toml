@@ -5,12 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "newjaxley-multiobjective"
 version = "0.1.0"
-description = "Jaxley feature-based multi-objective MOCMA fitting"
+description = "Jaxley feature-based CMA-ES and MOCMA fitting"
 requires-python = ">=3.11"
 dependencies = [
   "numpy",
   "PyYAML",
   "optuna>=4.0",
+  "cmaes",
   "optunahub",
 ]
 

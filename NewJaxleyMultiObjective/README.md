@@ -1,8 +1,9 @@
-# Jaxley MOCMA pipeline
+# Jaxley feature-fitting pipeline
 
-This folder contains the feature-based multi-objective pipeline. It reuses the
-model and segmented trace loader from `Jaxley_refactored` and uses only
-OptunaHub's `MoCmaSampler` for parameter sampling.
+This folder contains the feature-based fitting pipeline. It reuses the model
+and segmented trace loader from `Jaxley_refactored`. Multi-objective configs
+use OptunaHub's `MoCmaSampler`; the AP-count-only config uses Optuna's standard
+single-objective `CmaEsSampler`.
 
 Run it with the existing Jaxley environment:
 
@@ -55,9 +56,9 @@ training trace, spike count/timing, AP waveform, and recovery. The quick
 configuration uses six parallel workers; the main configuration uses eight.
 Reduce `parallel_workers` if memory or CPU capacity is limited.
 
-## AP-count-only MOCMA search
+## AP-count-only CMA-ES search
 
-`configs/mocma_ap_count.yaml` runs MOCMA with exactly one objective,
+`configs/mocma_ap_count.yaml` runs standard CMA-ES with exactly one objective,
 `ap_count`. It minimizes the mean squared difference between simulated and
 experimental upward threshold-crossing counts across the selected training
 traces. Count mismatches remain graded, so zero, partial, and correct spiking

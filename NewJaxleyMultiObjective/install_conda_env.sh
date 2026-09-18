@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Create or update one reusable Conda environment for the Jaxley MOCMA
+# Create or update one reusable Conda environment for the Jaxley fitting
 # pipeline. The script is intentionally non-interactive for batch/HPC use.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,9 +36,10 @@ echo "Installing numerical, Jaxley, Optuna, and plotting dependencies"
   "PyYAML" \
   "matplotlib" \
   "optuna>=4.0" \
+  "cmaes" \
   "optunahub"
 
-echo "Installing the local Jaxley and MOCMA packages in editable mode"
+echo "Installing the local Jaxley and feature-fitting packages in editable mode"
 "${CONDA_RUN[@]}" python -m pip install --no-deps --editable "${REPO_DIR}/Jaxley_refactored"
 "${CONDA_RUN[@]}" python -m pip install --no-deps --editable "${SCRIPT_DIR}"
 

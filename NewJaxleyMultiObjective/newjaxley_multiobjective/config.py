@@ -1,4 +1,4 @@
-"""Configuration for the small MOCMA pipeline.
+"""Configuration for the small feature-fitting pipeline.
 
 The existing refactored application owns the model/data configuration. This
 module adds only the multi-objective settings and loads that application
@@ -260,6 +260,7 @@ class PipelineConfig:
     source_path: Path
     base_config_path: Path
     app_config: Any
+    sampler: str
     feature: FeatureConfig
     objectives: ObjectiveConfig
     fitness_windows: FitnessWindowConfig
@@ -314,8 +315,8 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
             ),
         )
     sampler = str(multi.get("sampler", "mocma"))
-    if sampler != "mocma":
-        raise ValueError("Only the mocma sampler is supported")
+    if sampler not in {"mocma", "cma_es"}:
+        raise ValueError("sampler must be mocma or cma_es")
     seed = int(multi.get("seed", app_config.runtime.seed))
     population_size = int(multi.get("population_size", 0))
     trials = int(multi.get("trials", 0))
@@ -356,6 +357,8 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
         raise ValueError(
             "ap_count_only mode requires protocols: [depolarizing_step]"
         )
+    if sampler == "cma_es" and objective_config.mode != "ap_count_only":
+        raise ValueError("cma_es is currently supported only with objectives.mode: ap_count_only")
 
     fitness_windows = FitnessWindowConfig.from_mapping(multi.get("fitness_windows"))
     dataset = app_config.dataset
@@ -399,6 +402,7 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
         source_path=source,
         base_config_path=base_path,
         app_config=app_config,
+        sampler=sampler,
         feature=FeatureConfig.from_mapping(multi.get("feature_detection")),
         objectives=objective_config,
         fitness_windows=fitness_windows,

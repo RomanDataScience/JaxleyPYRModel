@@ -1,14 +1,14 @@
-# MOCMA search with one objective: match the number of APs on each
+# CMA-ES search with one objective: match the number of APs on each
 # depolarizing training trace. Voltage shape and recovery are reported only.
 base_config: ../../Jaxley_refactored/configs/LSU_1_cma_adam.yaml
 output_root: ../runs
 
 multi_objective:
-  sampler: mocma
+  sampler: cma_es
   seed: 1234
   population_size: 40
   trials: 12000
-  study_name: mocma_ap_count
+  study_name: cma_es_ap_count
   parallel_workers: 1
   plot_completed_trials: true
   storage: auto

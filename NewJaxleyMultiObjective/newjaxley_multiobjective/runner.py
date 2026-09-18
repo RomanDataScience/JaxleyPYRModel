@@ -1,4 +1,4 @@
-"""Jaxley simulation and Optuna MOCMA orchestration."""
+"""Jaxley simulation and Optuna sampler orchestration."""
 
 from __future__ import annotations
 
@@ -306,6 +306,7 @@ def _run_hash(config: PipelineConfig, app_hash: str) -> str:
     return stable_hash(
         {
             "app_config": app_hash,
+            "sampler": config.sampler,
             "feature": asdict(config.feature),
             "objectives": {
                 "labels": config.objectives.labels,
@@ -353,10 +354,27 @@ def _completed_trials(study: Any) -> int:
     return sum(1 for trial in study.trials if str(trial.state).endswith("COMPLETE"))
 
 
-def run_pipeline(config: PipelineConfig) -> Path:
-    """Run MOCMA and write the complete annotated Pareto front."""
-    import optuna
+def _create_sampler(config: PipelineConfig, search_space: dict[str, Any], optuna: Any) -> Any:
+    """Create the configured sampler without loading MOCMA unnecessarily."""
+    if config.sampler == "cma_es":
+        return optuna.samplers.CmaEsSampler(
+            popsize=config.population_size,
+            seed=config.seed,
+        )
+
     import optunahub
+
+    module = optunahub.load_module("samplers/mocma")
+    return module.MoCmaSampler(
+        search_space=search_space,
+        popsize=config.population_size,
+        seed=config.seed,
+    )
+
+
+def run_pipeline(config: PipelineConfig) -> Path:
+    """Run the configured sampler and write the annotated optimization result."""
+    import optuna
 
     from jaxley_refactored.config.hashing import config_as_dict, stable_hash
     from jaxley_refactored.runtime import collect_provenance, validate_device
@@ -374,8 +392,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
         spec.name: optuna.distributions.FloatDistribution(float(spec.bounds[0]), float(spec.bounds[1]))
         for spec in parameter_specs
     }
-    module = optunahub.load_module("samplers/mocma")
-    sampler = module.MoCmaSampler(search_space=search_space, popsize=config.population_size, seed=config.seed)
+    sampler = _create_sampler(config, search_space, optuna)
     storage_url = _storage_url(config.storage, output)
     storage = optuna.storages.RDBStorage(
         storage_url,
@@ -398,12 +415,13 @@ def run_pipeline(config: PipelineConfig) -> Path:
             "Use a new study_name/output directory or keep the original settings."
         )
     study.set_user_attr("run_hash", run_hash)
+    study.set_user_attr("sampler", config.sampler)
     study.set_user_attr("population_size", config.population_size)
     study.set_user_attr("objective_labels", list(evaluator.objective_labels))
     optuna.storages.fail_stale_trials(study)
     initial_trial_count = _completed_trials(study)
 
-    def objective(trial: Any) -> tuple[float, ...]:
+    def objective(trial: Any) -> float | tuple[float, ...]:
         parameters = {spec.name: trial.suggest_float(spec.name, float(spec.bounds[0]), float(spec.bounds[1])) for spec in parameter_specs}
         started = time.perf_counter()
         try:
@@ -418,10 +436,15 @@ def run_pipeline(config: PipelineConfig) -> Path:
                     predictions,
                 )
             trial.set_user_attr("evaluation_seconds", time.perf_counter() - started)
+            if config.sampler == "cma_es":
+                return float(values[0])
             return values
         except Exception as error:
             trial.set_user_attr("error", f"{type(error).__name__}: {error}")
-            return tuple([config.objectives.invalid_feature_penalty] * len(evaluator.objective_labels))
+            penalty = config.objectives.invalid_feature_penalty
+            if config.sampler == "cma_es":
+                return float(penalty)
+            return tuple([penalty] * len(evaluator.objective_labels))
 
     remaining_trials = max(0, config.trials - _completed_trials(study))
     _write_run_state(
@@ -511,7 +534,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
     device = validate_device(config.app_config.runtime)
     manifest = {
         "study_name": config.study_name,
-        "sampler": "mocma",
+        "sampler": config.sampler,
         "seed": config.seed,
         "trials_requested": config.trials,
         "trials_completed": _completed_trials(study),

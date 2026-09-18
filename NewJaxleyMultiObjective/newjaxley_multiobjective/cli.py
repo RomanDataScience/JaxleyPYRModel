@@ -1,4 +1,4 @@
-"""Command-line entry point for the MOCMA pipeline."""
+"""Command-line entry point for the feature-fitting pipeline."""
 
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
             config.optimization_trace_indices,
         )
         print(
-            f"valid sampler=mocma objectives={len(labels)} parameters=from-model "
+            f"valid sampler={config.sampler} objectives={len(labels)} parameters=from-model "
             f"cell={config.app_config.dataset.cell_id} "
             f"optimization_traces={config.optimization_trace_indices} "
             f"test_traces={config.test_trace_indices} protocols={config.protocols} "
