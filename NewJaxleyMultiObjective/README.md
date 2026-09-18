@@ -79,6 +79,16 @@ differences to `runs/discretization_comparison-<cell>/comparison.json`. For a
 specific fitted solution, add its `parameters.csv` with `--parameters` so the
 comparison uses exactly the same fitted parameter vector at both resolutions.
 
+For a quick MOCMA comparison using exactly one trial at each resolution, use
+the same seed for both runs:
+
+```bash
+SEED=1234 bash NewJaxleyMultiObjective/compare_one_trial.sh
+```
+
+This writes separate `d_lambda=0.3` and `d_lambda=0.1` study directories. The
+CLI also accepts `--trials 1` directly when launching an individual run.
+
 The hard spike guard returns a loss of `100000` for every objective when a
 depolarizing simulation spikes outside its stimulus interval or a
 hyperpolarizing simulation spikes anywhere in the recorded segment.

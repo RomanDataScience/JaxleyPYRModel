@@ -501,6 +501,10 @@ def run_pipeline(config: PipelineConfig) -> Path:
         resolved_multi = resolved.setdefault("multi_objective", {})
         resolved_multi["seed"] = config.seed
         resolved_multi["parallel_workers"] = config.parallel_workers
+        resolved_multi["trials"] = config.trials
+        resolved_multi["study_name"] = config.study_name
+        resolved_multi["protocols"] = list(config.protocols)
+        resolved_multi["morphology_d_lambda"] = config.app_config.model.morphology.d_lambda
         yaml.safe_dump(resolved, handle, sort_keys=False)
     device = validate_device(config.app_config.runtime)
     manifest = {

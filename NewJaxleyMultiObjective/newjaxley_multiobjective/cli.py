@@ -24,6 +24,11 @@ def main(argv: list[str] | None = None) -> int:
             type=float,
             help="Override morphology discretization d_lambda for this run.",
         )
+        command.add_argument(
+            "--trials",
+            type=int,
+            help="Override the requested number of trials for this run.",
+        )
     args = parser.parse_args(argv)
 
     from .config import load_pipeline_config
@@ -58,6 +63,10 @@ def main(argv: list[str] | None = None) -> int:
                 ),
             ),
         )
+    if args.trials is not None:
+        if args.trials <= 0:
+            parser.error("--trials must be positive")
+        config = replace(config, trials=args.trials)
     if args.command == "validate":
         labels = objective_labels_for_trace_ids(
             config.objectives,
