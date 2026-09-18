@@ -11,6 +11,7 @@ from .config import (
     DEPOLARIZING_OBJECTIVE_LABELS,
     FeatureConfig,
     MOCMA_FOUR_OBJECTIVE_LABELS,
+    AP_COUNT_OBJECTIVE_LABELS,
     OBJECTIVE_LABELS,
     ObjectiveConfig,
 )
@@ -106,6 +107,8 @@ def objective_labels_for_trace_ids(
     """Return stable labels for a run, including one voltage objective per trace."""
     if config.mode == "mocma_four_objectives":
         return MOCMA_FOUR_OBJECTIVE_LABELS
+    if config.mode == "ap_count_only":
+        return AP_COUNT_OBJECTIVE_LABELS
     if config.mode != "depolarizing_fidelity":
         return config.labels
     return tuple(
@@ -119,7 +122,7 @@ def _depolarizing_trace_labels(records: tuple[Any, ...]) -> tuple[str, ...]:
     ) + DEPOLARIZING_OBJECTIVE_LABELS[1:]
 
 
-def _four_objective_scale(config: ObjectiveConfig, label: str) -> float:
+def _objective_scale(config: ObjectiveConfig, label: str) -> float:
     return float(config.scales[label])
 
 
@@ -203,7 +206,7 @@ def _mocma_four_objective_values(
         expected_rate_hz = 1000.0 * len(experimental_spikes) / duration_ms
         simulated_rate_hz = 1000.0 * len(simulated_spikes) / duration_ms
         firing_rate_losses.append(
-            ((simulated_rate_hz - expected_rate_hz) / _four_objective_scale(config, "firing_rate")) ** 2
+            ((simulated_rate_hz - expected_rate_hz) / _objective_scale(config, "firing_rate")) ** 2
         )
 
         # 2. Spike shape: align each corresponding AP at its own peak, then
@@ -222,7 +225,7 @@ def _mocma_four_objective_values(
                 continue
             relative_time, expected_values = expected_waveform
             _, candidate_values = candidate_waveform
-            error = (candidate_values - expected_values) / _four_objective_scale(config, "spike_shape")
+            error = (candidate_values - expected_values) / _objective_scale(config, "spike_shape")
             event_shape_losses.append(float(np.mean(error**2)))
             shape_events.append({
                 "experimental_peak_time_ms": float(expected["peak_time_ms"]),
@@ -249,16 +252,16 @@ def _mocma_four_objective_values(
         recovery_indices = np.flatnonzero(recovery_mask)
         recovery_detail: dict[str, Any] = {"valid": bool(recovery_indices.size)}
         if recovery_indices.size:
-            error = (predicted[recovery_indices] - observed[recovery_indices]) / _four_objective_scale(config, "post_stimulus_recovery")
+            error = (predicted[recovery_indices] - observed[recovery_indices]) / _objective_scale(config, "post_stimulus_recovery")
             trajectory_loss = float(np.mean(error**2))
             terminal_count = max(1, int(round(0.05 * recovery_indices.size)))
             terminal = recovery_indices[-terminal_count:]
             experimental_terminal = float(np.mean(observed[terminal]))
             simulated_terminal = float(np.mean(predicted[terminal]))
             baseline = float(experimental[key]["features"].get("resting_membrane_potential", np.nan))
-            terminal_trace_loss = ((simulated_terminal - experimental_terminal) / _four_objective_scale(config, "post_stimulus_recovery")) ** 2
+            terminal_trace_loss = ((simulated_terminal - experimental_terminal) / _objective_scale(config, "post_stimulus_recovery")) ** 2
             terminal_baseline_loss = (
-                ((simulated_terminal - baseline) / _four_objective_scale(config, "post_stimulus_recovery")) ** 2
+                ((simulated_terminal - baseline) / _objective_scale(config, "post_stimulus_recovery")) ** 2
                 if math.isfinite(baseline)
                 else 0.0
             )
@@ -286,7 +289,7 @@ def _mocma_four_objective_values(
         )
         plateau_detail: dict[str, Any] = {"valid": bool(np.any(plateau_mask))}
         if np.any(plateau_mask):
-            plateau_error = (predicted[plateau_mask] - observed[plateau_mask]) / _four_objective_scale(config, "depolarized_plateau")
+            plateau_error = (predicted[plateau_mask] - observed[plateau_mask]) / _objective_scale(config, "depolarized_plateau")
             plateau_value = float(np.mean(plateau_error**2))
             plateau_detail.update({
                 "samples": int(np.count_nonzero(plateau_mask)),
@@ -318,6 +321,59 @@ def _mocma_four_objective_values(
     for label, value in zip(MOCMA_FOUR_OBJECTIVE_LABELS, values, strict=True):
         details["objectives"][label] = {"value": value, "type": "mocma_four_objectives"}
     return values
+
+
+def _ap_count_only_objective(
+    records: tuple[Any, ...],
+    experimental: Mapping[str, Mapping[str, Any]],
+    simulated: Mapping[str, Mapping[str, Any]],
+    details: dict[str, Any],
+    config: ObjectiveConfig,
+) -> tuple[float, ...]:
+    """Return one graded objective containing only AP-count error.
+
+    This mode intentionally does not use the generic hard AP-count guard.
+    MOCMA needs a ranking between zero, partially spiking, and correctly
+    spiking candidates; assigning the same large penalty to all mismatches
+    would remove that information.
+    """
+    scale = _objective_scale(config, "ap_count")
+    errors = []
+    by_trace: dict[str, Any] = {}
+    for record in records:
+        key = record.trace_key
+        target = float(experimental[key]["features"].get("ap_count", np.nan))
+        candidate = float(simulated[key]["features"].get("ap_count", np.nan))
+        if not math.isfinite(target) or not math.isfinite(candidate):
+            value = float(config.invalid_feature_penalty)
+            by_trace[key] = {
+                "experimental_ap_count": target,
+                "simulated_ap_count": candidate,
+                "absolute_error": None,
+                "loss": value,
+                "valid": False,
+            }
+            errors.append(value)
+            continue
+        absolute_error = abs(candidate - target)
+        value = ((candidate - target) / scale) ** 2
+        errors.append(value)
+        by_trace[key] = {
+            "experimental_ap_count": target,
+            "simulated_ap_count": candidate,
+            "absolute_error": absolute_error,
+            "loss": value,
+            "valid": True,
+        }
+
+    loss = float(np.mean(errors)) if errors else float(config.invalid_feature_penalty)
+    details["ap_count_by_trace"] = by_trace
+    details["objectives"]["ap_count"] = {
+        "value": loss,
+        "type": "ap_count_only",
+        "scale": scale,
+    }
+    return (loss,)
 
 
 def robust_trajectory_loss(
@@ -584,7 +640,7 @@ def evaluate_objectives(
     # In the four-objective mode, firing rate is deliberately a smooth
     # objective. Do not turn count differences into a duplicate hard
     # constraint; the outside-stimulus spike guard remains active above.
-    if objective_config.mode != "mocma_four_objectives":
+    if objective_config.mode not in {"mocma_four_objectives", "ap_count_only"}:
         for record in records:
             if record.protocol != "depolarizing_step":
                 continue
@@ -649,6 +705,17 @@ def evaluate_objectives(
             details,
             objective_config,
             feature_config,
+        ), details
+
+    if objective_config.mode == "ap_count_only":
+        if any(record.protocol != "depolarizing_step" for record in records):
+            raise ValueError("ap_count_only mode requires depolarizing_step records only")
+        return _ap_count_only_objective(
+            records,
+            experimental,
+            simulated,
+            details,
+            objective_config,
         ), details
 
     for label in labels:

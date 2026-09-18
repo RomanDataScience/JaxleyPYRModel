@@ -55,6 +55,26 @@ training trace, spike count/timing, AP waveform, and recovery. The quick
 configuration uses six parallel workers; the main configuration uses eight.
 Reduce `parallel_workers` if memory or CPU capacity is limited.
 
+## AP-count-only MOCMA search
+
+`configs/mocma_ap_count.yaml` runs MOCMA with exactly one objective,
+`ap_count`. It minimizes the mean squared difference between simulated and
+experimental upward threshold-crossing counts across the selected training
+traces. Count mismatches remain graded, so zero, partial, and correct spiking
+solutions are distinguishable; spikes outside the stimulus interval are still
+rejected by the hard guard.
+
+Run it with:
+
+```bash
+cd NewJaxleyMultiObjective
+CONFIG_PATH=configs/mocma_ap_count.yaml bash run_mocma.sh validate
+CONFIG_PATH=configs/mocma_ap_count.yaml bash run_mocma.sh run
+```
+
+The current four-objective configuration remains available below for later
+waveform and recovery refinement.
+
 ## Four requested depolarizing objectives
 
 `configs/mocma_four_objectives.yaml` configures exactly four minimization

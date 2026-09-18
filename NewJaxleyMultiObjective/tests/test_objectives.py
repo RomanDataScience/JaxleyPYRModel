@@ -92,6 +92,44 @@ def test_ap_count_guard_returns_maximum_loss_when_count_is_far_off():
     assert details["objectives"]["ap_count"]["type"] == "hard_ap_count_constraint"
 
 
+def test_ap_count_only_mode_keeps_count_mismatch_graded():
+    time = np.arange(0.0, 200.0, 0.1)
+    observed = np.full(time.size, -65.0)
+    candidate = np.full(time.size, -65.0)
+    for center in (40.0, 70.0, 100.0, 130.0, 160.0):
+        indexes = np.abs(time - center) < 1.0
+        observed[indexes] = 30.0 - 95.0 * np.abs(time[indexes] - center)
+    for center in (40.0, 100.0, 160.0):
+        indexes = np.abs(time - center) < 1.0
+        candidate[indexes] = 30.0 - 95.0 * np.abs(time[indexes] - center)
+    record = SimpleNamespace(
+        trace_key="cell/trace2/depolarizing_step",
+        trace_id="trace2",
+        protocol="depolarizing_step",
+        time_ms=time,
+        voltage_mV=observed,
+        current_nA=np.zeros(time.size),
+        score_mask=np.ones(time.size, dtype=bool),
+        dt_ms=0.1,
+        metadata={"epoch_start_ms": 20.0, "epoch_stop_ms": 180.0},
+    )
+    bucket = SimpleNamespace(key="bucket", records=(record,))
+    experimental = {record.trace_key: extract_features(record, observed, FeatureConfig())}
+
+    values, details = evaluate_objectives(
+        (record,),
+        {"bucket": candidate[None, :]},
+        (bucket,),
+        experimental,
+        FeatureConfig(),
+        ObjectiveConfig(mode="ap_count_only"),
+    )
+
+    assert values == (4.0,)
+    assert details["objectives"]["ap_count"]["type"] == "ap_count_only"
+    assert details["ap_count_by_trace"][record.trace_key]["absolute_error"] == 2.0
+
+
 def test_robust_trajectory_loss_is_time_locked_and_zero_for_exact_trace():
     time = np.arange(0.0, 100.0, 0.1)
     observed = -65.0 + 2.0 * np.sin(time / 10.0)

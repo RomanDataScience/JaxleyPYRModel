@@ -43,6 +43,8 @@ MOCMA_FOUR_OBJECTIVE_LABELS = (
     "depolarized_plateau",
 )
 
+AP_COUNT_OBJECTIVE_LABELS = ("ap_count",)
+
 DEFAULT_SCALES = {
     "resting_membrane_potential": 2.0,
     "average_fahp": 2.0,
@@ -164,6 +166,8 @@ class ObjectiveConfig:
             if mode == "depolarizing_fidelity"
             else MOCMA_FOUR_OBJECTIVE_LABELS
             if mode == "mocma_four_objectives"
+            else AP_COUNT_OBJECTIVE_LABELS
+            if mode == "ap_count_only"
             else OBJECTIVE_LABELS
         )
         labels = tuple(data.get("features", default_labels))
@@ -182,10 +186,17 @@ class ObjectiveConfig:
                 "The mocma_four_objectives order must contain exactly: "
                 + ", ".join(MOCMA_FOUR_OBJECTIVE_LABELS)
             )
-        if mode not in {"feature_multiobjective", "depolarizing_fidelity", "mocma_four_objectives"}:
+        if mode == "ap_count_only" and labels != AP_COUNT_OBJECTIVE_LABELS:
+            raise ValueError("The ap_count_only mode supports exactly the ap_count objective")
+        if mode not in {
+            "feature_multiobjective",
+            "depolarizing_fidelity",
+            "mocma_four_objectives",
+            "ap_count_only",
+        }:
             raise ValueError(
                 "objectives.mode must be feature_multiobjective, "
-                "depolarizing_fidelity, or mocma_four_objectives"
+                "depolarizing_fidelity, mocma_four_objectives, or ap_count_only"
             )
         scales = dict(DEFAULT_SCALES)
         scales.update({str(k): _positive(v, f"objective scale {k}") for k, v in _mapping(data.get("scales"), "objectives.scales").items()})
@@ -340,6 +351,10 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
     if objective_config.mode == "mocma_four_objectives" and protocols != ("depolarizing_step",):
         raise ValueError(
             "mocma_four_objectives mode requires protocols: [depolarizing_step]"
+        )
+    if objective_config.mode == "ap_count_only" and protocols != ("depolarizing_step",):
+        raise ValueError(
+            "ap_count_only mode requires protocols: [depolarizing_step]"
         )
 
     fitness_windows = FitnessWindowConfig.from_mapping(multi.get("fitness_windows"))
