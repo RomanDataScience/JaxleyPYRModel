@@ -1,0 +1,93 @@
+"""Command-line entry points for the NEURON optimization pipeline."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from .config import load_config
+from .stages import load_basins, make_basins, run_pipeline, run_study
+
+
+def _config(path: str, workers: int | None):
+    config = load_config(path)
+    if workers is not None:
+        config.raw.setdefault("runtime", {})["parallel_workers"] = workers
+    return config
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="NEURON Combe two-stage CMA-ES optimization")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    validate = sub.add_parser("validate")
+    validate.add_argument("--config", required=True)
+
+    for command in ("run-hyper", "run-depolarizing", "run-all"):
+        item = sub.add_parser(command)
+        item.add_argument("--config", required=True)
+        item.add_argument("--output-dir", type=Path, default=Path("runs"))
+        item.add_argument("--workers", type=int)
+
+    basins = sub.add_parser("make-basins")
+    basins.add_argument("--config", required=True)
+    basins.add_argument("--stage1-run", type=Path, required=True)
+    basins.add_argument("--output", type=Path)
+
+    report = sub.add_parser("report")
+    report.add_argument("--run-dir", type=Path, required=True)
+
+    args = parser.parse_args(argv)
+    if args.command == "validate":
+        config = load_config(args.config)
+        errors = config.validate()
+        if errors:
+            for error in errors:
+                print(f"ERROR: {error}")
+            return 2
+        print(json.dumps({"valid": True, "config_hash": config.hash(),
+                          "workers": config.workers,
+                          "parameters": len(config.parameters.keys)}, indent=2))
+        return 0
+
+    if args.command == "make-basins":
+        config = load_config(args.config)
+        records = make_basins(config, args.stage1_run, output=args.output)
+        print(f"wrote {len(records)} basins")
+        return 0
+
+    config = _config(args.config, getattr(args, "workers", None))
+    errors = config.validate()
+    if errors:
+        for error in errors:
+            print(f"ERROR: {error}")
+        return 2
+    output = args.output_dir.resolve()
+    if args.command == "run-hyper":
+        stage_dir = output / "stage1_hyper"
+        for seed in config.section("stage1").get("seeds", range(10)):
+            run_study(config, stage="hyper", seed=int(seed), run_dir=stage_dir / f"seed_{int(seed):03d}")
+        make_basins(config, stage_dir)
+    elif args.command == "run-depolarizing":
+        basins_path = output / "stage1_hyper" / "basins.jsonl"
+        basins = load_basins(basins_path)
+        import numpy as np
+        stage_dir = output / "stage2_depolarizing"
+        for basin in basins:
+            mean = np.asarray(basin["normalized"], dtype=float)
+            for seed in config.section("stage2").get("seeds", range(10)):
+                seed = int(seed)
+                rng = np.random.default_rng(np.random.SeedSequence([seed, int(basin["basin_id"][1:])]))
+                initial = np.clip(mean + rng.uniform(-0.15, 0.15, size=mean.size), 0.0, 1.0)
+                run_study(config, stage="depolarizing", seed=seed,
+                          run_dir=stage_dir / basin["basin_id"] / f"seed_{seed:03d}",
+                          initial_mean=initial, basin_id=basin["basin_id"])
+    else:
+        run_pipeline(config, output)
+    print(f"completed {args.command}: {output}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "combe-neuron-optim"
+version = "0.1.0"
+description = "Two-stage NEURON/Combe CMA-ES optimization"
+requires-python = ">=3.10"
+dependencies = ["numpy", "PyYAML"]
+
+[project.scripts]
+combe-neuron-optim = "neuron_optim.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]

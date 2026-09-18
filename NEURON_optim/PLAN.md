@@ -26,6 +26,12 @@ Create a self-contained optimization pipeline under `NEURON_optim/` that:
 The existing Jaxley implementation remains useful as a reference for parameter
 names and bounds, but it must not be the production simulator for this folder.
 
+The pipeline will run inside the repository's existing `Jaxley` environment.
+NEURON, Jaxley, NumPy, YAML, and the compiled Combe MOD mechanisms will be
+validated in that environment. No new environment will be created by
+`NEURON_optim`; the production launcher will use `conda run --name Jaxley` or
+an equivalent activated environment.
+
 ## Existing inputs to reuse
 
 - NEURON model source: `Combe2023.zip`, extracted or referenced without

@@ -69,13 +69,19 @@ def _load_mechanisms(mod_dir: Path = MOD_DIR) -> None:
         )
 
 
-def build_combe_neuron_model(*, quiet: bool = True, d_lambda: float | None = None):
+def build_combe_neuron_model(
+    *,
+    quiet: bool = True,
+    d_lambda: float | None = None,
+    combe_dir: Path | None = None,
+    mod_dir: Path | None = None,
+):
     """Load Combe2023/cell_setup_pc2b_CCh_driven.hoc and return soma[0]."""
     with _quiet_stdout(quiet):
-        _load_mechanisms()
+        _load_mechanisms(mod_dir or MOD_DIR)
         _delete_sections()
 
-        with _pushd(COMBE_DIR):
+        with _pushd(combe_dir or COMBE_DIR):
             h.load_file("stdrun.hoc")
             h.load_file("template/ObliquePath.hoc")
             h.load_file("template/BasalPath.hoc")
