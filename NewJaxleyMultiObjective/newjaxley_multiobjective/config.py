@@ -107,7 +107,11 @@ class ObjectiveConfig:
     scales: Mapping[str, float] = field(default_factory=lambda: dict(DEFAULT_SCALES))
     invalid_feature_penalty: float = 1.0e6
     spike_violation_loss: float = 1.0e5
+    ap_count_tolerance: float = 3.0
+    ap_count_violation_loss: float = 1.0e5
     overlap_sigma_mV: float = 3.0
+    spike_event_window_ms: float = 3.0
+    spike_event_weight: float = 4.0
     overlap_window_weights: Mapping[str, float] | None = None
     tie_tolerance: float = 1.0e-12
 
@@ -139,7 +143,11 @@ class ObjectiveConfig:
             scales=scales,
             invalid_feature_penalty=_positive(data.get("invalid_feature_penalty", 1.0e6), "invalid_feature_penalty"),
             spike_violation_loss=_positive(data.get("spike_violation_loss", 1.0e5), "spike_violation_loss"),
+            ap_count_tolerance=_positive(data.get("ap_count_tolerance", 3.0), "ap_count_tolerance"),
+            ap_count_violation_loss=_positive(data.get("ap_count_violation_loss", 1.0e5), "ap_count_violation_loss"),
             overlap_sigma_mV=_positive(data.get("overlap_sigma_mV", 3.0), "overlap_sigma_mV"),
+            spike_event_window_ms=_positive(data.get("spike_event_window_ms", 3.0), "spike_event_window_ms"),
+            spike_event_weight=_positive(data.get("spike_event_weight", 4.0), "spike_event_weight"),
             overlap_window_weights=weights,
             tie_tolerance=float(data.get("tie_tolerance", 1.0e-12)),
         )

@@ -306,7 +306,11 @@ def _run_hash(config: PipelineConfig, app_hash: str) -> str:
                 "scales": dict(config.objectives.scales),
                 "invalid_feature_penalty": config.objectives.invalid_feature_penalty,
                 "spike_violation_loss": config.objectives.spike_violation_loss,
+                "ap_count_tolerance": config.objectives.ap_count_tolerance,
+                "ap_count_violation_loss": config.objectives.ap_count_violation_loss,
                 "overlap_sigma_mV": config.objectives.overlap_sigma_mV,
+                "spike_event_window_ms": config.objectives.spike_event_window_ms,
+                "spike_event_weight": config.objectives.spike_event_weight,
                 "overlap_window_weights": dict(config.objectives.overlap_window_weights),
             },
             "fitness_windows": {
@@ -476,7 +480,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
     write_front_csv(output / "pareto_front.csv", front, labels)
 
     with (output / "objective_definitions.json").open("w", encoding="utf-8") as handle:
-        json.dump(_json({"labels": labels, "directions": ["minimize"] * len(labels), "scales": config.objectives.scales, "invalid_feature_penalty": config.objectives.invalid_feature_penalty, "spike_violation_loss": config.objectives.spike_violation_loss, "overlap_sigma_mV": config.objectives.overlap_sigma_mV, "overlap_window_weights": config.objectives.overlap_window_weights, "fitness_windows": {"depolarizing_pre_ms": config.fitness_windows.depolarizing_pre_ms, "depolarizing_post_ms": config.fitness_windows.depolarizing_post_ms, "hyperpolarizing_pre_ms": config.fitness_windows.hyperpolarizing_pre_ms, "hyperpolarizing_post_ms": config.fitness_windows.hyperpolarizing_post_ms}, "tie_tolerance": config.objectives.tie_tolerance}), handle, indent=2, sort_keys=True)
+        json.dump(_json({"labels": labels, "directions": ["minimize"] * len(labels), "scales": config.objectives.scales, "invalid_feature_penalty": config.objectives.invalid_feature_penalty, "spike_violation_loss": config.objectives.spike_violation_loss, "ap_count_tolerance": config.objectives.ap_count_tolerance, "ap_count_violation_loss": config.objectives.ap_count_violation_loss, "overlap_sigma_mV": config.objectives.overlap_sigma_mV, "spike_event_window_ms": config.objectives.spike_event_window_ms, "spike_event_weight": config.objectives.spike_event_weight, "overlap_window_weights": config.objectives.overlap_window_weights, "fitness_windows": {"depolarizing_pre_ms": config.fitness_windows.depolarizing_pre_ms, "depolarizing_post_ms": config.fitness_windows.depolarizing_post_ms, "hyperpolarizing_pre_ms": config.fitness_windows.hyperpolarizing_pre_ms, "hyperpolarizing_post_ms": config.fitness_windows.hyperpolarizing_post_ms}, "tie_tolerance": config.objectives.tie_tolerance}), handle, indent=2, sort_keys=True)
         handle.write("\n")
     with (output / "resolved_config.yaml").open("w", encoding="utf-8") as handle:
         import yaml

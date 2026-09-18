@@ -56,3 +56,36 @@ def test_spike_guard_returns_maximum_loss():
 
     assert values == (100000.0,) * 11
     assert details["spike_violations"][0]["reason"] == "depolarizing_spike_outside_stimulus"
+
+
+def test_ap_count_guard_returns_maximum_loss_when_count_is_far_off():
+    time = np.arange(0.0, 100.0, 0.1)
+    voltage = np.full(time.size, -65.0)
+    record = SimpleNamespace(
+        trace_key="cell/trace/depolarizing_step",
+        protocol="depolarizing_step",
+        time_ms=time,
+        voltage_mV=voltage,
+        current_nA=np.zeros(time.size),
+        score_mask=np.ones(time.size, dtype=bool),
+        dt_ms=0.1,
+        metadata={"epoch_start_ms": 20.0, "epoch_stop_ms": 80.0},
+    )
+    bucket = SimpleNamespace(key="bucket", records=(record,))
+    experimental = {record.trace_key: {"features": {
+        "resting_membrane_potential": -65.0,
+        "ap_count": 5.0,
+    }}}
+
+    values, details = evaluate_objectives(
+        (record,),
+        {"bucket": voltage[None, :]},
+        (bucket,),
+        experimental,
+        FeatureConfig(),
+        ObjectiveConfig(ap_count_tolerance=1.0, ap_count_violation_loss=100000.0),
+    )
+
+    assert values == (100000.0,) * 11
+    assert details["ap_count_violations"][0]["absolute_error"] == 5.0
+    assert details["objectives"]["ap_count"]["type"] == "hard_ap_count_constraint"
