@@ -1,0 +1,64 @@
+# MOCMA calibration for the four requested depolarizing behaviors:
+# firing rate, AP shape, post-step recovery, and the depolarized plateau.
+base_config: ../../Jaxley_refactored/configs/LSU_1_cma_adam.yaml
+output_root: ../runs
+
+multi_objective:
+  sampler: mocma
+  seed: 1234
+  population_size: 40
+  trials: 12000
+  study_name: mocma_four_objectives
+  parallel_workers: 8
+  plot_completed_trials: true
+  storage: auto
+  resume: true
+  heartbeat_interval_s: 60
+  grace_period_s: 300
+
+  cell_id: m20240527cd
+  morphology_d_lambda: 0.1
+  protocols: [depolarizing_step]
+  trace_selection:
+    # Trace numbers are counted independently within depolarizing_step.
+    optimization_indices: [2, 4]
+    test_indices: [1, 3]
+  evaluate_test: false
+
+  fitness_windows:
+    depolarizing:
+      pre_ms: 100.0
+      # Include the complete measured post-stimulus recovery whenever present.
+      post_ms: 500.0
+    hyperpolarizing:
+      pre_ms: 200.0
+      post_ms: 200.0
+
+  feature_detection:
+    threshold_mV: -20.0
+    refractory_ms: 2.0
+    smoothing_ms: 0.2
+    baseline_window_ms: 30.0
+    fahp_search_ms: 20.0
+    post_step_analysis_ms: 500.0
+    hyper_peak_window_ms: 20.0
+    hyper_steady_state_fraction: 0.20
+
+  objectives:
+    mode: mocma_four_objectives
+    features: [firing_rate, spike_shape, post_stimulus_recovery, depolarized_plateau]
+    invalid_feature_penalty: 1000000.0
+    # A spike detected outside the current step is still rejected, but an
+    # in-step count difference is handled smoothly by firing_rate.
+    spike_violation_loss: 100000.0
+    ap_count_tolerance: 0.0
+    ap_count_violation_loss: 100000.0
+    scales:
+      firing_rate: 1.0
+      spike_shape: 5.0
+      post_stimulus_recovery: 5.0
+      depolarized_plateau: 5.0
+    spike_shape_window_ms: 8.0
+    # Remove only the AP core from plateau scoring; the post-spike AHP is
+    # intentionally retained so hyperpolarizing dips are penalized.
+    plateau_spike_exclusion_ms: 2.0

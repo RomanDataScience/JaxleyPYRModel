@@ -10,6 +10,7 @@ import numpy as np
 from .config import (
     DEPOLARIZING_OBJECTIVE_LABELS,
     FeatureConfig,
+    MOCMA_FOUR_OBJECTIVE_LABELS,
     OBJECTIVE_LABELS,
     ObjectiveConfig,
 )
@@ -103,6 +104,8 @@ def objective_labels_for_trace_ids(
     trace_ids: tuple[int, ...],
 ) -> tuple[str, ...]:
     """Return stable labels for a run, including one voltage objective per trace."""
+    if config.mode == "mocma_four_objectives":
+        return MOCMA_FOUR_OBJECTIVE_LABELS
     if config.mode != "depolarizing_fidelity":
         return config.labels
     return tuple(
@@ -114,6 +117,207 @@ def _depolarizing_trace_labels(records: tuple[Any, ...]) -> tuple[str, ...]:
     return tuple(
         f"depolarizing_trace_{record.trace_id}_voltage" for record in records
     ) + DEPOLARIZING_OBJECTIVE_LABELS[1:]
+
+
+def _four_objective_scale(config: ObjectiveConfig, label: str) -> float:
+    return float(config.scales[label])
+
+
+def _aligned_spike_waveform(
+    time: np.ndarray,
+    voltage: np.ndarray,
+    spike: Mapping[str, Any],
+    window_ms: float,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """Return a baseline-subtracted AP waveform on its native time grid."""
+    peak_time = float(spike["peak_time_ms"])
+    dt_ms = float(np.median(np.diff(time)))
+    if peak_time - window_ms < time[0] or peak_time + window_ms > time[-1]:
+        return None
+    relative_time = np.arange(-window_ms, window_ms + 0.5 * dt_ms, dt_ms)
+    samples = np.interp(peak_time + relative_time, time, voltage)
+    baseline_mask = relative_time <= -0.5 * window_ms
+    baseline = float(np.median(samples[baseline_mask])) if np.any(baseline_mask) else float(samples[0])
+    return relative_time, samples - baseline
+
+
+def _masked_stimulus(
+    record: Any,
+    spikes: list[Mapping[str, Any]],
+    exclusion_ms: float,
+) -> np.ndarray:
+    time = np.asarray(record.time_ms, dtype=float)
+    start = float(record.metadata["epoch_start_ms"])
+    stop = float(record.metadata["epoch_stop_ms"])
+    mask = (
+        (time >= start)
+        & (time <= stop)
+        & np.asarray(record.score_mask, dtype=bool)
+    )
+    for spike in spikes:
+        mask &= np.abs(time - float(spike["peak_time_ms"])) > exclusion_ms
+    return mask
+
+
+def _mocma_four_objective_values(
+    records: tuple[Any, ...],
+    predicted_by_trace: Mapping[str, np.ndarray],
+    experimental: Mapping[str, Mapping[str, Any]],
+    simulated: Mapping[str, Mapping[str, Any]],
+    details: dict[str, Any],
+    config: ObjectiveConfig,
+    feature_config: FeatureConfig,
+) -> tuple[float, ...]:
+    """Evaluate the four depolarizing objectives used by the requested MOCMA run.
+
+    The objectives are intentionally orthogonal:
+    firing rate uses event count, spike shape uses peak-aligned AP waveforms,
+    recovery uses the post-step trajectory and terminal return to baseline,
+    and plateau uses fixed-time inter-spike voltage including post-spike AHPs.
+    """
+    if not records or any(record.protocol != "depolarizing_step" for record in records):
+        penalty = float(config.invalid_feature_penalty)
+        return (penalty,) * len(MOCMA_FOUR_OBJECTIVE_LABELS)
+
+    firing_rate_losses = []
+    shape_losses = []
+    recovery_losses = []
+    plateau_losses = []
+    objective_details: dict[str, Any] = {}
+
+    for record in records:
+        key = record.trace_key
+        time = np.asarray(record.time_ms, dtype=float)
+        observed = np.asarray(record.voltage_mV, dtype=float)
+        predicted = np.asarray(predicted_by_trace[key], dtype=float)[: len(time)]
+        start = float(record.metadata["epoch_start_ms"])
+        stop = float(record.metadata["epoch_stop_ms"])
+        duration_ms = stop - start
+        if duration_ms <= 0:
+            return (float(config.invalid_feature_penalty),) * len(MOCMA_FOUR_OBJECTIVE_LABELS)
+
+        experimental_spikes = detect_spikes(time, observed, start, stop, feature_config)
+        simulated_spikes = detect_spikes(time, predicted, start, stop, feature_config)
+
+        # 1. Firing rate: AP count converted to Hz over the actual stimulus.
+        expected_rate_hz = 1000.0 * len(experimental_spikes) / duration_ms
+        simulated_rate_hz = 1000.0 * len(simulated_spikes) / duration_ms
+        firing_rate_losses.append(
+            ((simulated_rate_hz - expected_rate_hz) / _four_objective_scale(config, "firing_rate")) ** 2
+        )
+
+        # 2. Spike shape: align each corresponding AP at its own peak, then
+        # compare the voltage waveform including amplitude and half-width.
+        paired = min(len(experimental_spikes), len(simulated_spikes))
+        event_shape_losses = []
+        shape_events = []
+        for expected, candidate in zip(experimental_spikes[:paired], simulated_spikes[:paired], strict=True):
+            expected_waveform = _aligned_spike_waveform(
+                time, observed, expected, config.spike_shape_window_ms
+            )
+            candidate_waveform = _aligned_spike_waveform(
+                time, predicted, candidate, config.spike_shape_window_ms
+            )
+            if expected_waveform is None or candidate_waveform is None:
+                continue
+            relative_time, expected_values = expected_waveform
+            _, candidate_values = candidate_waveform
+            error = (candidate_values - expected_values) / _four_objective_scale(config, "spike_shape")
+            event_shape_losses.append(float(np.mean(error**2)))
+            shape_events.append({
+                "experimental_peak_time_ms": float(expected["peak_time_ms"]),
+                "simulated_peak_time_ms": float(candidate["peak_time_ms"]),
+                "window_ms": [-config.spike_shape_window_ms, config.spike_shape_window_ms],
+                "waveform_time_ms": relative_time.tolist(),
+                "experimental_voltage_relative_mV": expected_values.tolist(),
+                "simulated_voltage_relative_mV": candidate_values.tolist(),
+            })
+        if experimental_spikes and not event_shape_losses:
+            shape_value = float(config.invalid_feature_penalty)
+        else:
+            shape_value = float(np.mean(event_shape_losses)) if event_shape_losses else 0.0
+        shape_losses.append(shape_value)
+
+        # 3. Recovery: compare the post-step voltage course and explicitly
+        # score the final value relative to both the measured trace and its
+        # pre-step baseline.
+        recovery_mask = (
+            (time > stop)
+            & (time <= stop + feature_config.post_step_analysis_ms)
+            & np.asarray(record.score_mask, dtype=bool)
+        )
+        recovery_indices = np.flatnonzero(recovery_mask)
+        recovery_detail: dict[str, Any] = {"valid": bool(recovery_indices.size)}
+        if recovery_indices.size:
+            error = (predicted[recovery_indices] - observed[recovery_indices]) / _four_objective_scale(config, "post_stimulus_recovery")
+            trajectory_loss = float(np.mean(error**2))
+            terminal_count = max(1, int(round(0.05 * recovery_indices.size)))
+            terminal = recovery_indices[-terminal_count:]
+            experimental_terminal = float(np.mean(observed[terminal]))
+            simulated_terminal = float(np.mean(predicted[terminal]))
+            baseline = float(experimental[key]["features"].get("resting_membrane_potential", np.nan))
+            terminal_trace_loss = ((simulated_terminal - experimental_terminal) / _four_objective_scale(config, "post_stimulus_recovery")) ** 2
+            terminal_baseline_loss = (
+                ((simulated_terminal - baseline) / _four_objective_scale(config, "post_stimulus_recovery")) ** 2
+                if math.isfinite(baseline)
+                else 0.0
+            )
+            recovery_value = 0.5 * trajectory_loss + 0.25 * terminal_trace_loss + 0.25 * terminal_baseline_loss
+            recovery_detail.update({
+                "window_ms": [stop, float(time[recovery_indices[-1]])],
+                "trajectory_loss": trajectory_loss,
+                "experimental_terminal_mV": experimental_terminal,
+                "simulated_terminal_mV": simulated_terminal,
+                "experimental_baseline_mV": baseline,
+                "terminal_trace_loss": float(terminal_trace_loss),
+                "terminal_baseline_loss": float(terminal_baseline_loss),
+            })
+        else:
+            recovery_value = float(config.invalid_feature_penalty)
+        recovery_losses.append(float(recovery_value))
+
+        # 4. Plateau: compare fixed-time voltages after removing only the
+        # narrow AP cores. The post-spike AHP remains in this mask, so a model
+        # that drops below the depolarized plateau is penalized.
+        plateau_mask = _masked_stimulus(
+            record,
+            [*experimental_spikes, *simulated_spikes],
+            config.plateau_spike_exclusion_ms,
+        )
+        plateau_detail: dict[str, Any] = {"valid": bool(np.any(plateau_mask))}
+        if np.any(plateau_mask):
+            plateau_error = (predicted[plateau_mask] - observed[plateau_mask]) / _four_objective_scale(config, "depolarized_plateau")
+            plateau_value = float(np.mean(plateau_error**2))
+            plateau_detail.update({
+                "samples": int(np.count_nonzero(plateau_mask)),
+                "experimental_median_mV": float(np.median(observed[plateau_mask])),
+                "simulated_median_mV": float(np.median(predicted[plateau_mask])),
+                "window_ms": [start, stop],
+            })
+        else:
+            plateau_value = float(config.invalid_feature_penalty)
+        plateau_losses.append(plateau_value)
+
+        objective_details[key] = {
+            "experimental_spike_count": len(experimental_spikes),
+            "simulated_spike_count": len(simulated_spikes),
+            "experimental_firing_rate_Hz": expected_rate_hz,
+            "simulated_firing_rate_Hz": simulated_rate_hz,
+            "spike_shape": {"valid": bool(event_shape_losses), "events": shape_events},
+            "recovery": recovery_detail,
+            "plateau": plateau_detail,
+        }
+
+    details["mocma_four_objectives_by_trace"] = objective_details
+    values = (
+        float(np.mean(firing_rate_losses)),
+        float(np.mean(shape_losses)),
+        float(np.mean(recovery_losses)),
+        float(np.mean(plateau_losses)),
+    )
+    for label, value in zip(MOCMA_FOUR_OBJECTIVE_LABELS, values, strict=True):
+        details["objectives"][label] = {"value": value, "type": "mocma_four_objectives"}
+    return values
 
 
 def robust_trajectory_loss(
@@ -311,6 +515,8 @@ def evaluate_objectives(
     labels = tuple(labels or (
         _depolarizing_trace_labels(records)
         if objective_config.mode == "depolarizing_fidelity"
+        else MOCMA_FOUR_OBJECTIVE_LABELS
+        if objective_config.mode == "mocma_four_objectives"
         else objective_config.labels
     ))
     predicted_by_trace: dict[str, np.ndarray] = {}
@@ -375,22 +581,26 @@ def evaluate_objectives(
             })
     details["spike_violations"] = spike_violations
     ap_count_violations = []
-    for record in records:
-        if record.protocol != "depolarizing_step":
-            continue
-        key = record.trace_key
-        target = float(experimental[key]["features"].get("ap_count", float("nan")))
-        candidate = float(simulated[key]["features"].get("ap_count", float("nan")))
-        if math.isfinite(target) and math.isfinite(candidate):
-            error = abs(candidate - target)
-            if error > objective_config.ap_count_tolerance:
-                ap_count_violations.append({
-                    "trace_key": key,
-                    "target": target,
-                    "candidate": candidate,
-                    "absolute_error": error,
-                    "tolerance": objective_config.ap_count_tolerance,
-                })
+    # In the four-objective mode, firing rate is deliberately a smooth
+    # objective. Do not turn count differences into a duplicate hard
+    # constraint; the outside-stimulus spike guard remains active above.
+    if objective_config.mode != "mocma_four_objectives":
+        for record in records:
+            if record.protocol != "depolarizing_step":
+                continue
+            key = record.trace_key
+            target = float(experimental[key]["features"].get("ap_count", float("nan")))
+            candidate = float(simulated[key]["features"].get("ap_count", float("nan")))
+            if math.isfinite(target) and math.isfinite(candidate):
+                error = abs(candidate - target)
+                if error > objective_config.ap_count_tolerance:
+                    ap_count_violations.append({
+                        "trace_key": key,
+                        "target": target,
+                        "candidate": candidate,
+                        "absolute_error": error,
+                        "tolerance": objective_config.ap_count_tolerance,
+                    })
     details["ap_count_violations"] = ap_count_violations
     if spike_violations or ap_count_violations:
         if spike_violations and ap_count_violations:
@@ -427,6 +637,19 @@ def evaluate_objectives(
             feature_config,
             labels,
         )
+
+    if objective_config.mode == "mocma_four_objectives":
+        if any(record.protocol != "depolarizing_step" for record in records):
+            raise ValueError("mocma_four_objectives mode requires depolarizing_step records only")
+        return _mocma_four_objective_values(
+            records,
+            predicted_by_trace,
+            experimental,
+            simulated,
+            details,
+            objective_config,
+            feature_config,
+        ), details
 
     for label in labels:
         if label == "trajectory_overlap":

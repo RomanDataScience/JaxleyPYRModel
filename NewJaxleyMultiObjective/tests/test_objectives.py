@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from newjaxley_multiobjective.config import FeatureConfig, ObjectiveConfig
+from newjaxley_multiobjective.features import extract_features
 from newjaxley_multiobjective.objectives import evaluate_objectives, robust_trajectory_loss, trajectory_overlap
 
 
@@ -138,3 +139,84 @@ def test_depolarizing_mode_returns_one_voltage_objective_per_trace():
     assert len(values) == 4
     assert "depolarizing_trace_trace2_voltage" in details["objectives"]
     assert "spike_timing_count" in details["objectives"]
+
+
+def test_mocma_four_objectives_are_zero_for_an_exact_trace():
+    time = np.arange(0.0, 220.0, 0.1)
+    voltage = np.full_like(time, -65.0)
+    for center in (60.0, 100.0, 140.0):
+        indexes = np.abs(time - center) < 1.0
+        voltage[indexes] = 30.0 - 95.0 * np.abs(time[indexes] - center)
+    voltage[(time > 141.0) & (time < 150.0)] = -62.0
+    current = np.zeros_like(time)
+    current[(time >= 20.0) & (time <= 160.0)] = 0.1
+    record = SimpleNamespace(
+        trace_key="cell/trace2/depolarizing_step",
+        trace_id="trace2",
+        protocol="depolarizing_step",
+        time_ms=time,
+        voltage_mV=voltage,
+        current_nA=current,
+        score_mask=np.ones(time.size, dtype=bool),
+        dt_ms=0.1,
+        metadata={"epoch_start_ms": 20.0, "epoch_stop_ms": 160.0},
+    )
+    bucket = SimpleNamespace(key="bucket", records=(record,))
+    experimental = {record.trace_key: extract_features(record, voltage, FeatureConfig())}
+
+    values, details = evaluate_objectives(
+        (record,),
+        {"bucket": voltage[None, :]},
+        (bucket,),
+        experimental,
+        FeatureConfig(),
+        ObjectiveConfig(mode="mocma_four_objectives"),
+    )
+
+    assert values == (0.0, 0.0, 0.0, 0.0)
+    assert tuple(details["objectives"]) == (
+        "firing_rate",
+        "spike_shape",
+        "post_stimulus_recovery",
+        "depolarized_plateau",
+    )
+
+
+def test_mocma_four_objectives_penalize_a_post_spike_hyperpolarizing_dip():
+    time = np.arange(0.0, 220.0, 0.1)
+    experimental_voltage = np.full_like(time, -65.0)
+    for center in (60.0, 100.0, 140.0):
+        indexes = np.abs(time - center) < 1.0
+        experimental_voltage[indexes] = 30.0 - 95.0 * np.abs(time[indexes] - center)
+    current = np.zeros_like(time)
+    current[(time >= 20.0) & (time <= 160.0)] = 0.1
+    record = SimpleNamespace(
+        trace_key="cell/trace2/depolarizing_step",
+        protocol="depolarizing_step",
+        time_ms=time,
+        voltage_mV=experimental_voltage,
+        current_nA=current,
+        score_mask=np.ones(time.size, dtype=bool),
+        dt_ms=0.1,
+        metadata={"epoch_start_ms": 20.0, "epoch_stop_ms": 160.0},
+    )
+    candidate = experimental_voltage.copy()
+    # Place the dip outside the ±8 ms AP-shape window so this isolates the
+    # plateau objective.
+    candidate[(time > 109.0) & (time < 115.0)] = -85.0
+    bucket = SimpleNamespace(key="bucket", records=(record,))
+    experimental = {record.trace_key: extract_features(record, experimental_voltage, FeatureConfig())}
+
+    values, _ = evaluate_objectives(
+        (record,),
+        {"bucket": candidate[None, :]},
+        (bucket,),
+        experimental,
+        FeatureConfig(),
+        ObjectiveConfig(mode="mocma_four_objectives"),
+    )
+
+    assert values[0] == 0.0
+    assert values[1] == 0.0
+    assert values[2] == 0.0
+    assert values[3] > 0.0

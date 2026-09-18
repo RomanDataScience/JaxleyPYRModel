@@ -36,6 +36,13 @@ DEPOLARIZING_OBJECTIVE_LABELS = (
     "recovery",
 )
 
+MOCMA_FOUR_OBJECTIVE_LABELS = (
+    "firing_rate",
+    "spike_shape",
+    "post_stimulus_recovery",
+    "depolarized_plateau",
+)
+
 DEFAULT_SCALES = {
     "resting_membrane_potential": 2.0,
     "average_fahp": 2.0,
@@ -47,6 +54,11 @@ DEFAULT_SCALES = {
     "peak_input_resistance": 20.0,
     "steady_state_input_resistance": 20.0,
     "sag": 0.1,
+    # Scales for the four-objective depolarizing calibration mode.
+    "firing_rate": 1.0,             # Hz
+    "spike_shape": 5.0,              # mV RMS
+    "post_stimulus_recovery": 5.0,   # mV RMS
+    "depolarized_plateau": 5.0,      # mV RMS
 }
 
 
@@ -130,6 +142,8 @@ class ObjectiveConfig:
     trajectory_huber_delta_mV: float = 3.0
     spike_timing_scale_ms: float = 2.0
     spike_count_scale: float = 1.0
+    spike_shape_window_ms: float = 8.0
+    plateau_spike_exclusion_ms: float = 2.0
     overlap_window_weights: Mapping[str, float] | None = None
     tie_tolerance: float = 1.0e-12
 
@@ -148,6 +162,8 @@ class ObjectiveConfig:
         default_labels = (
             DEPOLARIZING_OBJECTIVE_LABELS
             if mode == "depolarizing_fidelity"
+            else MOCMA_FOUR_OBJECTIVE_LABELS
+            if mode == "mocma_four_objectives"
             else OBJECTIVE_LABELS
         )
         labels = tuple(data.get("features", default_labels))
@@ -161,8 +177,16 @@ class ObjectiveConfig:
                 "The objective feature order must contain exactly the eleven "
                 "supported labels: " + ", ".join(OBJECTIVE_LABELS)
             )
-        if mode not in {"feature_multiobjective", "depolarizing_fidelity"}:
-            raise ValueError("objectives.mode must be feature_multiobjective or depolarizing_fidelity")
+        if mode == "mocma_four_objectives" and labels != MOCMA_FOUR_OBJECTIVE_LABELS:
+            raise ValueError(
+                "The mocma_four_objectives order must contain exactly: "
+                + ", ".join(MOCMA_FOUR_OBJECTIVE_LABELS)
+            )
+        if mode not in {"feature_multiobjective", "depolarizing_fidelity", "mocma_four_objectives"}:
+            raise ValueError(
+                "objectives.mode must be feature_multiobjective, "
+                "depolarizing_fidelity, or mocma_four_objectives"
+            )
         scales = dict(DEFAULT_SCALES)
         scales.update({str(k): _positive(v, f"objective scale {k}") for k, v in _mapping(data.get("scales"), "objectives.scales").items()})
         weights = dict(
@@ -183,6 +207,11 @@ class ObjectiveConfig:
             trajectory_huber_delta_mV=_positive(data.get("trajectory_huber_delta_mV", 3.0), "trajectory_huber_delta_mV"),
             spike_timing_scale_ms=_positive(data.get("spike_timing_scale_ms", 2.0), "spike_timing_scale_ms"),
             spike_count_scale=_positive(data.get("spike_count_scale", 1.0), "spike_count_scale"),
+            spike_shape_window_ms=_positive(data.get("spike_shape_window_ms", 8.0), "spike_shape_window_ms"),
+            plateau_spike_exclusion_ms=_positive(
+                data.get("plateau_spike_exclusion_ms", 2.0),
+                "plateau_spike_exclusion_ms",
+            ),
             overlap_window_weights=weights,
             tie_tolerance=float(data.get("tie_tolerance", 1.0e-12)),
         )
@@ -307,6 +336,10 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
     if objective_config.mode == "depolarizing_fidelity" and protocols != ("depolarizing_step",):
         raise ValueError(
             "depolarizing_fidelity mode requires protocols: [depolarizing_step]"
+        )
+    if objective_config.mode == "mocma_four_objectives" and protocols != ("depolarizing_step",):
+        raise ValueError(
+            "mocma_four_objectives mode requires protocols: [depolarizing_step]"
         )
 
     fitness_windows = FitnessWindowConfig.from_mapping(multi.get("fitness_windows"))

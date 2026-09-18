@@ -55,6 +55,31 @@ training trace, spike count/timing, AP waveform, and recovery. The quick
 configuration uses six parallel workers; the main configuration uses eight.
 Reduce `parallel_workers` if memory or CPU capacity is limited.
 
+## Four requested depolarizing objectives
+
+`configs/mocma_four_objectives.yaml` configures exactly four minimization
+objectives for the MOCMA study:
+
+1. `firing_rate`: AP count divided by stimulus duration, in Hz.
+2. `spike_shape`: peak-aligned voltage waveform error over ±8 ms around each
+   corresponding AP, including amplitude and width.
+3. `post_stimulus_recovery`: post-step voltage trajectory error plus explicit
+   terminal return-to-baseline error.
+4. `depolarized_plateau`: fixed-time inter-spike voltage error during the step;
+   only the narrow AP core is excluded, so post-spike hyperpolarizing dips are
+   penalized.
+
+Run that study yourself with:
+
+```bash
+cd NewJaxleyMultiObjective
+CONFIG_PATH=configs/mocma_four_objectives.yaml bash run_mocma.sh validate
+CONFIG_PATH=configs/mocma_four_objectives.yaml bash run_mocma.sh run
+```
+
+For a smoke run, use `--trials 1` on the last command. Set `SEED`,
+`PYTHON_EXECUTABLE`, `D_LAMBDA`, or `parallel_workers` in the config as needed.
+
 The configured morphology resolution is `morphology_d_lambda: 0.1`. To run
 the same pipeline at `d_lambda=0.3`, use `D_LAMBDA=0.3`; this automatically
 changes the model signature and therefore creates a separate study/run:
