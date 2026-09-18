@@ -194,6 +194,7 @@ class PipelineConfig:
     output_root: Path
     all_traces: bool
     parallel_workers: int
+    plot_completed_trials: bool
 
 
 def load_pipeline_config(path: str | Path) -> PipelineConfig:
@@ -220,6 +221,7 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
     population_size = int(multi.get("population_size", 0))
     trials = int(multi.get("trials", 0))
     parallel_workers = int(multi.get("parallel_workers", 1))
+    plot_completed_trials = bool(multi.get("plot_completed_trials", False))
     if seed < 0 or population_size < 2 or trials <= 0 or parallel_workers <= 0:
         raise ValueError("seed must be nonnegative, population_size >= 2, trials > 0, parallel_workers > 0")
 
@@ -296,4 +298,5 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
         output_root=output_root,
         all_traces=False,
         parallel_workers=parallel_workers,
+        plot_completed_trials=plot_completed_trials,
     )

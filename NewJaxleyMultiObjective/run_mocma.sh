@@ -17,4 +17,11 @@ if [[ "${1:-}" == "validate" || "${1:-}" == "run" ]]; then
   shift
 fi
 
+if [[ -n "${SEED:-}" ]]; then
+  if (( $# > 0 )); then
+    exec "${PYTHON_EXECUTABLE}" -m newjaxley_multiobjective.cli "${COMMAND}" --config "${CONFIG_PATH}" "$@" --seed "${SEED}"
+  fi
+  exec "${PYTHON_EXECUTABLE}" -m newjaxley_multiobjective.cli "${COMMAND}" --config "${CONFIG_PATH}" --seed "${SEED}"
+fi
+
 exec "${PYTHON_EXECUTABLE}" -m newjaxley_multiobjective.cli "${COMMAND}" --config "${CONFIG_PATH}" "$@"

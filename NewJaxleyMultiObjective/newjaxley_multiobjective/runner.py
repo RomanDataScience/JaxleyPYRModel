@@ -20,6 +20,7 @@ from .plotting import plot_solution
 
 
 _RUN_STATE_LOCK = threading.Lock()
+_PLOT_LOCK = threading.Lock()
 
 
 def _json(value: Any) -> Any:
@@ -59,6 +60,39 @@ def _write_experimental(path: Path, records: tuple[Any, ...], values: dict[str, 
         writer.writeheader()
         for row in rows:
             writer.writerow({key: _json(row.get(key)) for key in fields})
+
+
+def _write_completed_trial_plot(
+    output: Path,
+    evaluator: "JaxleyEvaluator",
+    trial: Any,
+    values: tuple[float, ...],
+    details: dict[str, Any],
+    predictions: dict[tuple[float, int], np.ndarray],
+) -> None:
+    """Save a plot from the predictions already computed for this trial."""
+    trial_dir = output / "trial_plots" / f"trial_{trial.number:06d}"
+    trial_dir.mkdir(parents=True, exist_ok=True)
+    objective_values = {
+        label: float(value) for label, value in zip(OBJECTIVE_LABELS, values, strict=True)
+    }
+    with (trial_dir / "objective_values.json").open("w", encoding="utf-8") as handle:
+        json.dump(_json(objective_values), handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    with (trial_dir / "features_simulated.json").open("w", encoding="utf-8") as handle:
+        json.dump(_json(details), handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    with _PLOT_LOCK:
+        plot_solution(
+            trial_dir / "solution.png",
+            evaluator.records,
+            predictions,
+            evaluator.buckets,
+            details,
+            trial.number,
+            objective_values,
+            [],
+        )
 
 
 class JaxleyEvaluator:
@@ -356,7 +390,16 @@ def run_pipeline(config: PipelineConfig) -> Path:
         parameters = {spec.name: trial.suggest_float(spec.name, float(spec.bounds[0]), float(spec.bounds[1])) for spec in parameter_specs}
         started = time.perf_counter()
         try:
-            values, _details, _predictions = evaluator.evaluate(parameters)
+            values, details, predictions = evaluator.evaluate(parameters)
+            if config.plot_completed_trials:
+                _write_completed_trial_plot(
+                    output,
+                    evaluator,
+                    trial,
+                    values,
+                    details,
+                    predictions,
+                )
             trial.set_user_attr("evaluation_seconds", time.perf_counter() - started)
             return values
         except Exception as error:
@@ -439,7 +482,11 @@ def run_pipeline(config: PipelineConfig) -> Path:
         import yaml
 
         with config.source_path.open(encoding="utf-8") as source:
-            yaml.safe_dump(yaml.safe_load(source), handle, sort_keys=False)
+            resolved = yaml.safe_load(source) or {}
+        resolved_multi = resolved.setdefault("multi_objective", {})
+        resolved_multi["seed"] = config.seed
+        resolved_multi["parallel_workers"] = config.parallel_workers
+        yaml.safe_dump(resolved, handle, sort_keys=False)
     device = validate_device(config.app_config.runtime)
     manifest = {
         "study_name": config.study_name,

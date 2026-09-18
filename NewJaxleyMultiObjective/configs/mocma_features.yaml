@@ -10,6 +10,7 @@ multi_objective:
   trials: 4000
   study_name: mocma_features_train24_apcount4x_spikeguard
   parallel_workers: 6
+  plot_completed_trials: true
   # Persistent SQLite storage enables trial-level resume/checkpointing.
   storage: auto
   resume: true
