@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     from .config import load_pipeline_config
+    from .objectives import objective_labels_for_trace_ids
 
     config = load_pipeline_config(args.config)
     if args.seed is not None:
@@ -36,11 +37,15 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
     if args.command == "validate":
+        labels = objective_labels_for_trace_ids(
+            config.objectives,
+            config.optimization_trace_indices,
+        )
         print(
-            f"valid sampler=mocma objectives=11 parameters=from-model "
+            f"valid sampler=mocma objectives={len(labels)} parameters=from-model "
             f"cell={config.app_config.dataset.cell_id} "
             f"optimization_traces={config.optimization_trace_indices} "
-            f"test_traces={config.test_trace_indices} "
+            f"test_traces={config.test_trace_indices} protocols={config.protocols} "
             f"parallel_workers={config.parallel_workers}"
         )
         return 0

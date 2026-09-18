@@ -37,22 +37,23 @@ study with a new output/study name. Changing model, objective, seed, or
 population settings for an existing study is rejected by the run hash check.
 
 For a quick check, copy the config and reduce `multi_objective.trials` to 1 or
-2. The default configuration optimizes trace indices 2 and 4 independently
-within each protocol. The test indices 1 and 3 remain configured for optional
-held-out evaluation, but it is disabled in the supplied training configs. Set
+2. The supplied configs set `protocols: [depolarizing_step]`, so each trial
+simulates only depolarizing traces 2 and 4. Test traces 1 and 3 remain
+configured but are not simulated because `evaluate_test: false`. Set
+`evaluate_test: true` only for a separate validation run. Set
 `PYTHON_EXECUTABLE` when the Jaxley environment is not the shell's default
 Python.
 
-The time-course fitness window is protocol-specific: 200 ms before through
-600 ms after the depolarizing step, and 200 ms before through 200 ms after the
-hyperpolarizing pulse. If a recording starts before the requested pre-window,
-the available portion is used and recorded in the trace metadata.
+For the current depolarizing-only mode, the fixed-time fitness window is 200
+ms before through 600 ms after each depolarizing step. If a recording starts
+before the requested pre-window, the available portion is used and recorded in
+the trace metadata.
 
-The supplied configs use `objectives.scales.ap_count: 0.25`, making AP-count
-errors four times stronger in MOCMA's hypervolume-based elite selection. AP
-count remains an independent Pareto objective; this does not create a strict
-lexicographic priority. `parallel_workers: 6` evaluates six MOCMA trials at a
-time on CPU. Reduce it if memory or CPU capacity is limited.
+The supplied configs use `objectives.mode: depolarizing_fidelity`. The main
+configuration evaluates five objectives: one voltage objective for each
+training trace, spike count/timing, AP waveform, and recovery. The quick
+configuration uses six parallel workers; the main configuration uses eight.
+Reduce `parallel_workers` if memory or CPU capacity is limited.
 
 The hard spike guard returns a loss of `100000` for every objective when a
 depolarizing simulation spikes outside its stimulus interval or a
@@ -60,10 +61,11 @@ hyperpolarizing simulation spikes anywhere in the recorded segment.
 
 ## Features and loss calculation
 
-The supplied training configuration uses traces 2 and 4 from both protocols:
-two depolarizing and two hyperpolarizing traces. Traces 1 and 3 are held out
-and are only evaluated when `evaluate_test: true`. Each feature is extracted
-from the same stimulus epoch metadata used by the Jaxley trace loader.
+The depolarizing training configuration uses traces 2 and 4. Each feature is
+extracted from the same stimulus epoch metadata used by the Jaxley trace
+loader. The feature extractor still contains the hyperpolarizing measurements
+documented below for later protocol-specific runs, but they are not simulated
+or optimized by the supplied depolarizing configs.
 
 ### Automatically measured features
 
@@ -85,44 +87,50 @@ sag as `(steady voltage - peak voltage) / (baseline voltage - peak voltage)`.
 Input resistance is calculated as voltage change divided by stimulus-current
 change, so its sign follows the recorded current convention.
 
-### Eleven objectives
+### Depolarizing fidelity objectives
 
-All eleven objectives are minimized. For each scalar feature, the loss is the
-mean over applicable training traces of
+All five objectives are minimized. The first objective is separate for each
+training trace and compares the voltage at fixed time points. It uses a
+normalized Huber loss:
+
+```text
+u(t) = abs(V_sim(t) - V_exp(t)) / trajectory_huber_delta_mV
+Huber(t) = 0.5 * u(t)²,                         u(t) <= 1
+           u(t) - 0.5,                          u(t) > 1
+trajectory_loss = weighted_average(Huber(t))
+```
+
+This is an absolute, time-locked comparison: the voltage is not baseline
+centered, mean-subtracted, shifted, or dynamically time-warped. Samples within
+±3 ms of an experimentally detected AP peak receive weight 4. Consequently,
+an AP that occurs at the wrong time remains a large trajectory error.
+
+The `spike_timing_count` objective explicitly compares AP count and the timing
+of corresponding threshold crossings and peaks:
+
+```text
+count_loss = ((N_sim - N_exp) / spike_count_scale)²
+timing_loss = mean(0.5 * threshold_time_error²
+                   + 0.5 * peak_time_error²)
+```
+
+The `ap_waveform` objective compares average fAHP, last stabilized ISI, and
+last AP half-width. The `recovery` objective compares resting membrane
+potential, mAHP timing, and mAHP amplitude. Scalar feature errors use
 
 ```text
 ((simulated_feature - experimental_feature) / objective_scale)²
 ```
 
-The configured scales are in `objectives.scales`; for example,
-`ap_count: 0.25` makes a one-AP error contribute `((1 / 0.25)²) = 16`
-before trace averaging, making AP count more influential in MOCMA's
-hypervolume calculations. It remains a Pareto objective rather than a strict
-lexicographic priority. Missing or invalid scalar features add
-`invalid_feature_penalty` (`1e6`).
-
-The eleventh objective is `trajectory_overlap`. It does not subtract the
-trace mean and therefore cannot solve a voltage mismatch by drifting toward
-the mean. At each time sample it computes the local agreement
-
-```text
-overlap(t) = exp(-0.5 * ((V_sim(t) - V_exp(t)) / overlap_sigma_mV)²)
-trajectory_loss = 1 - weighted_average(overlap(t))
-```
-
-The average is calculated separately over baseline, stimulus, recovery, and
-the first 100 ms after depolarizing-step onset, then combined using
-`overlap_window_weights`. In the supplied configs, samples within ±3 ms of an
-experimentally detected depolarizing AP peak receive weight 4. This makes AP
-timing and waveform overlap matter more without allowing the voltage objective
-to replace the explicit AP-count objective.
+Missing or invalid scalar features add `invalid_feature_penalty` (`1e6`).
 
 Two hard constraints prevent clearly unusable solutions. If a depolarizing
 trace spikes outside its stimulus interval, or a hyperpolarizing trace spikes
 anywhere, every objective is set to `spike_violation_loss` (`1e5`). Also, if
 the simulated AP count differs from the experimental count by more than
-`ap_count_tolerance` (3 APs by default) on any depolarizing training trace,
-every objective is set to `ap_count_violation_loss` (`1e5`). The details of
+`ap_count_tolerance` (0 APs in the supplied depolarizing configs) on any
+depolarizing training trace, every objective is set to
+`ap_count_violation_loss` (`1e5`). The details of
 these decisions are saved in each solution's `features_simulated.json` and in
 the trial metadata.
 

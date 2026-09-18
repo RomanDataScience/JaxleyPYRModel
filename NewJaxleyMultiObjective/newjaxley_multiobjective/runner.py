@@ -12,9 +12,9 @@ from typing import Any
 
 import numpy as np
 
-from .config import OBJECTIVE_LABELS, PipelineConfig
+from .config import PipelineConfig
 from .features import FEATURE_LABELS as SCALAR_FEATURE_LABELS, extract_features
-from .objectives import evaluate_objectives
+from .objectives import evaluate_objectives, objective_labels_for_trace_ids
 from .pareto import annotate_front, trial_row, write_front_csv, write_jsonl
 from .plotting import plot_solution
 
@@ -74,7 +74,7 @@ def _write_completed_trial_plot(
     trial_dir = output / "trial_plots" / f"trial_{trial.number:06d}"
     trial_dir.mkdir(parents=True, exist_ok=True)
     objective_values = {
-        label: float(value) for label, value in zip(OBJECTIVE_LABELS, values, strict=True)
+        label: float(value) for label, value in zip(evaluator.objective_labels, values, strict=True)
     }
     with (trial_dir / "objective_values.json").open("w", encoding="utf-8") as handle:
         json.dump(_json(objective_values), handle, indent=2, sort_keys=True)
@@ -108,10 +108,15 @@ class JaxleyEvaluator:
         self.config = config
         loader = SegmentedTraceLoader()
         self.records = self._prepare_records(loader.load(config.app_config.dataset))
+        self.objective_labels = objective_labels_for_trace_ids(
+            config.objectives,
+            config.optimization_trace_indices,
+        )
         if config.evaluate_test:
             test_dataset = replace(
                 config.app_config.dataset,
                 traces=(),
+                segments=config.protocols,
                 trace_indices=config.test_trace_indices,
             )
             self.test_records = self._prepare_records(loader.load(test_dataset))
@@ -210,6 +215,7 @@ class JaxleyEvaluator:
             experimental,
             self.config.feature,
             self.config.objectives,
+            labels=self.objective_labels,
         )
         return values, details, predictions
 
@@ -224,7 +230,7 @@ def _write_solution(output: Path, evaluator: JaxleyEvaluator, trial: Any, row: d
         test_values, test_details, test_predictions = evaluator.evaluate(parameters, split="test")
 
     def write_evaluation(prefix, records, buckets, values, details, predictions):
-        objective_values = {label: float(value) for label, value in zip(OBJECTIVE_LABELS, values, strict=True)}
+        objective_values = {label: float(value) for label, value in zip(evaluator.objective_labels, values, strict=True)}
         with (trial_dir / f"{prefix}objective_values.json").open("w", encoding="utf-8") as handle:
             json.dump(_json(objective_values), handle, indent=2, sort_keys=True)
             handle.write("\n")
@@ -303,6 +309,7 @@ def _run_hash(config: PipelineConfig, app_hash: str) -> str:
             "feature": asdict(config.feature),
             "objectives": {
                 "labels": config.objectives.labels,
+                "mode": config.objectives.mode,
                 "scales": dict(config.objectives.scales),
                 "invalid_feature_penalty": config.objectives.invalid_feature_penalty,
                 "spike_violation_loss": config.objectives.spike_violation_loss,
@@ -311,6 +318,9 @@ def _run_hash(config: PipelineConfig, app_hash: str) -> str:
                 "overlap_sigma_mV": config.objectives.overlap_sigma_mV,
                 "spike_event_window_ms": config.objectives.spike_event_window_ms,
                 "spike_event_weight": config.objectives.spike_event_weight,
+                "trajectory_huber_delta_mV": config.objectives.trajectory_huber_delta_mV,
+                "spike_timing_scale_ms": config.objectives.spike_timing_scale_ms,
+                "spike_count_scale": config.objectives.spike_count_scale,
                 "overlap_window_weights": dict(config.objectives.overlap_window_weights),
             },
             "fitness_windows": {
@@ -322,6 +332,7 @@ def _run_hash(config: PipelineConfig, app_hash: str) -> str:
             "optimization_trace_indices": config.optimization_trace_indices,
             "test_trace_indices": config.test_trace_indices,
             "evaluate_test": config.evaluate_test,
+            "protocols": config.protocols,
             "parallel_workers": config.parallel_workers,
             "seed": config.seed,
             "population_size": config.population_size,
@@ -373,7 +384,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
     run_hash = _run_hash(config, app_hash)
     study = optuna.create_study(
         study_name=config.study_name,
-        directions=["minimize"] * len(OBJECTIVE_LABELS),
+        directions=["minimize"] * len(evaluator.objective_labels),
         sampler=sampler,
         storage=storage,
         load_if_exists=config.resume,
@@ -386,7 +397,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
         )
     study.set_user_attr("run_hash", run_hash)
     study.set_user_attr("population_size", config.population_size)
-    study.set_user_attr("objective_labels", list(OBJECTIVE_LABELS))
+    study.set_user_attr("objective_labels", list(evaluator.objective_labels))
     optuna.storages.fail_stale_trials(study)
     initial_trial_count = _completed_trials(study)
 
@@ -408,7 +419,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
             return values
         except Exception as error:
             trial.set_user_attr("error", f"{type(error).__name__}: {error}")
-            return tuple([config.objectives.invalid_feature_penalty] * len(OBJECTIVE_LABELS))
+            return tuple([config.objectives.invalid_feature_penalty] * len(evaluator.objective_labels))
 
     remaining_trials = max(0, config.trials - _completed_trials(study))
     _write_run_state(
@@ -472,7 +483,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
         remaining_trials=max(0, config.trials - _completed_trials(study)),
         storage=storage_url,
     )
-    labels = OBJECTIVE_LABELS
+    labels = evaluator.objective_labels
     all_rows = [trial_row(trial, labels) for trial in study.trials if trial.values is not None]
     write_jsonl(output / "all_trials.jsonl", all_rows)
     front = annotate_front(study.best_trials, labels, config.objectives.tie_tolerance)
@@ -480,7 +491,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
     write_front_csv(output / "pareto_front.csv", front, labels)
 
     with (output / "objective_definitions.json").open("w", encoding="utf-8") as handle:
-        json.dump(_json({"labels": labels, "directions": ["minimize"] * len(labels), "scales": config.objectives.scales, "invalid_feature_penalty": config.objectives.invalid_feature_penalty, "spike_violation_loss": config.objectives.spike_violation_loss, "ap_count_tolerance": config.objectives.ap_count_tolerance, "ap_count_violation_loss": config.objectives.ap_count_violation_loss, "overlap_sigma_mV": config.objectives.overlap_sigma_mV, "spike_event_window_ms": config.objectives.spike_event_window_ms, "spike_event_weight": config.objectives.spike_event_weight, "overlap_window_weights": config.objectives.overlap_window_weights, "fitness_windows": {"depolarizing_pre_ms": config.fitness_windows.depolarizing_pre_ms, "depolarizing_post_ms": config.fitness_windows.depolarizing_post_ms, "hyperpolarizing_pre_ms": config.fitness_windows.hyperpolarizing_pre_ms, "hyperpolarizing_post_ms": config.fitness_windows.hyperpolarizing_post_ms}, "tie_tolerance": config.objectives.tie_tolerance}), handle, indent=2, sort_keys=True)
+        json.dump(_json({"labels": labels, "directions": ["minimize"] * len(labels), "mode": config.objectives.mode, "scales": config.objectives.scales, "invalid_feature_penalty": config.objectives.invalid_feature_penalty, "spike_violation_loss": config.objectives.spike_violation_loss, "ap_count_tolerance": config.objectives.ap_count_tolerance, "ap_count_violation_loss": config.objectives.ap_count_violation_loss, "overlap_sigma_mV": config.objectives.overlap_sigma_mV, "spike_event_window_ms": config.objectives.spike_event_window_ms, "spike_event_weight": config.objectives.spike_event_weight, "trajectory_huber_delta_mV": config.objectives.trajectory_huber_delta_mV, "spike_timing_scale_ms": config.objectives.spike_timing_scale_ms, "spike_count_scale": config.objectives.spike_count_scale, "overlap_window_weights": config.objectives.overlap_window_weights, "fitness_windows": {"depolarizing_pre_ms": config.fitness_windows.depolarizing_pre_ms, "depolarizing_post_ms": config.fitness_windows.depolarizing_post_ms, "hyperpolarizing_pre_ms": config.fitness_windows.hyperpolarizing_pre_ms, "hyperpolarizing_post_ms": config.fitness_windows.hyperpolarizing_post_ms}, "tie_tolerance": config.objectives.tie_tolerance}), handle, indent=2, sort_keys=True)
         handle.write("\n")
     with (output / "resolved_config.yaml").open("w", encoding="utf-8") as handle:
         import yaml
@@ -507,6 +518,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
         "optimization_trace_indices": config.optimization_trace_indices,
         "test_trace_indices": config.test_trace_indices,
         "evaluate_test": config.evaluate_test,
+        "protocols": config.protocols,
         "parallel_workers": config.parallel_workers,
         "optimization_trace_keys": [record.trace_key for record in evaluator.records],
         "test_trace_keys": [record.trace_key for record in evaluator.test_records],

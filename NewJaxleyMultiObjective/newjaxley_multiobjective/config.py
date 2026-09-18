@@ -29,6 +29,13 @@ OBJECTIVE_LABELS = (
     "trajectory_overlap",
 )
 
+DEPOLARIZING_OBJECTIVE_LABELS = (
+    "depolarizing_voltage",
+    "spike_timing_count",
+    "ap_waveform",
+    "recovery",
+)
+
 DEFAULT_SCALES = {
     "resting_membrane_potential": 2.0,
     "average_fahp": 2.0,
@@ -55,6 +62,13 @@ def _positive(value: Any, name: str) -> float:
     result = float(value)
     if not math.isfinite(result) or result <= 0:
         raise ValueError(f"{name} must be finite and positive")
+    return result
+
+
+def _nonnegative(value: Any, name: str) -> float:
+    result = float(value)
+    if not math.isfinite(result) or result < 0:
+        raise ValueError(f"{name} must be finite and nonnegative")
     return result
 
 
@@ -103,6 +117,7 @@ class FeatureConfig:
 
 @dataclass(frozen=True)
 class ObjectiveConfig:
+    mode: str = "feature_multiobjective"
     labels: tuple[str, ...] = OBJECTIVE_LABELS
     scales: Mapping[str, float] = field(default_factory=lambda: dict(DEFAULT_SCALES))
     invalid_feature_penalty: float = 1.0e6
@@ -112,6 +127,9 @@ class ObjectiveConfig:
     overlap_sigma_mV: float = 3.0
     spike_event_window_ms: float = 3.0
     spike_event_weight: float = 4.0
+    trajectory_huber_delta_mV: float = 3.0
+    spike_timing_scale_ms: float = 2.0
+    spike_count_scale: float = 1.0
     overlap_window_weights: Mapping[str, float] | None = None
     tie_tolerance: float = 1.0e-12
 
@@ -126,12 +144,25 @@ class ObjectiveConfig:
     @classmethod
     def from_mapping(cls, value: Any) -> "ObjectiveConfig":
         data = _mapping(value, "multi_objective.objectives")
-        labels = tuple(data.get("features", OBJECTIVE_LABELS))
-        if labels != OBJECTIVE_LABELS:
+        mode = str(data.get("mode", "feature_multiobjective"))
+        default_labels = (
+            DEPOLARIZING_OBJECTIVE_LABELS
+            if mode == "depolarizing_fidelity"
+            else OBJECTIVE_LABELS
+        )
+        labels = tuple(data.get("features", default_labels))
+        if mode == "depolarizing_fidelity" and labels != DEPOLARIZING_OBJECTIVE_LABELS:
+            raise ValueError(
+                "The depolarizing objective order must contain exactly: "
+                + ", ".join(DEPOLARIZING_OBJECTIVE_LABELS)
+            )
+        if mode == "feature_multiobjective" and labels != OBJECTIVE_LABELS:
             raise ValueError(
                 "The objective feature order must contain exactly the eleven "
                 "supported labels: " + ", ".join(OBJECTIVE_LABELS)
             )
+        if mode not in {"feature_multiobjective", "depolarizing_fidelity"}:
+            raise ValueError("objectives.mode must be feature_multiobjective or depolarizing_fidelity")
         scales = dict(DEFAULT_SCALES)
         scales.update({str(k): _positive(v, f"objective scale {k}") for k, v in _mapping(data.get("scales"), "objectives.scales").items()})
         weights = dict(
@@ -139,15 +170,19 @@ class ObjectiveConfig:
         )
         weights.update({str(k): _positive(v, f"overlap window weight {k}") for k, v in _mapping(data.get("overlap_window_weights"), "objectives.overlap_window_weights").items()})
         return cls(
+            mode=mode,
             labels=labels,
             scales=scales,
             invalid_feature_penalty=_positive(data.get("invalid_feature_penalty", 1.0e6), "invalid_feature_penalty"),
             spike_violation_loss=_positive(data.get("spike_violation_loss", 1.0e5), "spike_violation_loss"),
-            ap_count_tolerance=_positive(data.get("ap_count_tolerance", 3.0), "ap_count_tolerance"),
+            ap_count_tolerance=_nonnegative(data.get("ap_count_tolerance", 3.0), "ap_count_tolerance"),
             ap_count_violation_loss=_positive(data.get("ap_count_violation_loss", 1.0e5), "ap_count_violation_loss"),
             overlap_sigma_mV=_positive(data.get("overlap_sigma_mV", 3.0), "overlap_sigma_mV"),
             spike_event_window_ms=_positive(data.get("spike_event_window_ms", 3.0), "spike_event_window_ms"),
             spike_event_weight=_positive(data.get("spike_event_weight", 4.0), "spike_event_weight"),
+            trajectory_huber_delta_mV=_positive(data.get("trajectory_huber_delta_mV", 3.0), "trajectory_huber_delta_mV"),
+            spike_timing_scale_ms=_positive(data.get("spike_timing_scale_ms", 2.0), "spike_timing_scale_ms"),
+            spike_count_scale=_positive(data.get("spike_count_scale", 1.0), "spike_count_scale"),
             overlap_window_weights=weights,
             tie_tolerance=float(data.get("tie_tolerance", 1.0e-12)),
         )
@@ -190,6 +225,7 @@ class PipelineConfig:
     fitness_windows: FitnessWindowConfig
     optimization_trace_indices: tuple[int, ...]
     test_trace_indices: tuple[int, ...]
+    protocols: tuple[str, ...]
     evaluate_test: bool
     seed: int
     population_size: int
@@ -247,6 +283,18 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
     if set(optimization_trace_indices) & set(test_trace_indices):
         raise ValueError("Optimization and test trace indices must be disjoint")
     evaluate_test = bool(multi.get("evaluate_test", True))
+    protocols = tuple(str(protocol) for protocol in multi.get("protocols", app_config.dataset.segments))
+    supported_protocols = {"depolarizing_step", "hyperpolarizing_pulse"}
+    if not protocols or any(protocol not in supported_protocols for protocol in protocols):
+        raise ValueError(
+            "multi_objective.protocols must contain depolarizing_step and/or "
+            "hyperpolarizing_pulse"
+        )
+    objective_config = ObjectiveConfig.from_mapping(multi.get("objectives"))
+    if objective_config.mode == "depolarizing_fidelity" and protocols != ("depolarizing_step",):
+        raise ValueError(
+            "depolarizing_fidelity mode requires protocols: [depolarizing_step]"
+        )
 
     fitness_windows = FitnessWindowConfig.from_mapping(multi.get("fitness_windows"))
     dataset = app_config.dataset
@@ -255,6 +303,7 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
     dataset = replace(
         dataset,
         traces=(),
+        segments=protocols,
         trace_indices=optimization_trace_indices,
         validation_trace_indices=test_trace_indices,
         score_pre_ms=min(
@@ -290,10 +339,11 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
         base_config_path=base_path,
         app_config=app_config,
         feature=FeatureConfig.from_mapping(multi.get("feature_detection")),
-        objectives=ObjectiveConfig.from_mapping(multi.get("objectives")),
+        objectives=objective_config,
         fitness_windows=fitness_windows,
         optimization_trace_indices=optimization_trace_indices,
         test_trace_indices=test_trace_indices,
+        protocols=protocols,
         evaluate_test=evaluate_test,
         seed=seed,
         population_size=population_size,

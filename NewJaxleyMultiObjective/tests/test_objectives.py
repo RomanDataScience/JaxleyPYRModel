@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from newjaxley_multiobjective.config import FeatureConfig, ObjectiveConfig
-from newjaxley_multiobjective.objectives import evaluate_objectives, trajectory_overlap
+from newjaxley_multiobjective.objectives import evaluate_objectives, robust_trajectory_loss, trajectory_overlap
 
 
 def test_trajectory_overlap_penalizes_shift_and_offset_without_mean_subtraction():
@@ -89,3 +89,52 @@ def test_ap_count_guard_returns_maximum_loss_when_count_is_far_off():
     assert values == (100000.0,) * 11
     assert details["ap_count_violations"][0]["absolute_error"] == 5.0
     assert details["objectives"]["ap_count"]["type"] == "hard_ap_count_constraint"
+
+
+def test_robust_trajectory_loss_is_time_locked_and_zero_for_exact_trace():
+    time = np.arange(0.0, 100.0, 0.1)
+    observed = -65.0 + 2.0 * np.sin(time / 10.0)
+    record = SimpleNamespace(
+        protocol="depolarizing_step",
+        time_ms=time,
+        voltage_mV=observed,
+        score_mask=np.ones(time.size, dtype=bool),
+        metadata={"epoch_start_ms": 20.0, "epoch_stop_ms": 80.0},
+    )
+    config = ObjectiveConfig(mode="depolarizing_fidelity", trajectory_huber_delta_mV=2.0)
+    exact = robust_trajectory_loss(record, observed, config, FeatureConfig())
+    shifted = robust_trajectory_loss(record, np.roll(observed, 10), config, FeatureConfig())
+
+    assert exact["loss"] == 0.0
+    assert shifted["loss"] > exact["loss"]
+
+
+def test_depolarizing_mode_returns_one_voltage_objective_per_trace():
+    time = np.arange(0.0, 100.0, 0.1)
+    voltage = np.full(time.size, -65.0)
+    record = SimpleNamespace(
+        trace_key="cell/trace2/depolarizing_step",
+        trace_id="trace2",
+        protocol="depolarizing_step",
+        time_ms=time,
+        voltage_mV=voltage,
+        current_nA=np.zeros(time.size),
+        score_mask=np.ones(time.size, dtype=bool),
+        dt_ms=0.1,
+        metadata={"epoch_start_ms": 20.0, "epoch_stop_ms": 80.0},
+    )
+    bucket = SimpleNamespace(key="bucket", records=(record,))
+    experimental = {record.trace_key: {"features": {"ap_count": 0.0}}}
+
+    values, details = evaluate_objectives(
+        (record,),
+        {"bucket": voltage[None, :]},
+        (bucket,),
+        experimental,
+        FeatureConfig(),
+        ObjectiveConfig(mode="depolarizing_fidelity"),
+    )
+
+    assert len(values) == 4
+    assert "depolarizing_trace_trace2_voltage" in details["objectives"]
+    assert "spike_timing_count" in details["objectives"]

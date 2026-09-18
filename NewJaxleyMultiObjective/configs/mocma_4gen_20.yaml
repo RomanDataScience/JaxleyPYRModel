@@ -8,7 +8,7 @@ multi_objective:
   seed: 1234
   population_size: 60
   trials: 600
-  study_name: mocma_features_4_20_train24_apcount4x_spikeguard_apguard
+  study_name: mocma_depolarizing_fidelity_4gen20
   parallel_workers: 6
   plot_completed_trials: true
   # Persistent SQLite storage enables trial-level resume/checkpointing.
@@ -17,6 +17,7 @@ multi_objective:
   heartbeat_interval_s: 60
   grace_period_s: 300
   cell_id: m20240527cd
+  protocols: [depolarizing_step]
   trace_selection:
     # Trace numbers are counted independently within each protocol.
     optimization_indices: [2, 4]
@@ -43,9 +44,10 @@ multi_objective:
     hyper_steady_state_fraction: 0.20
 
   objectives:
+    mode: depolarizing_fidelity
     invalid_feature_penalty: 1000000.0
     spike_violation_loss: 100000.0
-    ap_count_tolerance: 3.0
+    ap_count_tolerance: 0.0
     ap_count_violation_loss: 100000.0
     # Four times stronger than the default one-AP error in MOCMA's
     # hypervolume-based elite selection. Pareto dominance remains unchanged.
@@ -54,6 +56,9 @@ multi_objective:
     overlap_sigma_mV: 3.0
     spike_event_window_ms: 3.0
     spike_event_weight: 4.0
+    trajectory_huber_delta_mV: 3.0
+    spike_timing_scale_ms: 2.0
+    spike_count_scale: 1.0
     overlap_window_weights:
       baseline: 1.0
       stimulus: 1.0
