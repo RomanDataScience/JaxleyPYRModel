@@ -55,12 +55,12 @@ training trace, spike count/timing, AP waveform, and recovery. The quick
 configuration uses six parallel workers; the main configuration uses eight.
 Reduce `parallel_workers` if memory or CPU capacity is limited.
 
-The configured morphology resolution is `morphology_d_lambda: 0.3`. To run
-the same pipeline at `d_lambda=0.1`, use `D_LAMBDA=0.1`; this automatically
+The configured morphology resolution is `morphology_d_lambda: 0.1`. To run
+the same pipeline at `d_lambda=0.3`, use `D_LAMBDA=0.3`; this automatically
 changes the model signature and therefore creates a separate study/run:
 
 ```bash
-D_LAMBDA=0.1 bash NewJaxleyMultiObjective/run_mocma.sh run
+D_LAMBDA=0.3 bash NewJaxleyMultiObjective/run_mocma.sh run
 ```
 
 To compare `0.3` and `0.1` using the same model-reference parameter vector,

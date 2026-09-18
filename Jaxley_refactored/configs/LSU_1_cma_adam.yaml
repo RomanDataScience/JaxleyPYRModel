@@ -19,7 +19,7 @@ model:
       reject_unclassified: true
     discretization:
       strategy: d_lambda
-      d_lambda: 0.3
+      d_lambda: 0.1
       frequency_hz: 100.0
 
   profile:

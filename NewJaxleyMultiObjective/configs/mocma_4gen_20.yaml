@@ -17,7 +17,7 @@ multi_objective:
   heartbeat_interval_s: 60
   grace_period_s: 300
   cell_id: m20240527cd
-  morphology_d_lambda: 0.3
+  morphology_d_lambda: 0.1
   protocols: [depolarizing_step]
   trace_selection:
     # Trace numbers are counted independently within each protocol.
