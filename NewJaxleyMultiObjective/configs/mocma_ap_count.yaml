@@ -9,7 +9,7 @@ multi_objective:
   population_size: 40
   trials: 12000
   study_name: mocma_ap_count
-  parallel_workers: 8
+  parallel_workers: 1
   plot_completed_trials: true
   storage: auto
   resume: true
