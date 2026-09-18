@@ -8,7 +8,7 @@ multi_objective:
   seed: 1234
   population_size: 60
   trials: 600
-  study_name: mocma_depolarizing_fidelity_4gen20
+  study_name: mocma_depolarizing_fidelity_100_200_4gen20
   parallel_workers: 6
   plot_completed_trials: true
   # Persistent SQLite storage enables trial-level resume/checkpointing.
