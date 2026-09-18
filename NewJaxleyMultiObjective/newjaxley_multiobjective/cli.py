@@ -19,6 +19,11 @@ def main(argv: list[str] | None = None) -> int:
             type=int,
             help="Override multi_objective.seed for this run.",
         )
+        command.add_argument(
+            "--d-lambda",
+            type=float,
+            help="Override morphology discretization d_lambda for this run.",
+        )
     args = parser.parse_args(argv)
 
     from .config import load_pipeline_config
@@ -36,6 +41,23 @@ def main(argv: list[str] | None = None) -> int:
                 runtime=replace(config.app_config.runtime, seed=args.seed),
             ),
         )
+    if args.d_lambda is not None:
+        if args.d_lambda <= 0:
+            parser.error("--d-lambda must be positive")
+        config = replace(
+            config,
+            study_name=f"{config.study_name}-dlambda{args.d_lambda:g}".replace(".", "p"),
+            app_config=replace(
+                config.app_config,
+                model=replace(
+                    config.app_config.model,
+                    morphology=replace(
+                        config.app_config.model.morphology,
+                        d_lambda=args.d_lambda,
+                    ),
+                ),
+            ),
+        )
     if args.command == "validate":
         labels = objective_labels_for_trace_ids(
             config.objectives,
@@ -46,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
             f"cell={config.app_config.dataset.cell_id} "
             f"optimization_traces={config.optimization_trace_indices} "
             f"test_traces={config.test_trace_indices} protocols={config.protocols} "
+            f"d_lambda={config.app_config.model.morphology.d_lambda} "
             f"parallel_workers={config.parallel_workers}"
         )
         return 0

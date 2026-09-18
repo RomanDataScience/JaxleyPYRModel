@@ -514,6 +514,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
         "resumed": initial_trial_count > 0,
         "population_size": config.population_size,
         "model_signature": evaluator.model.signature,
+        "morphology_d_lambda": config.app_config.model.morphology.d_lambda,
         "parameter_names": list(evaluator.model.parameterizer.keys),
         "optimization_trace_indices": config.optimization_trace_indices,
         "test_trace_indices": config.test_trace_indices,

@@ -55,6 +55,30 @@ training trace, spike count/timing, AP waveform, and recovery. The quick
 configuration uses six parallel workers; the main configuration uses eight.
 Reduce `parallel_workers` if memory or CPU capacity is limited.
 
+The configured morphology resolution is `morphology_d_lambda: 0.3`. To run
+the same pipeline at `d_lambda=0.1`, use `D_LAMBDA=0.1`; this automatically
+changes the model signature and therefore creates a separate study/run:
+
+```bash
+D_LAMBDA=0.1 bash NewJaxleyMultiObjective/run_mocma.sh run
+```
+
+To compare `0.3` and `0.1` using the same model-reference parameter vector,
+run the discretization benchmark in the Jaxley environment:
+
+```bash
+NEURON_MODULE_OPTIONS=-nogui \
+  PYTHONPATH=NewJaxleyMultiObjective:Jaxley_refactored \
+  conda run --no-capture-output --name jaxley-mocma \
+  python NewJaxleyMultiObjective/compare_discretization.py \
+  --config NewJaxleyMultiObjective/configs/mocma_features.yaml
+```
+
+The benchmark writes voltage RMSE, maximum voltage difference, and feature
+differences to `runs/discretization_comparison-<cell>/comparison.json`. For a
+specific fitted solution, add its `parameters.csv` with `--parameters` so the
+comparison uses exactly the same fitted parameter vector at both resolutions.
+
 The hard spike guard returns a loss of `100000` for every objective when a
 depolarizing simulation spikes outside its stimulus interval or a
 hyperpolarizing simulation spikes anywhere in the recorded segment.

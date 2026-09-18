@@ -256,8 +256,23 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
     # function is called; it is JAX-free and can run before runtime bootstrap.
     from jaxley_refactored.config import load_config
 
+    from dataclasses import replace
+
     app_config = load_config(base_path)
     multi = _mapping(raw.get("multi_objective"), "multi_objective")
+    morphology_d_lambda = multi.get("morphology_d_lambda")
+    if morphology_d_lambda is not None:
+        morphology_d_lambda = _positive(morphology_d_lambda, "morphology_d_lambda")
+        app_config = replace(
+            app_config,
+            model=replace(
+                app_config.model,
+                morphology=replace(
+                    app_config.model.morphology,
+                    d_lambda=morphology_d_lambda,
+                ),
+            ),
+        )
     sampler = str(multi.get("sampler", "mocma"))
     if sampler != "mocma":
         raise ValueError("Only the mocma sampler is supported")
@@ -268,8 +283,6 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
     plot_completed_trials = bool(multi.get("plot_completed_trials", False))
     if seed < 0 or population_size < 2 or trials <= 0 or parallel_workers <= 0:
         raise ValueError("seed must be nonnegative, population_size >= 2, trials > 0, parallel_workers > 0")
-
-    from dataclasses import replace
 
     trace_selection = _mapping(multi.get("trace_selection"), "multi_objective.trace_selection")
     optimization_trace_indices = _positive_ints(

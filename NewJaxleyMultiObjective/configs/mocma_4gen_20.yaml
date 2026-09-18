@@ -17,6 +17,7 @@ multi_objective:
   heartbeat_interval_s: 60
   grace_period_s: 300
   cell_id: m20240527cd
+  morphology_d_lambda: 0.3
   protocols: [depolarizing_step]
   trace_selection:
     # Trace numbers are counted independently within each protocol.
@@ -27,8 +28,8 @@ multi_objective:
 
   fitness_windows:
     depolarizing:
-      pre_ms: 200.0
-      post_ms: 600.0
+      pre_ms: 100.0
+      post_ms: 200.0
     hyperpolarizing:
       pre_ms: 200.0
       post_ms: 200.0
