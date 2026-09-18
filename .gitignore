@@ -11,3 +11,4 @@ mod/
 *.csv
 runs*/
 *.out
+logs/
