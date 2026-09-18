@@ -23,7 +23,8 @@ def main(argv: list[str] | None = None) -> int:
             f"valid sampler=mocma objectives=11 parameters=from-model "
             f"cell={config.app_config.dataset.cell_id} "
             f"optimization_traces={config.optimization_trace_indices} "
-            f"test_traces={config.test_trace_indices}"
+            f"test_traces={config.test_trace_indices} "
+            f"parallel_workers={config.parallel_workers}"
         )
         return 0
 

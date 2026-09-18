@@ -8,7 +8,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from .config import OBJECTIVE_LABELS, ObjectiveConfig
-from .features import extract_features
+from .features import detect_spikes, extract_features
 
 
 def _protocol_for(label: str) -> set[str]:
@@ -74,6 +74,49 @@ def evaluate_objectives(records: tuple[Any, ...], predictions: Mapping[tuple[flo
         key = record.trace_key
         details["features_by_trace"][key] = {"experimental": experimental[key], "simulated": simulated[key]}
         details["trajectory_by_trace"][key] = trajectory_overlap(record, predicted_by_trace[key], objective_config)
+
+    spike_violations = []
+    for record in records:
+        time = np.asarray(record.time_ms, dtype=float)
+        predicted_spikes = detect_spikes(
+            time,
+            predicted_by_trace[record.trace_key],
+            float(time[0]),
+            float(time[-1]),
+            feature_config,
+        )
+        start = float(record.metadata["epoch_start_ms"])
+        stop = float(record.metadata["epoch_stop_ms"])
+        if record.protocol == "depolarizing_step":
+            invalid_spikes = [
+                spike for spike in predicted_spikes
+                if not start <= float(spike["threshold_time_ms"]) <= stop
+            ]
+            reason = "depolarizing_spike_outside_stimulus"
+        elif record.protocol in {"hyperpolarizing_pulse", "hyperpolarizing_step"}:
+            invalid_spikes = predicted_spikes
+            reason = "hyperpolarizing_spike_detected"
+        else:
+            invalid_spikes = []
+            reason = ""
+        if invalid_spikes:
+            spike_violations.append({
+                "trace_key": record.trace_key,
+                "reason": reason,
+                "spikes": invalid_spikes,
+            })
+    details["spike_violations"] = spike_violations
+    if spike_violations:
+        loss = float(objective_config.spike_violation_loss)
+        details["objectives"] = {
+            label: {
+                "value": loss,
+                "type": "hard_spike_constraint",
+                "violations": spike_violations,
+            }
+            for label in OBJECTIVE_LABELS
+        }
+        return tuple([loss] * len(OBJECTIVE_LABELS)), details
 
     for label in OBJECTIVE_LABELS:
         if label == "trajectory_overlap":

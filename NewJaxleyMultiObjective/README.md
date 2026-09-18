@@ -35,6 +35,16 @@ The time-course fitness window is protocol-specific: 200 ms before through
 hyperpolarizing pulse. If a recording starts before the requested pre-window,
 the available portion is used and recorded in the trace metadata.
 
+The supplied configs use `objectives.scales.ap_count: 0.25`, making AP-count
+errors four times stronger in MOCMA's hypervolume-based elite selection. AP
+count remains an independent Pareto objective; this does not create a strict
+lexicographic priority. `parallel_workers: 6` evaluates six MOCMA trials at a
+time on CPU. Reduce it if memory or CPU capacity is limited.
+
+The hard spike guard returns a loss of `100000` for every objective when a
+depolarizing simulation spikes outside its stimulus interval or a
+hyperpolarizing simulation spikes anywhere in the recorded segment.
+
 Outputs are written under `NewJaxleyMultiObjective/runs/`. Each Pareto solution
 contains its parameters, optimization-trace features/predictions, objective
 ranking, and a figure with full traces plus the first 100 ms after

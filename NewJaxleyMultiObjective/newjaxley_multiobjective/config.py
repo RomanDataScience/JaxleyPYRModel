@@ -106,6 +106,7 @@ class ObjectiveConfig:
     labels: tuple[str, ...] = OBJECTIVE_LABELS
     scales: Mapping[str, float] = field(default_factory=lambda: dict(DEFAULT_SCALES))
     invalid_feature_penalty: float = 1.0e6
+    spike_violation_loss: float = 1.0e5
     overlap_sigma_mV: float = 3.0
     overlap_window_weights: Mapping[str, float] | None = None
     tie_tolerance: float = 1.0e-12
@@ -137,6 +138,7 @@ class ObjectiveConfig:
             labels=labels,
             scales=scales,
             invalid_feature_penalty=_positive(data.get("invalid_feature_penalty", 1.0e6), "invalid_feature_penalty"),
+            spike_violation_loss=_positive(data.get("spike_violation_loss", 1.0e5), "spike_violation_loss"),
             overlap_sigma_mV=_positive(data.get("overlap_sigma_mV", 3.0), "overlap_sigma_mV"),
             overlap_window_weights=weights,
             tie_tolerance=float(data.get("tie_tolerance", 1.0e-12)),
@@ -191,6 +193,7 @@ class PipelineConfig:
     grace_period_s: int
     output_root: Path
     all_traces: bool
+    parallel_workers: int
 
 
 def load_pipeline_config(path: str | Path) -> PipelineConfig:
@@ -216,8 +219,9 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
     seed = int(multi.get("seed", app_config.runtime.seed))
     population_size = int(multi.get("population_size", 0))
     trials = int(multi.get("trials", 0))
-    if seed < 0 or population_size < 2 or trials <= 0:
-        raise ValueError("seed must be nonnegative, population_size >= 2, trials > 0")
+    parallel_workers = int(multi.get("parallel_workers", 1))
+    if seed < 0 or population_size < 2 or trials <= 0 or parallel_workers <= 0:
+        raise ValueError("seed must be nonnegative, population_size >= 2, trials > 0, parallel_workers > 0")
 
     from dataclasses import replace
 
@@ -291,4 +295,5 @@ def load_pipeline_config(path: str | Path) -> PipelineConfig:
         grace_period_s=grace_period,
         output_root=output_root,
         all_traces=False,
+        parallel_workers=parallel_workers,
     )

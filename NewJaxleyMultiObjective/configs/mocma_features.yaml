@@ -8,7 +8,8 @@ multi_objective:
   seed: 1234
   population_size: 40
   trials: 4000
-  study_name: mocma_features_train24
+  study_name: mocma_features_train24_apcount4x_spikeguard
+  parallel_workers: 6
   # Persistent SQLite storage enables trial-level resume/checkpointing.
   storage: auto
   resume: true
@@ -44,6 +45,11 @@ multi_objective:
 
   objectives:
     invalid_feature_penalty: 1000000.0
+    spike_violation_loss: 100000.0
+    # Four times stronger than the default one-AP error in MOCMA's
+    # hypervolume-based elite selection. Pareto dominance remains unchanged.
+    scales:
+      ap_count: 0.25
     overlap_sigma_mV: 3.0
     overlap_window_weights:
       baseline: 1.0

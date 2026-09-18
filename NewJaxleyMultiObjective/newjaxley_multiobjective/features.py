@@ -77,6 +77,17 @@ def _spikes(time: np.ndarray, voltage: np.ndarray, start: float, stop: float, co
     return result
 
 
+def detect_spikes(time: np.ndarray, voltage: np.ndarray, start: float, stop: float, config: FeatureConfig) -> list[dict[str, float | int]]:
+    """Detect upward threshold crossings in an arbitrary time interval."""
+    return _spikes(
+        np.asarray(time, dtype=float),
+        np.asarray(voltage, dtype=float),
+        float(start),
+        float(stop),
+        config,
+    )
+
+
 def _half_width(time: np.ndarray, voltage: np.ndarray, spike: dict[str, float | int], threshold: float) -> float:
     peak = int(spike["peak_index"])
     peak_voltage = float(spike["peak_voltage_mV"])

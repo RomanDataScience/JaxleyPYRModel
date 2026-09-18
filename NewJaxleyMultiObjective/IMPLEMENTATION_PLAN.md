@@ -273,6 +273,16 @@ ms after the depolarizing step, and 200 ms before and 200 ms after the
 hyperpolarizing pulse. Masks are clipped to the available recording and the
 requested and actual coordinates are stored in trace metadata.
 
+AP count remains an independent objective. The supplied configurations use a
+smaller fixed AP-count scale (0.25), which gives that dimension greater
+influence in MOCMA's hypervolume-based elite selection while preserving the
+same Pareto dominance relation. `parallel_workers` controls concurrent
+MOCMA trial evaluations on CPU; Jaxley separately vectorizes the selected
+traces within each protocol.
+
+The objective also applies a hard spike guard: an out-of-step depolarizing
+spike or any hyperpolarizing spike returns `100000` for all eleven objectives.
+
 Prefer the direct segmented trace measurement as the optimization target. Where
 an existing IPFX metric has an equivalent definition, compare it in a validation
 report and record the difference; do not mix IPFX and direct-detector values in

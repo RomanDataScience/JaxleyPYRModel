@@ -6,6 +6,7 @@ import csv
 from dataclasses import replace
 import json
 from pathlib import Path
+import threading
 import time
 from typing import Any
 
@@ -16,6 +17,9 @@ from .features import FEATURE_LABELS as SCALAR_FEATURE_LABELS, extract_features
 from .objectives import evaluate_objectives
 from .pareto import annotate_front, trial_row, write_front_csv, write_jsonl
 from .plotting import plot_solution
+
+
+_RUN_STATE_LOCK = threading.Lock()
 
 
 def _json(value: Any) -> Any:
@@ -267,6 +271,7 @@ def _run_hash(config: PipelineConfig, app_hash: str) -> str:
                 "labels": config.objectives.labels,
                 "scales": dict(config.objectives.scales),
                 "invalid_feature_penalty": config.objectives.invalid_feature_penalty,
+                "spike_violation_loss": config.objectives.spike_violation_loss,
                 "overlap_sigma_mV": config.objectives.overlap_sigma_mV,
                 "overlap_window_weights": dict(config.objectives.overlap_window_weights),
             },
@@ -279,6 +284,7 @@ def _run_hash(config: PipelineConfig, app_hash: str) -> str:
             "optimization_trace_indices": config.optimization_trace_indices,
             "test_trace_indices": config.test_trace_indices,
             "evaluate_test": config.evaluate_test,
+            "parallel_workers": config.parallel_workers,
             "seed": config.seed,
             "population_size": config.population_size,
         }
@@ -286,9 +292,10 @@ def _run_hash(config: PipelineConfig, app_hash: str) -> str:
 
 
 def _write_run_state(output: Path, **values: Any) -> None:
-    with (output / "run_state.json").open("w", encoding="utf-8") as handle:
-        json.dump(_json(values), handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    with _RUN_STATE_LOCK:
+        with (output / "run_state.json").open("w", encoding="utf-8") as handle:
+            json.dump(_json(values), handle, indent=2, sort_keys=True)
+            handle.write("\n")
 
 
 def _completed_trials(study: Any) -> int:
@@ -371,6 +378,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
             study.optimize(
                 objective,
                 n_trials=remaining_trials,
+                n_jobs=config.parallel_workers,
                 gc_after_trial=True,
                 callbacks=[
                     lambda current_study, trial: _write_run_state(
@@ -425,7 +433,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
     write_front_csv(output / "pareto_front.csv", front, labels)
 
     with (output / "objective_definitions.json").open("w", encoding="utf-8") as handle:
-        json.dump(_json({"labels": labels, "directions": ["minimize"] * len(labels), "scales": config.objectives.scales, "overlap_sigma_mV": config.objectives.overlap_sigma_mV, "overlap_window_weights": config.objectives.overlap_window_weights, "fitness_windows": {"depolarizing_pre_ms": config.fitness_windows.depolarizing_pre_ms, "depolarizing_post_ms": config.fitness_windows.depolarizing_post_ms, "hyperpolarizing_pre_ms": config.fitness_windows.hyperpolarizing_pre_ms, "hyperpolarizing_post_ms": config.fitness_windows.hyperpolarizing_post_ms}, "tie_tolerance": config.objectives.tie_tolerance}), handle, indent=2, sort_keys=True)
+        json.dump(_json({"labels": labels, "directions": ["minimize"] * len(labels), "scales": config.objectives.scales, "invalid_feature_penalty": config.objectives.invalid_feature_penalty, "spike_violation_loss": config.objectives.spike_violation_loss, "overlap_sigma_mV": config.objectives.overlap_sigma_mV, "overlap_window_weights": config.objectives.overlap_window_weights, "fitness_windows": {"depolarizing_pre_ms": config.fitness_windows.depolarizing_pre_ms, "depolarizing_post_ms": config.fitness_windows.depolarizing_post_ms, "hyperpolarizing_pre_ms": config.fitness_windows.hyperpolarizing_pre_ms, "hyperpolarizing_post_ms": config.fitness_windows.hyperpolarizing_post_ms}, "tie_tolerance": config.objectives.tie_tolerance}), handle, indent=2, sort_keys=True)
         handle.write("\n")
     with (output / "resolved_config.yaml").open("w", encoding="utf-8") as handle:
         import yaml
@@ -448,6 +456,7 @@ def run_pipeline(config: PipelineConfig) -> Path:
         "optimization_trace_indices": config.optimization_trace_indices,
         "test_trace_indices": config.test_trace_indices,
         "evaluate_test": config.evaluate_test,
+        "parallel_workers": config.parallel_workers,
         "optimization_trace_keys": [record.trace_key for record in evaluator.records],
         "test_trace_keys": [record.trace_key for record in evaluator.test_records],
         "config_hash": stable_hash(config_as_dict(config.app_config)),
