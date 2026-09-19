@@ -192,6 +192,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
 def make_basins(config: RunConfig, stage1_run: Path, *, output: Path | None = None) -> list[dict]:
     space = config.parameters
     records: list[dict] = []
+    candidates: list[dict] = []
     for seed in config.section("stage1").get("seeds", list(range(10))):
         seed_dir = stage1_run / f"seed_{int(seed):03d}"
         generation = int(config.section("stage1")["generations"])
@@ -200,14 +201,31 @@ def make_basins(config: RunConfig, stage1_run: Path, *, output: Path | None = No
             raise FileNotFoundError(population_path)
         with np.load(population_path, allow_pickle=False) as values:
             population, losses = values["population"], values["losses"]
-        for rank in np.argsort(losses, kind="stable")[:10]:
-            records.append({"basin_id": f"b{len(records):03d}", "source_seed": int(seed),
-                            "source_generation": generation, "rank": int(rank),
-                            "loss": float(losses[rank]), "normalized": population[rank].tolist(),
-                            "physical": space.physical(population[rank]).tolist()})
-    if len(records) < 100:
-        raise RuntimeError(f"Expected 100 basins, found {len(records)}")
-    records = records[:100]
+        for rank in np.argsort(losses, kind="stable"):
+            candidates.append({"source_seed": int(seed), "source_generation": generation,
+                               "rank": int(rank), "loss": float(losses[rank]),
+                               "normalized": population[rank].tolist(),
+                               "physical": space.physical(population[rank]).tolist()})
+    selected: list[dict] = []
+    seen: set[tuple[float, ...]] = set()
+    for candidate in candidates:
+        if candidate["rank"] >= 10:
+            continue
+        key = tuple(np.round(candidate["normalized"], 14))
+        if key not in seen:
+            seen.add(key)
+            selected.append(candidate)
+    for candidate in candidates:
+        if len(selected) >= 100:
+            break
+        key = tuple(np.round(candidate["normalized"], 14))
+        if key not in seen:
+            seen.add(key)
+            selected.append(candidate)
+    if len(selected) < 100:
+        raise RuntimeError(f"Expected 100 distinct basins, found {len(selected)}")
+    for index, candidate in enumerate(selected[:100]):
+        records.append({"basin_id": f"b{index:03d}", **candidate})
     output = output or stage1_run / "basins.jsonl"
     with output.open("w", encoding="utf-8") as handle:
         for record in records:

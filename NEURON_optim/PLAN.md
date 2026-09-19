@@ -63,6 +63,7 @@ NEURON_optim/
 │   ├── __init__.py
 │   ├── config.py                   # strict YAML/config validation
 │   ├── data.py                     # metadata and v/i/t loading
+│   ├── mechanisms.py               # private cached MOD build with kinetic scales
 │   ├── parameters.py               # Combe names, bounds, and HOC application
 │   ├── simulator.py                # isolated NEURON build, replay, recording
 │   ├── objective.py                # weighted voltage-shape objectives

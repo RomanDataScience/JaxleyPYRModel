@@ -8,7 +8,10 @@ import zipfile
 
 import numpy as np
 
+os.environ.setdefault("NEURON_MODULE_OPTIONS", "-nogui")
+
 from .data import Trace
+from .mechanisms import ensure_patched_mod_dir
 from .objective import SimulationOutput
 
 
@@ -177,11 +180,15 @@ class NeuronSimulator:
         self.d_lambda = d_lambda
         self.quiet = quiet
         self.combe_dir = combe_dir or ensure_combe_source()
-        self.mod_dir = mod_dir or (repository_root() / "channels_converted" / "mod")
+        self.mod_dir = mod_dir or ensure_patched_mod_dir()
 
     def simulate_many(self, traces: list[Trace], values: dict[str, float],
                       *, v_init_mode: str = "observed_first_sample") -> list[SimulationOutput]:
         try:
+            import sys
+            root = str(repository_root())
+            if root not in sys.path:
+                sys.path.insert(0, root)
             from neuron import h
             from channels_converted.modelComparison.neuron_model import build_combe_neuron_model
         except Exception as exc:  # pragma: no cover - depends on external NEURON install
