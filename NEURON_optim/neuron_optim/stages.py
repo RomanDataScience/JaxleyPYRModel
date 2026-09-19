@@ -12,8 +12,9 @@ import numpy as np
 from .cma import CMAES
 from .config import RunConfig
 from .data import Trace, load_protocol_traces
-from .objective import ObjectiveResult, depolarizing_objective, hyperpolarizing_objective
+from .objective import depolarizing_objective, hyperpolarizing_objective
 from .parameters import ParameterSpace
+from .plotting import plot_generation
 from .simulator import NeuronSimulator
 
 
@@ -42,6 +43,17 @@ def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]) -> tuple[flo
         return result.value, result.details
     except Exception as exc:
         return 1.0e12, {"error": type(exc).__name__, "message": str(exc)}
+
+
+def _simulate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
+    physical = _WORKER["space"].physical(normalized)
+    mapping = dict(zip(keys, physical, strict=True))
+    try:
+        simulations = _WORKER["simulator"].simulate_many(_WORKER["traces"], mapping)
+        return [{"time_ms": simulation.time_ms, "voltage_mV": simulation.voltage_mV}
+                for simulation in simulations]
+    except Exception:
+        return None
 
 
 def _init_worker_with_space(stage: str, traces: list[Trace], d_lambda: float,
@@ -133,6 +145,26 @@ def _evaluate_population(population: np.ndarray, *, stage: str, traces: list[Tra
     return np.asarray([pair[0] for pair in pairs], dtype=float), [pair[1] for pair in pairs]
 
 
+def _simulate_for_plots(population: np.ndarray, *, stage: str, traces: list[Trace],
+                        space: ParameterSpace, config: RunConfig,
+                        options: dict[str, Any]) -> list[list]:
+    if config.workers == 1:
+        simulator = NeuronSimulator(d_lambda=config.d_lambda, quiet=True)
+        result = []
+        for candidate in population:
+            try:
+                simulations = simulator.simulate_many(traces, space.mapping(candidate))
+                result.append([{"time_ms": simulation.time_ms, "voltage_mV": simulation.voltage_mV}
+                               for simulation in simulations])
+            except Exception:
+                result.append(None)
+        return result
+    with ProcessPoolExecutor(max_workers=config.workers,
+                             initializer=_init_worker_with_space,
+                             initargs=(stage, traces, config.d_lambda, options, space)) as pool:
+        return list(pool.map(_simulate_worker, population, [space.keys] * len(population)))
+
+
 def _study_manifest(config: RunConfig, stage: str, seed: int, space: ParameterSpace,
                     run_dir: Path, basin_id: str | None = None) -> None:
     section = config.section("stage1" if stage == "hyper" else "stage2")
@@ -175,6 +207,29 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
         generation = optimizer.state.generation + 1
         np.savez_compressed(run_dir / f"population_generation_{generation:04d}.npz",
                             population=population, losses=losses)
+        plotting = dict(config.raw.get("plotting", {}))
+        if bool(plotting.get("enabled", True)):
+            top_k = int(plotting.get("top_k", 10))
+            top_indices = np.argsort(losses, kind="stable")[:min(top_k, len(losses))]
+            captured = _simulate_for_plots(population[top_indices], stage=stage, traces=traces,
+                                           space=space, config=config, options=options)
+            from .objective import SimulationOutput
+            converted = []
+            for item in captured:
+                converted.append(None if item is None else
+                                 [SimulationOutput(np.asarray(entry["time_ms"]), np.asarray(entry["voltage_mV"]))
+                                  for entry in item])
+            # Plot only the selected candidates, but retain their original
+            # population indices/loss ordering in the metadata.
+            plot_population = population[top_indices]
+            plot_losses = losses[top_indices]
+            plot_simulations = [item for item in converted]
+            if all(item is not None for item in plot_simulations):
+                plot_generation(output_dir=run_dir / "plots", generation=generation,
+                                stage=stage, traces=traces, population=plot_population,
+                                losses=plot_losses, simulations=plot_simulations,
+                                space=space, top_k=top_k,
+                                dpi=int(plotting.get("dpi", 120)))
         optimizer.tell(population, losses)
         optimizer.save(checkpoint_dir, compatibility)
         with history_path.open("a", encoding="utf-8") as handle:

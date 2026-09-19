@@ -69,6 +69,7 @@ NEURON_optim/
 │   ├── objective.py                # weighted voltage-shape objectives
 │   ├── cma.py                      # bounded ask/tell CMA-ES and checkpoints
 │   ├── basins.py                   # deterministic 100-basin extraction
+│   ├── plotting.py                 # best-candidate trace figures per generation
 │   ├── stages.py                   # stage-1/stage-2 orchestration
 │   └── cli.py                      # validate, run, resume, report commands
 ├── tests/
@@ -483,6 +484,14 @@ best_parameters.json
 best_traces.npz            # measured and simulated traces for the winner
 loss_breakdown.json
 ```
+
+When `plotting.enabled` is true (the default), each completed generation also
+writes `plots/generation_XXXX/rank_XX.png` for the 10 lowest-loss candidates.
+Each figure overlays measured and simulated voltage for all four traces and
+marks the stimulus interval. Plot capture runs after ordinary offspring
+evaluation and does not alter CMA-ES state. It adds four NEURON simulations
+per plotted candidate and can be disabled for performance-focused diagnostic
+runs.
 
 The top-level run will additionally contain `basins.jsonl`, a stage-1 index,
 and a stage-2 index mapping each `(basin_id, seed)` to its output directory.

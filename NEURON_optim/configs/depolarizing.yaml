@@ -14,6 +14,11 @@ runtime:
   d_lambda: 0.3
   parallel_workers: 6
 
+plotting:
+  enabled: true
+  top_k: 10
+  dpi: 120
+
 stage1:
   seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
   generations: 200

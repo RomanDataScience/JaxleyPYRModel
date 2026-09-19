@@ -68,5 +68,9 @@ has been written.
 
 Stage 1 writes one directory per seed, a checkpoint and generation history, and
 `basins.jsonl` containing the ten best final-generation candidates from each
-seed. Stage 2 writes one directory per basin and seed with its perturbed initial
-point, checkpoint, generation history, and final objective breakdown.
+seed. Both stages also write `plots/generation_XXXX/rank_XX.png` for the ten
+lowest-loss candidates after every generation, showing measured and simulated
+voltages for all four traces. Stage 2 writes one directory per basin and seed
+with its perturbed initial point, checkpoint, generation history, plots, and
+final objective breakdown. Set `plotting.enabled: false` when running a
+diagnostic search without figures.
