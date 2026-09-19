@@ -36,6 +36,18 @@ class RunConfig:
         return float(self.raw.get("runtime", {}).get("d_lambda", 0.3))
 
     @property
+    def backend(self) -> str:
+        return str(self.raw.get("runtime", {}).get("backend", "neuron")).lower()
+
+    @property
+    def simulation_pre_ms(self) -> float:
+        return float(self.raw.get("runtime", {}).get("simulation_pre_ms", 500.0))
+
+    @property
+    def simulation_post_ms(self) -> float:
+        return float(self.raw.get("runtime", {}).get("simulation_post_ms", 600.0))
+
+    @property
     def workers(self) -> int:
         return int(self.raw.get("runtime", {}).get("parallel_workers", 6))
 
@@ -61,14 +73,20 @@ class RunConfig:
             errors.append(str(exc))
         if len(self.trace_names) != 4:
             errors.append("data.trace_names must contain exactly four traces")
+        if self.simulation_pre_ms < 0:
+            errors.append("runtime.simulation_pre_ms must be >= 0")
+        if self.simulation_post_ms < 0:
+            errors.append("runtime.simulation_post_ms must be >= 0")
         if self.workers < 1:
             errors.append("runtime.parallel_workers must be >= 1")
+        if self.backend not in {"neuron", "jaxley"}:
+            errors.append("runtime.backend must be either 'neuron' or 'jaxley'")
         for name in ("passive", "stage1", "stage2"):
             section = self.section(name)
-            if int(section.get("generations", 0)) != 200:
-                errors.append(f"{name}.generations must be 200 in the production config")
-            if int(section.get("population_size", 0)) != 30:
-                errors.append(f"{name}.population_size must be 30 in the production config")
+            if int(section.get("generations", 0)) < 1:
+                errors.append(f"{name}.generations must be >= 1")
+            if int(section.get("population_size", 0)) < 2:
+                errors.append(f"{name}.population_size must be >= 2")
             if not section.get("seeds"):
                 errors.append(f"{name}.seeds must not be empty")
         if not self.data_root.exists():

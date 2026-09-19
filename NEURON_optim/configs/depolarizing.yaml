@@ -17,8 +17,11 @@ parameters:
 
 runtime:
   environment: Jaxley
+  backend: jaxley
   d_lambda: 0.3
   parallel_workers: 1
+  simulation_pre_ms: 500.0
+  simulation_post_ms: 600.0
 
 passive:
   seeds: [0]

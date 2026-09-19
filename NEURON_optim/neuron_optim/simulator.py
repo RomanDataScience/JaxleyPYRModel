@@ -19,6 +19,17 @@ class NeuronUnavailable(RuntimeError):
     pass
 
 
+def make_simulator(backend: str, *, d_lambda: float = 0.3, quiet: bool = True):
+    """Construct the configured simulator without importing both backends."""
+    normalized = str(backend).lower()
+    if normalized == "neuron":
+        return NeuronSimulator(d_lambda=d_lambda, quiet=quiet)
+    if normalized == "jaxley":
+        from .jaxley_simulator import JaxleySimulator
+        return JaxleySimulator(d_lambda=d_lambda, quiet=quiet)
+    raise ValueError(f"Unsupported simulation backend: {backend}")
+
+
 def repository_root() -> Path:
     return Path(__file__).resolve().parents[2]
 

@@ -1,12 +1,16 @@
-# NEURON Combe two-stage optimization
+# Combe two-stage optimization
 
-This package implements the reviewed two-stage CMA-ES plan using the original
-Combe2023 NEURON model. It runs in the existing Jaxley environment; it does not
-replace the NEURON simulation with Jaxley.
+This package implements the reviewed two-stage CMA-ES plan using the Combe2023
+model. The checked-in configurations select the repository's Jaxley backend;
+the original NEURON backend remains available with `runtime.backend: neuron`.
 
-The default production settings are 10 seeds, 200 generations, 30 offspring,
-and 6 process workers. The full stage-2 design contains 1,000 independent
-studies, so use the smoke overrides before launching production.
+The checked-in hyperpolarizing settings use 3 seeds, 100 generations, 20
+offspring, and 1 process worker for the passive and stage-1 searches. Stage 2
+retains 10 seeds, 200 generations, and 30 offspring; its study count depends
+on the number of basins produced by stage 1.
+
+Trace windows are capped to 500 ms before the current step (or time zero) and
+600 ms after it ends, subject to the available recorded data.
 
 ## Environment
 
@@ -14,13 +18,13 @@ Use the existing `Jaxley` environment:
 
 ```bash
 conda run --name Jaxley python -m pip install -e NEURON_optim
-conda run --name Jaxley nrnivmodl channels_converted/mod
+conda run --name Jaxley python -c "import jaxley; print(jaxley.__version__)"
 ```
 
-If the environment already has the compiled mechanisms in
-`channels_converted/mod/arm64` or another platform directory, the second
-command is only needed after changing MOD sources. Check that NEURON imports in
-the same environment:
+The Jaxley backend uses the repository's SWC morphology and does not require
+NEURON or compiled MOD mechanisms. If `runtime.backend` is changed to
+`neuron`, compile the mechanisms and check the NEURON import in the same
+environment:
 
 ```bash
 conda run --name Jaxley python -c "import neuron; print(neuron.__version__)"
@@ -63,11 +67,10 @@ conda run --name Jaxley \
   --output-dir NEURON_optim/runs/passive
 ```
 
-For a small smoke run, make a temporary copy of the YAML and reduce both
-`generations` and `population_size`. Production configs intentionally retain
-the requested 200/30 budget.
+For a different smoke or production budget, make a temporary copy of the YAML
+and adjust `generations`, `population_size`, and `seeds`.
 
-Run stage 1 and create the 100 basins:
+Run stage 1 and create the basins:
 
 ```bash
 conda run --name Jaxley \
@@ -85,16 +88,17 @@ conda run --name Jaxley \
   --output-dir NEURON_optim/runs/example
 ```
 
-Use `--workers 1` for deterministic debugging. The default is six process
-workers; NEURON state is never shared between worker processes. A generation
-advances only after all offspring have returned finite losses and the checkpoint
-has been written.
+The checked-in configs use one worker; `--workers` can override this for
+process-parallel runs. Backend state is kept inside each worker process. A
+generation advances only after all offspring have returned finite losses and
+the checkpoint has been written.
 
 ## Outputs
 
 Stage 1 writes one directory per seed, a checkpoint and generation history, and
-`basins.jsonl` containing the ten best final-generation candidates from each
-seed. Both stages also write `plots/generation_XXXX/rank_XX.png` for the ten
+`basins.jsonl` containing the best final-generation candidates. With the
+checked-in 3 × 20 stage-1 budget, this produces up to 60 basins. Both stages
+also write `plots/generation_XXXX/rank_XX.png` for the ten
 lowest-loss candidates after every generation, showing measured and simulated
 voltages for all four traces. Stage 2 writes one directory per basin and seed
 with its perturbed initial point, checkpoint, generation history, plots, and

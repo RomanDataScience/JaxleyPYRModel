@@ -15,17 +15,17 @@ from .data import Trace, load_protocol_traces
 from .objective import depolarizing_objective, hyperpolarizing_objective
 from .parameters import DEFAULTS, PASSIVE, ParameterSpace, make_parameter_space, passive_model_values
 from .plotting import plot_generation
-from .simulator import NeuronSimulator
+from .simulator import make_simulator
 
 
 _WORKER: dict[str, Any] = {}
 
 
 def _init_worker(stage: str, traces: list[Trace], d_lambda: float,
-                 objective_options: dict[str, Any]) -> None:
+                 objective_options: dict[str, Any], backend: str) -> None:
     _WORKER["stage"] = stage
     _WORKER["traces"] = traces
-    _WORKER["simulator"] = NeuronSimulator(d_lambda=d_lambda, quiet=True)
+    _WORKER["simulator"] = make_simulator(backend, d_lambda=d_lambda, quiet=True)
     _WORKER["objective_options"] = objective_options
 
 
@@ -61,16 +61,17 @@ def _simulate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
 
 
 def _init_worker_with_space(stage: str, traces: list[Trace], d_lambda: float,
-                            objective_options: dict[str, Any], space: ParameterSpace) -> None:
-    _init_worker(stage, traces, d_lambda, objective_options)
+                            objective_options: dict[str, Any], backend: str,
+                            space: ParameterSpace) -> None:
+    _init_worker(stage, traces, d_lambda, objective_options, backend)
     _WORKER["space"] = space
 
 
 def _evaluate_serial(normalized: np.ndarray, *, stage: str, traces: list[Trace],
                      space: ParameterSpace, d_lambda: float,
-                     objective_options: dict[str, Any]) -> tuple[float, dict]:
+                     objective_options: dict[str, Any], backend: str) -> tuple[float, dict]:
     try:
-        simulator = NeuronSimulator(d_lambda=d_lambda, quiet=True)
+        simulator = make_simulator(backend, d_lambda=d_lambda, quiet=True)
         mapping = space.mapping(normalized)
         if stage == "passive":
             mapping = passive_model_values(mapping)
@@ -131,11 +132,15 @@ def _load_traces(config: RunConfig, stage: str) -> list[Trace]:
     if stage in {"passive", "hyper"}:
         return load_protocol_traces(config.data_root, cell=config.cell,
                                     protocol="hyperpolarizing_pulse",
-                                    trace_names=config.trace_names, pre_ms=800.0,
+                                    trace_names=config.trace_names,
+                                    pre_ms=config.simulation_pre_ms,
+                                    post_ms=config.simulation_post_ms,
                                     full_trial=True, center_current=False)
     return load_protocol_traces(config.data_root, cell=config.cell,
                                 protocol="depolarizing_step",
-                                trace_names=config.trace_names, pre_ms=0.0,
+                                trace_names=config.trace_names,
+                                pre_ms=config.simulation_pre_ms,
+                                post_ms=config.simulation_post_ms,
                                 full_trial=True)
 
 
@@ -148,7 +153,8 @@ def validate_current_replay(config: RunConfig, output_path: Path | None = None) 
         cell=config.cell,
         protocol="hyperpolarizing_pulse",
         trace_names=(trace_name,),
-        pre_ms=800.0,
+        pre_ms=config.simulation_pre_ms,
+        post_ms=config.simulation_post_ms,
         full_trial=True,
         center_current=False,
     )
@@ -156,7 +162,7 @@ def validate_current_replay(config: RunConfig, output_path: Path | None = None) 
     passive_space = make_parameter_space(include=PASSIVE)
     reference = dict(zip(PASSIVE, passive_space.reference.tolist(), strict=True))
     values = passive_model_values(reference)
-    simulation = NeuronSimulator(d_lambda=config.d_lambda, quiet=True).simulate_many(
+    simulation = make_simulator(config.backend, d_lambda=config.d_lambda, quiet=True).simulate_many(
         traces, values
     )[0]
     simulated = np.interp(trace.time_ms, simulation.time_ms, simulation.voltage_mV)
@@ -268,12 +274,14 @@ def _evaluate_population(population: np.ndarray, *, stage: str, traces: list[Tra
                          options: dict[str, Any]) -> tuple[np.ndarray, list[dict]]:
     if config.workers == 1:
         pairs = [_evaluate_serial(candidate, stage=stage, traces=traces, space=space,
-                                  d_lambda=config.d_lambda, objective_options=options)
+                                  d_lambda=config.d_lambda, objective_options=options,
+                                  backend=config.backend)
                  for candidate in population]
     else:
         with ProcessPoolExecutor(max_workers=config.workers,
                                  initializer=_init_worker_with_space,
-                                 initargs=(stage, traces, config.d_lambda, options, space)) as pool:
+                                 initargs=(stage, traces, config.d_lambda, options,
+                                           config.backend, space)) as pool:
             pairs = list(pool.map(_evaluate_worker, population, [space.keys] * len(population)))
     return np.asarray([pair[0] for pair in pairs], dtype=float), [pair[1] for pair in pairs]
 
@@ -282,7 +290,7 @@ def _simulate_for_plots(population: np.ndarray, *, stage: str, traces: list[Trac
                         space: ParameterSpace, config: RunConfig,
                         options: dict[str, Any]) -> list[list]:
     if config.workers == 1:
-        simulator = NeuronSimulator(d_lambda=config.d_lambda, quiet=True)
+        simulator = make_simulator(config.backend, d_lambda=config.d_lambda, quiet=True)
         result = []
         for candidate in population:
             try:
@@ -297,7 +305,8 @@ def _simulate_for_plots(population: np.ndarray, *, stage: str, traces: list[Trac
         return result
     with ProcessPoolExecutor(max_workers=config.workers,
                              initializer=_init_worker_with_space,
-                             initargs=(stage, traces, config.d_lambda, options, space)) as pool:
+                             initargs=(stage, traces, config.d_lambda, options,
+                                       config.backend, space)) as pool:
         return list(pool.map(_simulate_worker, population, [space.keys] * len(population)))
 
 
@@ -312,6 +321,7 @@ def _study_manifest(config: RunConfig, stage: str, seed: int, space: ParameterSp
         "config_hash": config.hash(), "parameter_keys": list(space.keys),
         "generations": int(section["generations"]),
         "population_size": int(section["population_size"]),
+        "backend": config.backend,
         "parallel_workers": config.workers,
     }
     if initial_mean is not None:
@@ -416,15 +426,16 @@ def make_basins(config: RunConfig, stage1_run: Path, *, output: Path | None = No
             seen.add(key)
             selected.append(candidate)
     for candidate in candidates:
-        if len(selected) >= 100:
+        if len(selected) >= min(100, len(candidates)):
             break
         key = tuple(np.round(candidate["normalized"], 14))
         if key not in seen:
             seen.add(key)
             selected.append(candidate)
-    if len(selected) < 100:
-        raise RuntimeError(f"Expected 100 distinct basins, found {len(selected)}")
-    for index, candidate in enumerate(selected[:100]):
+    target_count = min(100, len(candidates))
+    if len(selected) < target_count:
+        raise RuntimeError(f"Expected {target_count} distinct basins, found {len(selected)}")
+    for index, candidate in enumerate(selected[:target_count]):
         records.append({"basin_id": f"b{index:03d}", **candidate})
     output = output or stage1_run / "basins.jsonl"
     with output.open("w", encoding="utf-8") as handle:

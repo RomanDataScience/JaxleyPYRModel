@@ -89,7 +89,7 @@ def load_trace(root: Path, row: dict[str, str], *, start_ms: float | None = None
 
 def load_protocol_traces(root: Path, *, cell: str, protocol: str,
                          trace_names: Iterable[str], pre_ms: float = 0.0,
-                         full_trial: bool = True,
+                         post_ms: float | None = None, full_trial: bool = True,
                          center_current: bool = False) -> list[Trace]:
     rows = load_manifest(root)
     wanted = set(trace_names)
@@ -104,10 +104,11 @@ def load_protocol_traces(root: Path, *, cell: str, protocol: str,
         segment_start = float(row.get("segment_start_ms", 0.0))
         epoch_start = float(row["epoch_start_ms"]) - segment_start
         epoch_stop = float(row["epoch_stop_ms"]) - segment_start
-        start = (epoch_start - pre_ms
+        start = (max(float(raw_time[0]), 0.0, epoch_start - pre_ms)
                  if pre_ms > 0.0 else float(raw_time[0]))
         if full_trial:
-            stop = float(raw_time[-1])
+            stop = (min(float(raw_time[-1]), epoch_stop + post_ms)
+                    if post_ms is not None else float(raw_time[-1]))
         else:
             stop = epoch_stop
         result.append(load_trace(
