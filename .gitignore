@@ -12,3 +12,4 @@ mod/
 runs*/
 *.out
 logs/
+*.log
