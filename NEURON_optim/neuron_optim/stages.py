@@ -97,6 +97,8 @@ def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
     if stage == "hyper":
         return {"sigma_mV": float(section.get("sigma_hyper_mV", 1.0)),
                 "region_weights": section.get("region_weights", {"pre": 1.0, "step": 4.0, "recovery": 3.0}),
+                "deflection_weight": float(section.get("deflection_weight", 2.0)),
+                "sigma_deflection_mV": float(section.get("sigma_deflection_mV", 1.0)),
                 "threshold_mV": float(section.get("threshold_mV", -20.0)),
                 "refractory_ms": float(section.get("refractory_ms", 2.0)),
                 "prominence_mV": float(section.get("prominence_mV", 5.0)),
@@ -123,7 +125,7 @@ def _load_traces(config: RunConfig, stage: str) -> list[Trace]:
         return load_protocol_traces(config.data_root, cell=config.cell,
                                     protocol="hyperpolarizing_pulse",
                                     trace_names=config.trace_names, pre_ms=800.0,
-                                    full_trial=True)
+                                    full_trial=True, center_current=False)
     return load_protocol_traces(config.data_root, cell=config.cell,
                                 protocol="depolarizing_step",
                                 trace_names=config.trace_names, pre_ms=0.0,

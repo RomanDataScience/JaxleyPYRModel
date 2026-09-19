@@ -32,6 +32,16 @@ def test_hyper_exponential_loss_is_zero_for_matching_trace():
     assert result.value == 0.0
 
 
+def test_hyper_objective_reports_explicit_voltage_deflection():
+    observed = trace()
+    simulated = SimulationOutput(observed.time_ms, np.full(observed.time_ms.size, -70.0))
+    result = hyperpolarizing_objective([observed], [simulated])
+    deflection = result.details["traces"][0]["deflection_mV"]
+    assert deflection["experimental"] == -10.0
+    assert deflection["simulated"] == 0.0
+    assert deflection["loss"] > 0.0
+
+
 def test_hyper_spike_penalty_overrides_voltage_loss():
     observed = trace()
     voltage = observed.voltage_mV.copy()

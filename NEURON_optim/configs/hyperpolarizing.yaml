@@ -25,6 +25,8 @@ stage1:
   parent_fraction: 0.5
   sigma_hyper_mV: 1.0
   region_weights: {pre: 1.0, step: 4.0, recovery: 3.0}
+  deflection_weight: 2.0
+  sigma_deflection_mV: 1.0
   threshold_mV: -20.0
   refractory_ms: 2.0
   prominence_mV: 5.0

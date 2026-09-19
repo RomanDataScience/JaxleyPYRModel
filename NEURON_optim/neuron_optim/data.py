@@ -53,7 +53,7 @@ def load_manifest(root: Path, manifest: Path | None = None) -> list[dict[str, st
 
 
 def load_trace(root: Path, row: dict[str, str], *, start_ms: float | None = None,
-               stop_ms: float | None = None) -> Trace:
+               stop_ms: float | None = None, center_current: bool = False) -> Trace:
     time = _read_vector(_resolve_path(root, row["time_output"]))
     voltage = _read_vector(_resolve_path(root, row["voltage_output"]))
     current_pA = _read_vector(_resolve_path(root, row["current_output"]))
@@ -69,18 +69,28 @@ def load_trace(root: Path, row: dict[str, str], *, start_ms: float | None = None
     mask = (time >= start - 1e-9) & (time <= stop + 1e-9)
     if mask.sum() < 2:
         raise ValueError(f"Requested window is empty for {row['trace']} {row['segment']}")
+    selected_time = time[mask] - start
+    selected_current_nA = current_pA[mask] * 1e-3
+    relative_epoch_start = epoch_start - start
+    if center_current:
+        pre_mask = selected_time <= relative_epoch_start + 1e-9
+        if not pre_mask.any():
+            raise ValueError(f"No pre-stimulus samples available to center {row['trace']}")
+        selected_current_nA = selected_current_nA - float(np.median(selected_current_nA[pre_mask]))
+
     return Trace(
         cell=row["cell"], trace=row["trace"], protocol=row["segment"],
-        time_ms=time[mask] - start, voltage_mV=voltage[mask],
-        current_nA=current_pA[mask] * 1e-3,
-        epoch_start_ms=epoch_start - start,
+        time_ms=selected_time, voltage_mV=voltage[mask],
+        current_nA=selected_current_nA,
+        epoch_start_ms=relative_epoch_start,
         epoch_stop_ms=epoch_stop - start,
     )
 
 
 def load_protocol_traces(root: Path, *, cell: str, protocol: str,
                          trace_names: Iterable[str], pre_ms: float = 0.0,
-                         full_trial: bool = True) -> list[Trace]:
+                         full_trial: bool = True,
+                         center_current: bool = False) -> list[Trace]:
     rows = load_manifest(root)
     wanted = set(trace_names)
     selected = [row for row in rows if row["cell"] == cell and
@@ -100,5 +110,11 @@ def load_protocol_traces(root: Path, *, cell: str, protocol: str,
             stop = float(raw_time[-1])
         else:
             stop = epoch_stop
-        result.append(load_trace(root, row, start_ms=max(start, float(raw_time[0])), stop_ms=stop))
+        result.append(load_trace(
+            root,
+            row,
+            start_ms=max(start, float(raw_time[0])),
+            stop_ms=stop,
+            center_current=center_current,
+        ))
     return result

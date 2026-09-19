@@ -80,9 +80,29 @@ def _region_mask(trace: Trace, region: str) -> np.ndarray:
     raise ValueError(region)
 
 
+def _baseline_centered_voltage(
+    trace: Trace, simulated: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return experimental and simulated voltage deflections from baseline.
+
+    Keep absolute voltage for channel dynamics and spike detection, but remove
+    the trace-specific DC voltage offset from the shape comparison.
+    """
+    pre_mask = trace.time_ms <= trace.epoch_start_ms
+    if not pre_mask.any():
+        pre_mask = np.ones(trace.time_ms.shape, dtype=bool)
+    experimental_baseline = float(np.median(trace.voltage_mV[pre_mask]))
+    simulated_baseline = float(np.median(simulated[pre_mask]))
+    return (
+        trace.voltage_mV - experimental_baseline,
+        simulated - simulated_baseline,
+    )
+
+
 def hyperpolarizing_objective(
     traces: Iterable[Trace], simulations: Iterable[SimulationOutput], *,
     sigma_mV: float = 1.0, region_weights: Mapping[str, float] | None = None,
+    deflection_weight: float = 2.0, sigma_deflection_mV: float = 1.0,
     threshold_mV: float = -20.0, refractory_ms: float = 2.0,
     prominence_mV: float = 5.0, spike_penalty: float = 1.0e4,
 ) -> ObjectiveResult:
@@ -94,17 +114,44 @@ def hyperpolarizing_objective(
         simulated = _interp(simulation, trace.time_ms)
         spikes = detect_spikes(trace.time_ms, simulated, threshold_mV=threshold_mV,
                                refractory_ms=refractory_ms, prominence_mV=prominence_mV)
+        experimental_centered, simulated_centered = _baseline_centered_voltage(trace, simulated)
         in_step = [spike for spike in spikes if trace.epoch_start_ms <= spike.peak_ms <= trace.epoch_stop_ms]
         losses: dict[str, float] = {}
         for region in ("pre", "step", "recovery"):
             mask = _region_mask(trace, region)
-            losses[region] = _kernel_loss(simulated[mask], trace.voltage_mV[mask], sigma_mV)
-        total = sum(weights[name] * losses[name] for name in losses) / sum(weights.values())
+            losses[region] = _kernel_loss(
+                simulated_centered[mask], experimental_centered[mask], sigma_mV
+            )
+        step_mask = _region_mask(trace, "step")
+        if not step_mask.any():
+            deflection_loss = 1.0e6
+            experimental_deflection = float("nan")
+            simulated_deflection = float("nan")
+        else:
+            # Compare the pre-pulse baseline with the largest deflection during
+            # the pulse. The waveform terms still score the complete trajectory.
+            experimental_deflection = float(np.min(experimental_centered[step_mask]))
+            simulated_deflection = float(np.min(simulated_centered[step_mask]))
+            deflection_loss = _kernel_loss(
+                np.asarray([simulated_deflection]),
+                np.asarray([experimental_deflection]),
+                sigma_deflection_mV,
+            )
+        losses["deflection"] = deflection_loss
+        total = (
+            sum(weights[name] * losses[name] for name in ("pre", "step", "recovery"))
+            + float(deflection_weight) * deflection_loss
+        ) / (sum(weights.values()) + float(deflection_weight))
         penalized = bool(in_step)
         if penalized:
             total = float(spike_penalty)
         values.append(total)
         trace_details.append({"trace": trace.trace, "losses": losses,
+                              "deflection_mV": {
+                                  "experimental": experimental_deflection,
+                                  "simulated": simulated_deflection,
+                                  "loss": deflection_loss,
+                              },
                               "spikes_ms": [s.peak_ms for s in spikes],
                               "in_step_spikes_ms": [s.peak_ms for s in in_step],
                               "penalized": penalized})

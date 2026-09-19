@@ -7,7 +7,7 @@ name = "combe-neuron-optim"
 version = "0.1.0"
 description = "Two-stage NEURON/Combe CMA-ES optimization"
 requires-python = ">=3.10"
-dependencies = ["numpy", "PyYAML"]
+dependencies = ["numpy", "PyYAML", "optuna>=4.9,<6"]
 
 [project.scripts]
 combe-neuron-optim = "neuron_optim.cli:main"

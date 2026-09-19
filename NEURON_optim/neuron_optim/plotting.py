@@ -29,10 +29,22 @@ def plot_generation(*, output_dir: Path, generation: int, stage: str,
                                     sharex=False, constrained_layout=True)
         axes = np.atleast_1d(axes)
         for axis, trace, simulation in zip(axes, traces, simulations[index], strict=True):
-            axis.plot(trace.time_ms, trace.voltage_mV, color="black", linewidth=0.8, label="v_exp")
-            axis.plot(simulation.time_ms, simulation.voltage_mV, color="#d62728", linewidth=0.8, label="v_sim")
+            if stage == "hyper":
+                pre_exp = trace.time_ms <= trace.epoch_start_ms
+                pre_sim = simulation.time_ms <= trace.epoch_start_ms
+                exp_baseline = float(np.median(trace.voltage_mV[pre_exp]))
+                sim_baseline = float(np.median(simulation.voltage_mV[pre_sim]))
+                exp_voltage = trace.voltage_mV - exp_baseline
+                sim_voltage = simulation.voltage_mV - sim_baseline
+                ylabel = "ΔV (mV)"
+            else:
+                exp_voltage = trace.voltage_mV
+                sim_voltage = simulation.voltage_mV
+                ylabel = "mV"
+            axis.plot(trace.time_ms, exp_voltage, color="black", linewidth=0.8, label="v_exp")
+            axis.plot(simulation.time_ms, sim_voltage, color="#d62728", linewidth=0.8, label="v_sim")
             axis.axvspan(trace.epoch_start_ms, trace.epoch_stop_ms, color="#9ecae1", alpha=0.25)
-            axis.set_ylabel("mV")
+            axis.set_ylabel(ylabel)
             axis.set_title(f"{trace.trace} ({trace.protocol})")
             axis.legend(loc="upper right", fontsize=8)
             axis.grid(alpha=0.2)
