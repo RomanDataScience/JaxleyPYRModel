@@ -16,7 +16,7 @@ parameters:
 runtime:
   environment: Jaxley
   d_lambda: 0.3
-  parallel_workers: 6
+  parallel_workers: 1
 
 passive:
   seeds: [0]
