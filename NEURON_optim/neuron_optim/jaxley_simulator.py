@@ -45,13 +45,16 @@ class JaxleySimulator:
         )
         keys = tuple(key for key in values if key in self._supported_keys)
         fitted = self.jnp.asarray([values[key] for key in keys], dtype=self.jnp.float64)
-        self._set_fitted_parameters(cell, keys, fitted)
-        return cell
+        # Jaxley parameter updates are functional: data_set() accumulates
+        # updates in a parameter-state object instead of mutating the cell.
+        # Keep that state and pass it to integrate() below.
+        param_state = self._set_fitted_parameters(cell, keys, fitted)
+        return cell, param_state
 
     def simulate_many(self, traces: list[Trace], values: dict[str, float], *,
                       v_init_mode: str = "observed_first_sample") -> list[SimulationOutput]:
         outputs = []
-        cell = self._model(values)
+        cell, param_state = self._model(values)
         for trace in traces:
             if trace.time_ms.size < 2:
                 raise ValueError("Trace has fewer than two samples")
@@ -71,7 +74,10 @@ class JaxleySimulator:
                        else float(values["Epas"]))
             cell.set("v", initial)
             cell.init_states()
-            voltage = np.asarray(self.jx.integrate(cell, delta_t=dt)[0], dtype=float)
+            voltage = np.asarray(
+                self.jx.integrate(cell, param_state=param_state, delta_t=dt)[0],
+                dtype=float,
+            )
             n = min(time.size, voltage.size)
             if n < 2 or not np.isfinite(voltage[:n]).all():
                 raise RuntimeError("Jaxley returned an invalid voltage trace")
