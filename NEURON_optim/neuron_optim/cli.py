@@ -7,7 +7,15 @@ import json
 from pathlib import Path
 
 from .config import load_config
-from .stages import load_basins, make_basins, run_pipeline, run_study
+from .stages import (
+    load_basins,
+    make_basins,
+    run_hyper_stage,
+    run_passive_precalibration,
+    run_pipeline,
+    run_study,
+    validate_current_replay,
+)
 
 
 def _config(path: str, workers: int | None):
@@ -24,11 +32,15 @@ def main(argv: list[str] | None = None) -> int:
     validate = sub.add_parser("validate")
     validate.add_argument("--config", required=True)
 
-    for command in ("run-hyper", "run-depolarizing", "run-all"):
+    for command in ("run-passive", "run-hyper", "run-depolarizing", "run-all"):
         item = sub.add_parser(command)
         item.add_argument("--config", required=True)
         item.add_argument("--output-dir", type=Path, default=Path("runs"))
         item.add_argument("--workers", type=int)
+
+    current = sub.add_parser("check-current")
+    current.add_argument("--config", required=True)
+    current.add_argument("--output-dir", type=Path, default=Path("runs"))
 
     basins = sub.add_parser("make-basins")
     basins.add_argument("--config", required=True)
@@ -64,11 +76,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"ERROR: {error}")
         return 2
     output = args.output_dir.resolve()
+    if args.command == "check-current":
+        report = validate_current_replay(config, output / "stage0_passive" / "current_replay.json")
+        print(json.dumps(report, indent=2))
+        return 0
+    if args.command == "run-passive":
+        values = run_passive_precalibration(config, output)
+        print(json.dumps({"completed": "passive", "physical_by_name": values}, indent=2))
+        return 0
     if args.command == "run-hyper":
-        stage_dir = output / "stage1_hyper"
-        for seed in config.section("stage1").get("seeds", range(10)):
-            run_study(config, stage="hyper", seed=int(seed), run_dir=stage_dir / f"seed_{int(seed):03d}")
-        make_basins(config, stage_dir)
+        run_hyper_stage(config, output)
     elif args.command == "run-depolarizing":
         basins_path = output / "stage1_hyper" / "basins.jsonl"
         basins = load_basins(basins_path)

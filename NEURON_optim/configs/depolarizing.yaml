@@ -5,6 +5,12 @@ data:
   cell: m20240527cd
   trace_names: [v75ctrl, v76ctrl, v77ctrl, v78ctrl]
 
+validation:
+  current_trace: v75ctrl
+  expected_before_pulse_nA: 0.081246033
+  expected_during_pulse_nA: 0.049997559
+  current_tolerance_nA: 0.000001
+
 parameters:
   include: []
   exclude: []
@@ -13,6 +19,13 @@ runtime:
   environment: Jaxley
   d_lambda: 0.3
   parallel_workers: 6
+
+passive:
+  seeds: [0]
+  generations: 200
+  population_size: 30
+  sigma0: 0.15
+  parent_fraction: 0.5
 
 plotting:
   enabled: true

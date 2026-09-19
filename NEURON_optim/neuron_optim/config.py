@@ -63,7 +63,7 @@ class RunConfig:
             errors.append("data.trace_names must contain exactly four traces")
         if self.workers < 1:
             errors.append("runtime.parallel_workers must be >= 1")
-        for name in ("stage1", "stage2"):
+        for name in ("passive", "stage1", "stage2"):
             section = self.section(name)
             if int(section.get("generations", 0)) != 200:
                 errors.append(f"{name}.generations must be 200 in the production config")

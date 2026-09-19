@@ -168,3 +168,22 @@ def make_parameter_space(include: Sequence[str] | None = None,
     upper = np.asarray([BOUNDS[key][1] for key in keys], dtype=float)
     reference = np.asarray([DEFAULTS[key] for key in keys], dtype=float)
     return ParameterSpace(keys, lower, upper, reference)
+
+
+def passive_model_values(values: Mapping[str, float]) -> dict[str, float]:
+    """Complete a passive candidate with all active currents disabled.
+
+    ``apply_parameters`` needs the complete Combe parameter mapping because it
+    replays every mechanism on every segment.  A passive-only optimization
+    therefore supplies the fitted passive values here and receives a complete
+    mapping with all conductance-bearing parameters set to zero.  Kinetic
+    scales are left at their neutral value because they have no effect when
+    the corresponding conductances are zero.
+    """
+    completed = dict(DEFAULTS)
+    completed.update({key: float(value) for key, value in values.items()})
+    for key in CONDUCTANCE:
+        completed[key] = 0.0
+    for key in KINETIC:
+        completed[key] = 1.0
+    return completed

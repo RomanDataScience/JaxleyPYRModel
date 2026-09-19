@@ -37,6 +37,32 @@ conda run --name Jaxley \
   --config NEURON_optim/configs/hyperpolarizing.yaml
 ```
 
+The hyperpolarizing workflow begins with a passive-only pre-calibration. It
+first replays one raw current trace and records the pre-pulse and pulse
+current medians, then fits only passive parameters with all active
+conductances disabled. The subsequent full-model hyperpolarizing fits start
+from the best passive solution, with deterministic ±15% perturbations applied
+to the passive coordinates. The raw current waveform is preserved; the
+holding current is not centered away.
+
+To run only the replay check:
+
+```bash
+conda run --name Jaxley \
+  combe-neuron-optim check-current \
+  --config NEURON_optim/configs/hyperpolarizing.yaml \
+  --output-dir NEURON_optim/runs/passive_check
+```
+
+To run the passive pre-calibration by itself:
+
+```bash
+conda run --name Jaxley \
+  combe-neuron-optim run-passive \
+  --config NEURON_optim/configs/hyperpolarizing.yaml \
+  --output-dir NEURON_optim/runs/passive
+```
+
 For a small smoke run, make a temporary copy of the YAML and reduce both
 `generations` and `population_size`. Production configs intentionally retain
 the requested 200/30 budget.

@@ -13,7 +13,7 @@ from .cma import CMAES
 from .config import RunConfig
 from .data import Trace, load_protocol_traces
 from .objective import depolarizing_objective, hyperpolarizing_objective
-from .parameters import ParameterSpace
+from .parameters import DEFAULTS, PASSIVE, ParameterSpace, make_parameter_space, passive_model_values
 from .plotting import plot_generation
 from .simulator import NeuronSimulator
 
@@ -34,9 +34,11 @@ def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]) -> tuple[flo
     if physical is None:
         raise RuntimeError("Worker parameter space was not initialized")
     mapping = dict(zip(keys, physical, strict=True))
+    if _WORKER["stage"] == "passive":
+        mapping = passive_model_values(mapping)
     try:
         simulations = _WORKER["simulator"].simulate_many(_WORKER["traces"], mapping)
-        if _WORKER["stage"] == "hyper":
+        if _WORKER["stage"] in {"passive", "hyper"}:
             result = hyperpolarizing_objective(_WORKER["traces"], simulations, **_WORKER["objective_options"])
         else:
             result = depolarizing_objective(_WORKER["traces"], simulations, **_WORKER["objective_options"])
@@ -48,6 +50,8 @@ def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]) -> tuple[flo
 def _simulate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
     physical = _WORKER["space"].physical(normalized)
     mapping = dict(zip(keys, physical, strict=True))
+    if _WORKER["stage"] == "passive":
+        mapping = passive_model_values(mapping)
     try:
         simulations = _WORKER["simulator"].simulate_many(_WORKER["traces"], mapping)
         return [{"time_ms": simulation.time_ms, "voltage_mV": simulation.voltage_mV}
@@ -67,8 +71,11 @@ def _evaluate_serial(normalized: np.ndarray, *, stage: str, traces: list[Trace],
                      objective_options: dict[str, Any]) -> tuple[float, dict]:
     try:
         simulator = NeuronSimulator(d_lambda=d_lambda, quiet=True)
-        simulations = simulator.simulate_many(traces, space.mapping(normalized))
-        if stage == "hyper":
+        mapping = space.mapping(normalized)
+        if stage == "passive":
+            mapping = passive_model_values(mapping)
+        simulations = simulator.simulate_many(traces, mapping)
+        if stage in {"passive", "hyper"}:
             result = hyperpolarizing_objective(traces, simulations, **objective_options)
         else:
             result = depolarizing_objective(traces, simulations, **objective_options)
@@ -93,8 +100,8 @@ def _json_default(value):
 
 
 def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
-    section = dict(raw["stage1"] if stage == "hyper" else raw["stage2"])
-    if stage == "hyper":
+    section = dict(raw["stage1"] if stage in {"passive", "hyper"} else raw["stage2"])
+    if stage in {"passive", "hyper"}:
         return {"sigma_mV": float(section.get("sigma_hyper_mV", 1.0)),
                 "region_weights": section.get("region_weights", {"pre": 1.0, "step": 4.0, "recovery": 3.0}),
                 "deflection_weight": float(section.get("deflection_weight", 2.0)),
@@ -121,7 +128,7 @@ def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
 
 
 def _load_traces(config: RunConfig, stage: str) -> list[Trace]:
-    if stage == "hyper":
+    if stage in {"passive", "hyper"}:
         return load_protocol_traces(config.data_root, cell=config.cell,
                                     protocol="hyperpolarizing_pulse",
                                     trace_names=config.trace_names, pre_ms=800.0,
@@ -130,6 +137,130 @@ def _load_traces(config: RunConfig, stage: str) -> list[Trace]:
                                 protocol="depolarizing_step",
                                 trace_names=config.trace_names, pre_ms=0.0,
                                 full_trial=True)
+
+
+def validate_current_replay(config: RunConfig, output_path: Path | None = None) -> dict[str, Any]:
+    """Run one passive-only trace and record the raw-current replay check."""
+    validation = config.raw.get("validation", {})
+    trace_name = str(validation.get("current_trace", config.trace_names[0]))
+    traces = load_protocol_traces(
+        config.data_root,
+        cell=config.cell,
+        protocol="hyperpolarizing_pulse",
+        trace_names=(trace_name,),
+        pre_ms=800.0,
+        full_trial=True,
+        center_current=False,
+    )
+    trace = traces[0]
+    passive_space = make_parameter_space(include=PASSIVE)
+    reference = dict(zip(PASSIVE, passive_space.reference.tolist(), strict=True))
+    values = passive_model_values(reference)
+    simulation = NeuronSimulator(d_lambda=config.d_lambda, quiet=True).simulate_many(
+        traces, values
+    )[0]
+    simulated = np.interp(trace.time_ms, simulation.time_ms, simulation.voltage_mV)
+    pre = trace.time_ms <= trace.epoch_start_ms
+    step = ((trace.time_ms >= trace.epoch_start_ms) &
+            (trace.time_ms <= trace.epoch_stop_ms))
+    current_pre = float(np.median(trace.current_nA[pre]))
+    current_step = float(np.median(trace.current_nA[step]))
+    current_delta = current_step - current_pre
+    voltage_pre = float(np.median(simulated[pre]))
+    voltage_step = float(np.median(simulated[step]))
+    voltage_min_delta = float(np.min(simulated[step]) - voltage_pre)
+    report = {
+        "trace": trace.trace,
+        "protocol": trace.protocol,
+        "current_units": "nA",
+        "current_replay": {
+            "before_pulse_median_nA": current_pre,
+            "during_pulse_median_nA": current_step,
+            "step_delta_nA": current_delta,
+        },
+        "passive_reference": reference,
+        "voltage_response": {
+            "simulated_pre_median_mV": voltage_pre,
+            "simulated_step_median_mV": voltage_step,
+            "simulated_step_min_deflection_mV": voltage_min_delta,
+        },
+        "passed": False,
+    }
+
+    expected_pre = validation.get("expected_before_pulse_nA")
+    expected_step = validation.get("expected_during_pulse_nA")
+    tolerance = float(validation.get("current_tolerance_nA", 1.0e-6))
+    if expected_pre is not None and abs(current_pre - float(expected_pre)) > tolerance:
+        if output_path is not None:
+            _write_json(output_path, report)
+        raise RuntimeError(f"Current replay pre-pulse mismatch: {current_pre} nA")
+    if expected_step is not None and abs(current_step - float(expected_step)) > tolerance:
+        if output_path is not None:
+            _write_json(output_path, report)
+        raise RuntimeError(f"Current replay step mismatch: {current_step} nA")
+    if current_delta < 0.0 and voltage_min_delta >= 0.0:
+        if output_path is not None:
+            _write_json(output_path, report)
+        raise RuntimeError(
+            "Raw-current replay did not produce a negative passive deflection "
+            f"for a negative current step ({voltage_min_delta:.6g} mV)."
+        )
+    report["passed"] = True
+    if output_path is not None:
+        _write_json(output_path, report)
+    return report
+
+
+def _full_initial_from_passive(config: RunConfig, passive_values: dict[str, float],
+                               seed: int, variation: float = 0.15) -> np.ndarray:
+    """Embed a passive fit in the full space and perturb passive coordinates."""
+    space = config.parameters
+    physical = dict(DEFAULTS)
+    physical.update(passive_values)
+    mean = space.normalize([physical[key] for key in space.keys])
+    rng = np.random.default_rng(np.random.SeedSequence([int(seed), 0x50415353]))
+    for index, key in enumerate(space.keys):
+        if key in PASSIVE:
+            mean[index] = np.clip(mean[index] + rng.uniform(-variation, variation), 0.0, 1.0)
+    return mean
+
+
+def run_passive_precalibration(config: RunConfig, output_root: Path) -> dict[str, float]:
+    """Validate raw replay, then fit passive properties before full fitting."""
+    passive_root = output_root / "stage0_passive"
+    passive_root.mkdir(parents=True, exist_ok=True)
+    replay_path = passive_root / "current_replay.json"
+    if replay_path.exists():
+        replay = json.loads(replay_path.read_text(encoding="utf-8"))
+    else:
+        replay = None
+    if not replay or not replay.get("passed", False):
+        replay = validate_current_replay(config, replay_path)
+    _write_json(passive_root / "current_replay.json", replay)
+
+    best_path = passive_root / "passive_best.json"
+    if best_path.exists():
+        return dict(json.loads(best_path.read_text(encoding="utf-8"))["physical_by_name"])
+
+    results = []
+    for seed in config.section("passive").get("seeds", [0]):
+        seed = int(seed)
+        result = run_study(
+            config,
+            stage="passive",
+            seed=seed,
+            run_dir=passive_root / f"seed_{seed:03d}",
+        )
+        results.append((float(result["loss"]), seed, result))
+    loss, seed, result = min(results, key=lambda item: item[0])
+    best = {
+        "stage": "passive",
+        "best_seed": seed,
+        "loss": loss,
+        "physical_by_name": result["physical_by_name"],
+    }
+    _write_json(best_path, best)
+    return dict(result["physical_by_name"])
 
 
 def _evaluate_population(population: np.ndarray, *, stage: str, traces: list[Trace],
@@ -155,7 +286,10 @@ def _simulate_for_plots(population: np.ndarray, *, stage: str, traces: list[Trac
         result = []
         for candidate in population:
             try:
-                simulations = simulator.simulate_many(traces, space.mapping(candidate))
+                mapping = space.mapping(candidate)
+                if stage == "passive":
+                    mapping = passive_model_values(mapping)
+                simulations = simulator.simulate_many(traces, mapping)
                 result.append([{"time_ms": simulation.time_ms, "voltage_mV": simulation.voltage_mV}
                                for simulation in simulations])
             except Exception:
@@ -168,25 +302,32 @@ def _simulate_for_plots(population: np.ndarray, *, stage: str, traces: list[Trac
 
 
 def _study_manifest(config: RunConfig, stage: str, seed: int, space: ParameterSpace,
-                    run_dir: Path, basin_id: str | None = None) -> None:
-    section = config.section("stage1" if stage == "hyper" else "stage2")
-    _write_json(run_dir / "manifest.json", {
-        "stage": stage, "seed": seed, "basin_id": basin_id,
+                    run_dir: Path, basin_id: str | None = None,
+                    initial_mean: np.ndarray | None = None) -> None:
+    section_name = "passive" if stage == "passive" else "stage1" if stage == "hyper" else "stage2"
+    section = config.section(section_name)
+    payload = {
+        "stage": stage, "model_mode": "passive_only" if stage == "passive" else "full",
+        "seed": seed, "basin_id": basin_id,
         "config_hash": config.hash(), "parameter_keys": list(space.keys),
         "generations": int(section["generations"]),
         "population_size": int(section["population_size"]),
         "parallel_workers": config.workers,
-    })
+    }
+    if initial_mean is not None:
+        payload["initial_mean_normalized"] = np.asarray(initial_mean, dtype=float).tolist()
+    _write_json(run_dir / "manifest.json", payload)
 
 
 def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
               initial_mean: np.ndarray | None = None,
               basin_id: str | None = None) -> dict[str, Any]:
-    space = config.parameters
-    section = config.section("stage1" if stage == "hyper" else "stage2")
+    space = make_parameter_space(include=PASSIVE) if stage == "passive" else config.parameters
+    section_name = "passive" if stage == "passive" else "stage1" if stage == "hyper" else "stage2"
+    section = config.section(section_name)
     traces = _load_traces(config, stage)
     run_dir.mkdir(parents=True, exist_ok=True)
-    _study_manifest(config, stage, seed, space, run_dir, basin_id)
+    _study_manifest(config, stage, seed, space, run_dir, basin_id, initial_mean)
     compatibility = f"{config.hash()}:{stage}:{seed}:{basin_id}:{space.keys}"
     checkpoint_dir = run_dir / "checkpoint"
     optimizer = CMAES.load(checkpoint_dir, seed=seed, compatibility_hash=compatibility)
@@ -239,9 +380,11 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                                      "mean": float(np.mean(losses)), "sigma": optimizer.state.sigma}) + "\n")
     if best is None:
         raise RuntimeError("Study produced no generations")
+    physical = space.physical(best[1])
+    physical_by_name = dict(zip(space.keys, physical.tolist(), strict=True))
     result = {"loss": best[0], "normalized": best[1].tolist(),
-              "physical": space.physical(best[1]).tolist(), "details": best[2],
-              "generation": optimizer.state.generation}
+              "physical": physical.tolist(), "physical_by_name": physical_by_name,
+              "details": best[2], "generation": optimizer.state.generation}
     _write_json(run_dir / "best_parameters.json", {"keys": list(space.keys), **result})
     return result
 
@@ -295,12 +438,28 @@ def load_basins(path: Path) -> list[dict]:
         return [json.loads(line) for line in handle if line.strip()]
 
 
-def run_pipeline(config: RunConfig, output_root: Path) -> None:
+def run_hyper_stage(config: RunConfig, output_root: Path) -> None:
+    """Run passive pre-calibration followed by full-model hyper fitting."""
+    passive_values = run_passive_precalibration(config, output_root)
     stage1_dir = output_root / "stage1_hyper"
     stage1_dir.mkdir(parents=True, exist_ok=True)
-    for seed in config.section("stage1").get("seeds", list(range(10))):
-        run_study(config, stage="hyper", seed=int(seed), run_dir=stage1_dir / f"seed_{int(seed):03d}")
-    basins = make_basins(config, stage1_dir)
+    for seed in config.section("stage1").get("seeds", range(10)):
+        seed = int(seed)
+        initial = _full_initial_from_passive(config, passive_values, seed)
+        run_study(
+            config,
+            stage="hyper",
+            seed=seed,
+            run_dir=stage1_dir / f"seed_{seed:03d}",
+            initial_mean=initial,
+        )
+    make_basins(config, stage1_dir)
+
+
+def run_pipeline(config: RunConfig, output_root: Path) -> None:
+    run_hyper_stage(config, output_root)
+    stage1_dir = output_root / "stage1_hyper"
+    basins = load_basins(stage1_dir / "basins.jsonl")
     stage2_dir = output_root / "stage2_depolarizing"
     for basin in basins:
         mean = np.asarray(basin["normalized"], dtype=float)
