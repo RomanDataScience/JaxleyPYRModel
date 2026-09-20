@@ -221,6 +221,12 @@ class NeuronSimulator:
             h.dt = dt
             h.tstop = float(time[-1])
             clamp = h.IClamp(soma(0.5))
+            # IClamp defaults to a zero-duration pulse.  Vector.play updates
+            # ``amp`` but does not change the clamp's delay/duration window,
+            # so without these assignments the recorded current is never
+            # delivered to the cell.
+            clamp.delay = 0.0
+            clamp.dur = max(float(time[-1]) + dt, dt)
             tvec = h.Vector(time)
             ivec = h.Vector(current)
             ivec.play(clamp._ref_amp, tvec, 1)
