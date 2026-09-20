@@ -17,7 +17,7 @@ parameters:
 
 runtime:
   environment: Jaxley
-  backend: jaxley
+  backend: neuron
   d_lambda: 0.3
   parallel_workers: 1
   simulation_pre_ms: 500.0

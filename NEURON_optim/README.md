@@ -1,8 +1,8 @@
 # Combe two-stage optimization
 
 This package implements the reviewed two-stage CMA-ES plan using the Combe2023
-model. The checked-in configurations select the repository's Jaxley backend;
-the original NEURON backend remains available with `runtime.backend: neuron`.
+model. The checked-in configurations select the repository's NEURON backend;
+the Jaxley backend remains available with `runtime.backend: jaxley`.
 
 The checked-in hyperpolarizing settings use 3 seeds, 100 generations, 20
 offspring, and 1 process worker for the passive and stage-1 searches. Stage 2
@@ -18,17 +18,18 @@ Use the existing `Jaxley` environment:
 
 ```bash
 conda run --name Jaxley python -m pip install -e NEURON_optim
-conda run --name Jaxley python -c "import jaxley; print(jaxley.__version__)"
+conda run --name Jaxley python -c "import neuron; print(neuron.__version__)"
 ```
 
-The Jaxley backend uses the repository's SWC morphology and does not require
-NEURON or compiled MOD mechanisms. If `runtime.backend` is changed to
-`neuron`, compile the mechanisms and check the NEURON import in the same
-environment:
+The NEURON backend uses the repository's Combe morphology and compiled MOD
+mechanisms. Check the NEURON import in the same environment:
 
 ```bash
 conda run --name Jaxley python -c "import neuron; print(neuron.__version__)"
 ```
+
+The Jaxley backend remains available for diagnostic runs when
+`runtime.backend` is set to `jaxley`.
 
 `Combe2023.zip` is extracted automatically into `.cache/Combe2023` on the first
 simulation if an extracted `Combe2023/` directory is not present.

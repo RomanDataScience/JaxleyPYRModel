@@ -382,6 +382,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                                 stage=stage, traces=traces, population=plot_population,
                                 losses=plot_losses, simulations=plot_simulations,
                                 space=space, top_k=top_k,
+                                population_indices=top_indices,
                                 dpi=int(plotting.get("dpi", 120)))
         optimizer.tell(population, losses)
         optimizer.save(checkpoint_dir, compatibility)

@@ -15,13 +15,20 @@ from .parameters import ParameterSpace
 def plot_generation(*, output_dir: Path, generation: int, stage: str,
                     traces: list[Trace], population: np.ndarray,
                     losses: np.ndarray, simulations: list[list[SimulationOutput]],
-                    space: ParameterSpace, top_k: int = 10, dpi: int = 120) -> None:
+                    space: ParameterSpace, top_k: int = 10, dpi: int = 120,
+                    population_indices: np.ndarray | None = None) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     output_dir = output_dir / f"generation_{generation:04d}"
     output_dir.mkdir(parents=True, exist_ok=True)
+    if population_indices is None:
+        population_indices = np.arange(len(population), dtype=int)
+    else:
+        population_indices = np.asarray(population_indices, dtype=int)
+        if population_indices.shape != (len(population),):
+            raise ValueError("population_indices must match population length")
     order = np.argsort(losses, kind="stable")[:min(top_k, len(losses))]
     metadata = []
     for rank, index in enumerate(order, start=1):
@@ -52,7 +59,7 @@ def plot_generation(*, output_dir: Path, generation: int, stage: str,
         figure.suptitle(f"{stage}: generation {generation}, rank {rank}, loss {losses[index]:.6g}")
         figure.savefig(output_dir / f"rank_{rank:02d}.png", dpi=dpi)
         plt.close(figure)
-        metadata.append({"rank": rank, "population_index": int(index),
+        metadata.append({"rank": rank, "population_index": int(population_indices[index]),
                          "loss": float(losses[index]),
                          "normalized": population[index].tolist(),
                          "physical": space.physical(population[index]).tolist(),

@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 
 from neuron_optim.data import Trace
@@ -16,6 +18,8 @@ def test_generation_plot_writes_ranked_candidate(tmp_path):
     simulations = [[SimulationOutput(time, np.full(time.size, -70.0))] for _ in population]
     plot_generation(output_dir=tmp_path, generation=1, stage="hyper", traces=[trace],
                     population=population, losses=losses, simulations=simulations,
-                    space=space, top_k=2)
+                    space=space, top_k=2, population_indices=np.asarray([7, 3]))
     assert (tmp_path / "generation_0001" / "rank_01.png").exists()
     assert (tmp_path / "generation_0001" / "top_candidates.json").exists()
+    metadata = json.loads((tmp_path / "generation_0001" / "top_candidates.json").read_text())
+    assert [item["population_index"] for item in metadata] == [3, 7]
