@@ -11,17 +11,19 @@ from .objective import SimulationOutput
 class JaxleySimulator:
     """Simulate Combe traces with the repository's Jaxley model.
 
-    The SWC morphology is used deliberately: the exact HOC-topology builder
-    bootstraps through NEURON, which would make a purported Jaxley backend
-    depend on NEURON during model construction.
+    The HOC-derived morphology is the default because NEURON_optim is the
+    gold standard.  ``morphology_source="swc"`` remains available for a
+    faster, approximate diagnostic path, but it is not a parity simulation.
     """
 
-    def __init__(self, *, d_lambda: float = 0.3, quiet: bool = True):
+    def __init__(self, *, d_lambda: float = 0.3, quiet: bool = True,
+                 morphology_source: str = "hoc"):
         del quiet  # Jaxley has no equivalent simulator verbosity switch here.
         try:
             import jax.numpy as jnp
             import jaxley as jx
             from JaxleyModel.model.model_Combe import (
+                NEURON_UPDATE_MODE,
                 SUPPORTED_FIT_PARAMETER_KEYS,
                 Combe2023,
                 set_fitted_parameters,
@@ -37,12 +39,20 @@ class JaxleySimulator:
         self._build_model = Combe2023
         self._set_fitted_parameters = set_fitted_parameters
         self._supported_keys = frozenset(SUPPORTED_FIT_PARAMETER_KEYS)
+        self._update_mode = NEURON_UPDATE_MODE
+        if morphology_source not in {"swc", "hoc"}:
+            raise ValueError("morphology_source must be either 'swc' or 'hoc'")
+        self.morphology_source = morphology_source
 
     def _model(self, values: dict[str, float]):
         cell = self._build_model(
             d_lambda=self.d_lambda,
-            morphology_source="swc",
+            morphology_source=self.morphology_source,
         )
+        # NEURON_optim is the gold standard.  Force the Jaxley parameter
+        # application layer to use final-compartment rules rather than the
+        # historical frozen-HOC endpoint profiles.
+        cell._combe_parameter_update_mode = self._update_mode
         keys = tuple(key for key in values if key in self._supported_keys)
         fitted = self.jnp.asarray([values[key] for key in keys], dtype=self.jnp.float64)
         # Jaxley parameter updates are functional: data_set() accumulates

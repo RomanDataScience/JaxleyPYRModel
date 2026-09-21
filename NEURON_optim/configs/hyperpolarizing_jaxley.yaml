@@ -1,0 +1,71 @@
+data:
+  root: ../../JaxleyModel/Experimental_currentClamp_Analysis/Segmented_Traces
+  cell: m20240527cd
+  trace_names: [v75ctrl, v76ctrl, v77ctrl, v78ctrl]
+
+validation:
+  current_trace: v75ctrl
+  expected_before_pulse_nA: 0.081246033
+  expected_during_pulse_nA: 0.049997559
+  current_tolerance_nA: 0.000001
+
+parameters:
+  include: []
+  exclude: []
+
+runtime:
+  environment: Jaxley
+  backend: jaxley
+  d_lambda: 0.3
+  parallel_workers: 1
+  simulation_pre_ms: 500.0
+  simulation_post_ms: 600.0
+
+passive:
+  seeds: [0, 1, 2]
+  generations: 100
+  population_size: 20
+  sigma0: 0.15
+  parent_fraction: 0.5
+
+plotting:
+  enabled: true
+  top_k: 10
+  dpi: 120
+
+stage1:
+  seeds: [0, 1, 2]
+  generations: 100
+  population_size: 20
+  sigma0: 0.15
+  parent_fraction: 0.5
+  sigma_hyper_mV: 1.0
+  region_weights: {pre: 1.0, step: 4.0, recovery: 3.0}
+  deflection_weight: 2.0
+  sigma_deflection_mV: 1.0
+  threshold_mV: -20.0
+  refractory_ms: 2.0
+  prominence_mV: 5.0
+  hyper_spike_penalty: 10000.0
+
+stage2:
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  generations: 200
+  population_size: 30
+  sigma0: 0.15
+  parent_fraction: 0.5
+  sigma_trajectory_mV: 2.0
+  sigma_spike_mV: 2.0
+  sigma_plateau_mV: 2.0
+  sigma_recovery_mV: 2.0
+  sigma_terminal_mV: 2.0
+  weights: {trajectory: 1.0, spike_shape: 3.0, plateau: 2.0, return_baseline: 3.0}
+  threshold_mV: -20.0
+  refractory_ms: 2.0
+  prominence_mV: 5.0
+  spike_window_ms: 5.0
+  plateau_exclusion_ms: 3.0
+  unmatched_spike_penalty: 100.0
+  invalid_plateau_penalty: 100.0
+  depolarizing_extra_spike_penalty: 10000.0
+  return_alpha: 0.7

@@ -19,14 +19,16 @@ class NeuronUnavailable(RuntimeError):
     pass
 
 
-def make_simulator(backend: str, *, d_lambda: float = 0.3, quiet: bool = True):
+def make_simulator(backend: str, *, d_lambda: float = 0.3, quiet: bool = True,
+                   morphology_source: str = "hoc"):
     """Construct the configured simulator without importing both backends."""
     normalized = str(backend).lower()
     if normalized == "neuron":
         return NeuronSimulator(d_lambda=d_lambda, quiet=quiet)
     if normalized == "jaxley":
         from .jaxley_simulator import JaxleySimulator
-        return JaxleySimulator(d_lambda=d_lambda, quiet=quiet)
+        return JaxleySimulator(d_lambda=d_lambda, quiet=quiet,
+                               morphology_source=morphology_source)
     raise ValueError(f"Unsupported simulation backend: {backend}")
 
 
@@ -236,8 +238,11 @@ class NeuronSimulator:
             h.finitialize(initial)
             h.fcurrent()
             h.continuerun(float(time[-1]))
-            out_t = np.asarray(recorded_t, dtype=float)
-            out_v = np.asarray(recorded_v, dtype=float)
+            # NEURON vectors reuse their underlying storage between runs;
+            # copy before appending so a later trace cannot overwrite an
+            # earlier SimulationOutput.
+            out_t = np.asarray(recorded_t, dtype=float).copy()
+            out_v = np.asarray(recorded_v, dtype=float).copy()
             if out_t.size < 2 or not np.isfinite(out_v).all():
                 raise RuntimeError("NEURON returned an invalid voltage trace")
             outputs.append(SimulationOutput(out_t, out_v))

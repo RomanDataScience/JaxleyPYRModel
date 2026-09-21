@@ -382,6 +382,7 @@ def build_hoc_section_cell(d_lambda: float = 0.3):
 
     cell = jx.Cell(branches, parents=parents, xyzr=xyzr)
     group_indices = {group: [] for group in ("soma", "axon", "basal", "apical")}
+    h.distance(0.0, sec=soma)
 
     start = 0
     for section_index, (sec, morph, group) in enumerate(
@@ -408,6 +409,16 @@ def build_hoc_section_cell(d_lambda: float = 0.3):
         # rather than reconstructing it from Jaxley's center-to-center distances.
         cell.nodes.loc[indices, "hoc_assignment_distance_um"] = float(
             h.distance(1.0, sec=sec)
+        )
+        segment_distances = np.asarray(
+            [float(h.distance(seg.x, sec=sec)) for seg in sec],
+            dtype=float,
+        )
+        cell.nodes.loc[indices, "neuron_distance_um"] = segment_distances
+        # apply_parameters() assigns sec.Ra inside the segment loop.  Because
+        # Ra is section-level in NEURON, the last segment's value wins.
+        cell.nodes.loc[indices, "neuron_section_last_distance_um"] = float(
+            segment_distances[-1]
         )
         cell.nodes.loc[indices, "hoc_celsius"] = float(h.celsius)
         for target, attr_name in HOC_ION_PARAM_MAP.items():
@@ -798,6 +809,7 @@ def _passive_sigmoid_jax(distance, soma_value, tuft_value, half_distance, slope)
 
 EXACT_HOC_UPDATE_MODE = "exact_hoc_frozen_grid"
 RULE_UPDATE_MODE = "rule_based_final_centers"
+NEURON_UPDATE_MODE = "neuron_gold_standard_final_centers"
 SUPPORTED_FIT_PARAMETER_KEYS = frozenset(
     (*CONDUCTANCE_PARAMETER_KEYS, *PASSIVE_PARAMETER_KEYS, *KINETIC_PARAMETER_KEYS)
 )
@@ -837,6 +849,8 @@ def _parameter_update_mode(cell):
 
 
 def _profile_distances(view, update_mode):
+    if update_mode == NEURON_UPDATE_MODE and "neuron_distance_um" in view.nodes.columns:
+        return jnp.asarray(view.nodes["neuron_distance_um"].to_numpy(dtype=float))
     distance_key = (
         "hoc_assignment_distance_um"
         if update_mode == EXACT_HOC_UPDATE_MODE
@@ -894,6 +908,88 @@ def _write_selected_profiles(
 
 
 def _passive_fit_profiles(cell, p, update_mode):
+    # The optimizer's NEURON gold standard reapplies the passive rules after
+    # the final nseg values are installed.  In that path every section uses
+    # its final segment distance; the HOC endpoint mode below is retained for
+    # the historical model-comparison tests and artifacts.
+    if update_mode == NEURON_UPDATE_MODE:
+        soma_dist = _profile_distances(cell.soma, update_mode)
+        axon_dist = _profile_distances(cell.axon, update_mode)
+        basal_dist = _profile_distances(cell.basal, update_mode)
+        apical_dist = _profile_distances(cell.apical, update_mode)
+
+        def rm(distance, apical=False):
+            distance = jnp.minimum(distance, 394.0) if apical else distance
+            return _passive_sigmoid_jax(
+                distance, p["RmSoma"], p["RmTuft"],
+                p["DistHalfRm"], p["SlopeRm"],
+            )
+
+        def ra(distance, apical=False):
+            distance = jnp.minimum(distance, 394.0) if apical else distance
+            return _passive_sigmoid_jax(
+                distance, p["RaSoma"], p["RaTuft"],
+                p["DistHalfRa"], p["SlopeRa"],
+            )
+
+        soma_rm, axon_rm = rm(soma_dist), rm(axon_dist)
+        basal_rm, apical_rm = rm(basal_dist), rm(apical_dist, apical=True)
+        soma_ra, axon_ra = ra(soma_dist), ra(axon_dist)
+        basal_ra, apical_ra = ra(basal_dist), ra(apical_dist, apical=True)
+
+        if update_mode == NEURON_UPDATE_MODE and "neuron_section_last_distance_um" in cell.nodes.columns:
+            def section_last_distance(view):
+                return jnp.asarray(
+                    view.nodes["neuron_section_last_distance_um"].to_numpy(dtype=float)
+                )
+
+            soma_ra = ra(section_last_distance(cell.soma))
+            axon_ra = ra(section_last_distance(cell.axon))
+            basal_ra = ra(section_last_distance(cell.basal))
+            apical_ra = ra(section_last_distance(cell.apical), apical=True)
+
+        return (
+            _fit_profile(cell.soma, "capacitance", p["CmSoma"], "CmSoma"),
+            _fit_profile(cell.axon, "capacitance", p["CmSoma"], "CmSoma"),
+            _fit_profile(
+                cell.basal,
+                "capacitance",
+                p["SpineFactorBasal"] * p["CmSoma"],
+                "CmSoma", "SpineFactorBasal",
+            ),
+            _fit_profile(
+                cell.apical,
+                "capacitance",
+                p["SpineFactorTuft"] * p["CmSoma"],
+                "CmSoma", "SpineFactorTuft",
+            ),
+            _fit_profile(cell.soma, "axial_resistivity", soma_ra,
+                         "RaSoma", "RaTuft", "DistHalfRa", "SlopeRa"),
+            _fit_profile(cell.axon, "axial_resistivity", axon_ra,
+                         "RaSoma", "RaTuft", "DistHalfRa", "SlopeRa"),
+            _fit_profile(cell.basal, "axial_resistivity", basal_ra,
+                         "RaSoma", "RaTuft", "DistHalfRa", "SlopeRa"),
+            _fit_profile(cell.apical, "axial_resistivity", apical_ra,
+                         "RaSoma", "RaTuft", "DistHalfRa", "SlopeRa"),
+            _fit_profile(cell.soma, "Leak_gLeak", 1.0 / soma_rm,
+                         "RmSoma", "RmTuft", "DistHalfRm", "SlopeRm"),
+            _fit_profile(cell.axon, "Leak_gLeak", 1.0 / axon_rm,
+                         "RmSoma", "RmTuft", "DistHalfRm", "SlopeRm"),
+            _fit_profile(
+                cell.basal, "Leak_gLeak",
+                p["SpineFactorBasal"] / basal_rm,
+                "RmSoma", "RmTuft", "DistHalfRm", "SlopeRm",
+                "SpineFactorBasal",
+            ),
+            _fit_profile(
+                cell.apical, "Leak_gLeak",
+                p["SpineFactorTuft"] / apical_rm,
+                "RmSoma", "RmTuft", "DistHalfRm", "SlopeRm",
+                "SpineFactorTuft",
+            ),
+            _fit_profile(cell, "Leak_eLeak", p["Epas"], "Epas"),
+        )
+
     soma_rm = _passive_sigmoid_jax(
         0.0, p["RmSoma"], p["RmTuft"], p["DistHalfRm"], p["SlopeRm"]
     )
@@ -976,6 +1072,75 @@ def _passive_fit_profiles(cell, p, update_mode):
 
 
 def _conductance_fit_profiles(cell, p, update_mode):
+    if update_mode == NEURON_UPDATE_MODE:
+        apical_dist = _profile_distances(cell.apical, update_mode)
+        basal_dist = _profile_distances(cell.basal, update_mode)
+        return (
+            _fit_profile(cell.soma, "icand_gbar", p["icangbar"], "icangbar"),
+            _fit_profile(cell.soma, "na16a_gbar",
+                         p["gna"] * p["scale_Na_conduct"],
+                         "gna", "scale_Na_conduct"),
+            _fit_profile(cell.soma, "kd_gbar", p["gkdrsoma"], "gkdrsoma"),
+            _fit_profile(cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"),
+            _fit_profile(cell.soma, "nap_gnabar", p["nap_gnabar"], "nap_gnabar"),
+            _fit_profile(cell.soma, "h_gbar", p["soma_hbar"], "soma_hbar"),
+            _fit_profile(cell.soma, "kap_gkabar", p["soma_kap"], "soma_kap"),
+            _fit_profile(cell.soma, "km_gbar", p["soma_km"], "soma_km"),
+            _fit_profile(cell.soma, "cal_gcalbar", 0.1 * p["soma_caL"], "soma_caL"),
+            _fit_profile(cell.soma, "cat_gcatbar", p["soma_caT"], "soma_caT"),
+            _fit_profile(cell.soma, "car_gcabar", p["gsomacar"], "gsomacar"),
+            _fit_profile(cell.soma, "kca_gbar", 0.5 * p["soma_kca"], "soma_kca"),
+            _fit_profile(cell.soma, "mykca_gkbar", 5.5 * p["mykca_init"], "mykca_init"),
+            _fit_profile(cell.apical, "icand_gbar", p["icangbar"], "icangbar"),
+            _fit_profile(cell.apical, "car_gcabar", 0.1 * p["soma_car"], "soma_car"),
+            _fit_profile(cell.apical, "calH_gcalbar",
+                         jnp.where(apical_dist > 50.0, 2.0, 0.1) * p["soma_caLH"],
+                         "soma_caLH"),
+            # These are intentionally the NEURON_optim rules, including the
+            # constant apical CaT and both A-type channels at every distance.
+            _fit_profile(cell.apical, "cat_gcatbar", p["soma_caT"], "soma_caT"),
+            _fit_profile(cell.apical, "kca_gbar",
+                         jnp.where((apical_dist > 50.0) & (apical_dist < 200.0),
+                                   5.0, 0.5) * p["soma_kca"], "soma_kca"),
+            _fit_profile(cell.apical, "mykca_gkbar",
+                         jnp.where((apical_dist > 50.0) & (apical_dist < 200.0),
+                                   2.0, 0.5) * p["mykca_init"], "mykca_init"),
+            _fit_profile(cell.apical, "h_gbar",
+                         p["soma_hbar"] * (1.0 + 1.2 * jnp.minimum(apical_dist, 100.0) / 100.0),
+                         "soma_hbar"),
+            _fit_profile(cell.apical, "kap_gkabar",
+                         p["soma_kap"] * (1.0 + apical_dist / 100.0), "soma_kap"),
+            _fit_profile(cell.apical, "kad_gkabar",
+                         p["soma_kad"] * (1.0 + apical_dist / 100.0), "soma_kad"),
+            _fit_profile(cell.apical, "Kv2like_gbar",
+                         jnp.where(apical_dist > 100.0,
+                                   p["gkv2"] * p["gkv2scale"], p["gkv2"]),
+                         "gkv2", "gkv2scale"),
+            _fit_profile(cell.apical, "na16a_gbar",
+                         p["gnadend"] * p["scale_Na_conduct"],
+                         "gnadend", "scale_Na_conduct"),
+            _fit_profile(cell.apical, "kd_gbar", p["gkdrapical"], "gkdrapical"),
+            _fit_profile(cell.apical, "km_gbar", p["soma_km"], "soma_km"),
+            _fit_profile(cell.apical, "kir_gbar",
+                         p["KirGbar"] * jnp.minimum(apical_dist / 100.0, 1.0),
+                         "KirGbar"),
+            _fit_profile(cell.axon, "nax_gbar", p["gna"] * p["AXNa"], "gna", "AXNa"),
+            _fit_profile(cell.axon, "kd_gbar", p["axongkdr"], "axongkdr"),
+            _fit_profile(cell.axon, "km_gbar", 3.0 * p["soma_km"], "soma_km"),
+            _fit_profile(cell.axon, "kap_gkabar", p["axon_kap"], "axon_kap"),
+            _fit_profile(cell.axon, "Kv2like_gbar", p["gkv2axon"], "gkv2axon"),
+            _fit_profile(cell.basal, "na3dend_gbar", p["gnadend"], "gnadend"),
+            _fit_profile(cell.basal, "nap_gnabar", p["nap_gnabar"], "nap_gnabar"),
+            _fit_profile(cell.basal, "kap_gkabar", p["basal_kap"], "basal_kap"),
+            _fit_profile(cell.basal, "h_gbar", p["soma_hbar"], "soma_hbar"),
+            _fit_profile(cell.basal, "kd_gbar", p["gkdrdend"], "gkdrdend"),
+            _fit_profile(cell.basal, "Kv2like_gbar",
+                         p["gkv2"] * p["gkv2scale"], "gkv2", "gkv2scale"),
+            _fit_profile(cell.basal, "kir_gbar",
+                         p["KirGbar"] * jnp.minimum(basal_dist / 40.0, 1.0),
+                         "KirGbar"),
+        )
+
     apical_dist = _profile_distances(cell.apical, update_mode)
     basal_dist = _profile_distances(cell.basal, update_mode)
     capped_h_dist = jnp.minimum(apical_dist, 500.0)

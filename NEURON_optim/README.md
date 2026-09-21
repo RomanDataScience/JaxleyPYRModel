@@ -28,8 +28,11 @@ mechanisms. Check the NEURON import in the same environment:
 conda run --name Jaxley python -c "import neuron; print(neuron.__version__)"
 ```
 
-The Jaxley backend remains available for diagnostic runs when
-`runtime.backend` is set to `jaxley`.
+The Jaxley backend uses the HOC-derived compartment layout and the
+`NEURON_optim` parameter-application rules when `runtime.backend` is set to
+`jaxley`, so it can be compared directly with NEURON. The SWC morphology is
+still available as an explicit approximate diagnostic via
+`make_simulator("jaxley", morphology_source="swc")`.
 
 `Combe2023.zip` is extracted automatically into `.cache/Combe2023` on the first
 simulation if an extracted `Combe2023/` directory is not present.
