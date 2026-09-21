@@ -8,6 +8,22 @@ from .data import Trace
 from .objective import SimulationOutput
 
 
+def _linear_play_interval_current(current: np.ndarray) -> np.ndarray:
+    """Convert NEURON continuous-play samples to Jaxley step inputs.
+
+    NEURON's ``Vector.play(..., 1)`` linearly interpolates the command between
+    adjacent time samples.  Jaxley's external stimulus supplies one value for
+    each integration step, so use the interval-average command.  The final
+    value is padding: ``integrate`` returns the initial state plus one state
+    per supplied input, and the caller keeps only the original sample count.
+    """
+    current = np.asarray(current, dtype=float)
+    if current.ndim != 1 or current.size < 2:
+        raise ValueError("Current replay requires at least two one-dimensional samples")
+    interval_average = 0.5 * (current[:-1] + current[1:])
+    return np.concatenate((interval_average, current[-1:]))
+
+
 class JaxleySimulator:
     """Simulate Combe traces with the repository's Jaxley model.
 
@@ -72,7 +88,7 @@ class JaxleySimulator:
             if dt <= 0.0 or not np.isfinite(dt):
                 raise ValueError("Trace time step must be finite and positive")
             time = np.asarray(trace.time_ms - trace.time_ms[0], dtype=float)
-            current = np.asarray(trace.current_nA, dtype=float)
+            current = _linear_play_interval_current(trace.current_nA)
             cell.delete_stimuli()
             cell.delete_recordings()
             cell.soma.branch(0).loc(0.5).stimulate(
