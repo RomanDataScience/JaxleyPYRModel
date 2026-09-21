@@ -228,6 +228,37 @@ def test_hoc_endpoint_feature_reproduces_sectionwise_profiles(hoc_cell):
     assert apical.groupby("hoc_section_index")["h_gbar"].nunique().max() == 1
 
 
+def test_hoc_connection_locations_are_preserved(hoc_cell):
+    locations = np.asarray(
+        [location for location in hoc_cell._hoc_parent_locations if location is not None],
+        dtype=float,
+    )
+    assert np.sum(np.isclose(locations, 0.0)) == 3
+    assert np.sum(np.isclose(locations, 1.0)) == 140
+    assert len(hoc_cell._branchpoints) == 73
+
+    cumsum = np.asarray(hoc_cell.cumsum_ncomp, dtype=int)
+    for child_index, parent_index in enumerate(np.asarray(hoc_cell.comb_parents)):
+        if parent_index < 0:
+            continue
+        location = hoc_cell._hoc_parent_locations[child_index]
+        child_start = int(cumsum[child_index])
+        parent_start = int(cumsum[parent_index])
+        parent_end = parent_start + int(hoc_cell.ncomp_per_branch[parent_index]) - 1
+
+        child_edge = hoc_cell._comp_edges.query(
+            "type == 2 and sink == @child_start"
+        )
+        assert len(child_edge) == 1
+        branchpoint = int(child_edge.iloc[0]["source"])
+        parent_edge = hoc_cell._comp_edges.query(
+            "type == 1 and source == @branchpoint"
+        )
+        assert len(parent_edge) == 1
+        expected_parent = parent_end if np.isclose(location, 1.0) else parent_start
+        assert int(parent_edge.iloc[0]["sink"]) == expected_parent
+
+
 def test_joint_passive_update_uses_hoc_endpoint_rules_on_frozen_grid(hoc_cell):
     replacements = {
         "RmSoma": 120_000.0,

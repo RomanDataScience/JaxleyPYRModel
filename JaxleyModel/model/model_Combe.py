@@ -266,19 +266,172 @@ def _section_xyzr(sec, h) -> np.ndarray:
     )
 
 
-def _ordered_hoc_sections(root_sec) -> tuple[list, list[int]]:
+def _ordered_hoc_sections(root_sec) -> tuple[list, list[int], list[float | None]]:
     sections = []
     parents = []
+    parent_locations = []
 
     def visit(sec, parent_index: int) -> None:
         section_index = len(sections)
         sections.append(sec)
         parents.append(parent_index)
+        parent_seg = sec.parentseg()
+        parent_locations.append(None if parent_seg is None else float(parent_seg.x))
         for child in sec.children():
             visit(child, section_index)
 
     visit(root_sec, -1)
-    return sections, parents
+    return sections, parents, parent_locations
+
+
+def _rebuild_hoc_connection_graph(cell, parent_locations: list[float | None]):
+    """Install HOC connection locations in Jaxley's compartment graph.
+
+    ``jx.Cell`` currently represents every branch connection at the parent's
+    distal endpoint.  The Combe HOC cell has three dendritic roots connected to
+    ``soma(0)`` and the axon connected to ``soma(1)``.  The public Jaxley
+    morphology constructor cannot express that mixed-endpoint topology, so we
+    rebuild only its private compartment graph after constructing the normal
+    branches.  This keeps one branch per HOC section while allowing a separate
+    branchpoint for each ``(parent branch, parent location)`` pair.
+
+    The ``ordered`` values below follow Jaxley's existing endpoint convention:
+    a branchpoint-to-parent connection at the distal end uses the parent's
+    ``resistive_load_out`` half, while a proximal connection uses its
+    ``resistive_load_in`` half.  The reverse directed edge uses the matching
+    orientation used by Jaxley's standard ``Cell`` graph.
+    """
+    ncomp_total = len(cell.nodes)
+    cumsum = np.asarray(cell.cumsum_ncomp, dtype=int)
+    rows = []
+
+    # Keep the ordinary within-section graph exactly as Jaxley constructs it.
+    for ncomp, start in zip(cell.ncomp_per_branch, cumsum[:-1]):
+        for offset in range(int(ncomp) - 1):
+            rows.extend(
+                (
+                    {
+                        "source": int(start + offset),
+                        "sink": int(start + offset + 1),
+                        "ordered": 1,
+                        "type": 0,
+                    },
+                    {
+                        "source": int(start + offset + 1),
+                        "sink": int(start + offset),
+                        "ordered": 0,
+                        "type": 0,
+                    },
+                )
+            )
+
+    # A parent branch can have children at both endpoints, so branchpoints are
+    # keyed by both the parent branch and the HOC parent connection location.
+    children_by_connection: dict[tuple[int, float], list[int]] = {}
+    for child_index, parent_index in enumerate(np.asarray(cell.comb_parents)):
+        if parent_index < 0:
+            continue
+        location = parent_locations[child_index]
+        if location is None:
+            raise ValueError("A non-root HOC section is missing its parent location.")
+        if not (np.isclose(location, 0.0) or np.isclose(location, 1.0)):
+            raise ValueError(
+                "Jaxley HOC morphology currently supports parent locations 0 and 1; "
+                f"got {location} for child branch {child_index}."
+            )
+        key = (int(parent_index), float(location))
+        children_by_connection.setdefault(key, []).append(child_index)
+
+    for branchpoint_offset, ((parent_index, location), children) in enumerate(
+        children_by_connection.items()
+    ):
+        branchpoint = ncomp_total + branchpoint_offset
+        parent_start = int(cumsum[parent_index])
+        parent_ncomp = int(cell.ncomp_per_branch[parent_index])
+        at_distal_end = np.isclose(location, 1.0)
+        parent_endpoint = parent_start + (parent_ncomp - 1 if at_distal_end else 0)
+
+        # These are the same endpoint conventions as jx.Cell's standard graph,
+        # mirrored for a connection at the parent's proximal end.
+        parent_order = 0 if at_distal_end else 1
+        reverse_parent_order = 1 if at_distal_end else 0
+        rows.extend(
+            (
+                {
+                    "source": branchpoint,
+                    "sink": parent_endpoint,
+                    "ordered": parent_order,
+                    "type": 1,
+                },
+                {
+                    "source": parent_endpoint,
+                    "sink": branchpoint,
+                    "ordered": reverse_parent_order,
+                    "type": 3,
+                },
+            )
+        )
+
+        for child_index in children:
+            child_start = int(cumsum[child_index])
+            rows.extend(
+                (
+                    {
+                        "source": branchpoint,
+                        "sink": child_start,
+                        "ordered": 1,
+                        "type": 2,
+                    },
+                    {
+                        "source": child_start,
+                        "sink": branchpoint,
+                        "ordered": 0,
+                        "type": 4,
+                    },
+                )
+            )
+
+    cell._comp_edges = pd.DataFrame(
+        rows, columns=["source", "sink", "ordered", "type"]
+    ).astype(int)
+    cell._n_nodes = ncomp_total + len(children_by_connection)
+    cell._off_diagonal_inds = np.stack(
+        [cell._comp_edges["source"].to_numpy(), cell._comp_edges["sink"].to_numpy()]
+    )
+
+    branchpoint_xyz = []
+    for parent_index, location in children_by_connection:
+        endpoint = 0 if location < 0.5 else -1
+        branchpoint_xyz.append(cell.xyzr[parent_index][endpoint, :3])
+    branchpoint_indices = np.arange(ncomp_total, cell._n_nodes)
+    cell._branchpoints = pd.DataFrame(
+        np.asarray(branchpoint_xyz),
+        index=branchpoint_indices,
+        columns=["x", "y", "z"],
+    )
+
+    # Retain coherent metadata for diagnostics and graph export.  The solver
+    # uses ``_comp_edges`` directly and therefore supports the two soma ends.
+    cell._par_inds = np.asarray(
+        [parent for parent, _ in children_by_connection], dtype=int
+    )
+    cell._child_inds = np.asarray(
+        [child for children in children_by_connection.values() for child in children],
+        dtype=int,
+    )
+    cell._child_belongs_to_branchpoint = np.concatenate(
+        [
+            np.full(len(children), index, dtype=int)
+            for index, children in enumerate(children_by_connection.values())
+        ]
+    )
+
+    # The graph was changed after jx.Cell's constructor initialized the standard
+    # distal-only graph. Rebuild the views and solver indexers against this graph.
+    cell._init_view()
+    cell._init_solvers()
+    cell._hoc_parent_locations = tuple(parent_locations)
+    return cell
 
 
 HOC_CHANNEL_CLASSES = {
@@ -358,7 +511,7 @@ def build_hoc_section_cell(d_lambda: float = 0.3):
     from neuron import h
 
     soma = build_combe_neuron_model(quiet=True, d_lambda=d_lambda)
-    sections, parents = _ordered_hoc_sections(soma)
+    sections, parents, parent_locations = _ordered_hoc_sections(soma)
 
     branches = []
     xyzr = []
@@ -434,7 +587,7 @@ def build_hoc_section_cell(d_lambda: float = 0.3):
     cell.initialize()
     for group, indices in group_indices.items():
         cell.select(np.asarray(indices, dtype=int)).add_to_group(group)
-    return cell
+    return _rebuild_hoc_connection_graph(cell, parent_locations)
 
 
 def apply_hoc_passive_profile(cell):
