@@ -1,4 +1,4 @@
-"""Compare archived candidates with the Jaxley and NEURON backends.
+"""Replay archived Jaxley candidates with the NEURON backend.
 
 The input candidate file is the ``top_candidates.json`` written by the
 generation plotter.  Candidates are re-evaluated with the same passive-only
@@ -145,7 +145,7 @@ def compare(candidates_path: Path, config_path: Path, output_dir: Path) -> None:
             "archived_candidate": candidate,
             "neuron_loss": neuron_result.value,
             "neuron_details": neuron_result.details,
-            "trace_backend_metrics": trace_metrics,
+            "trace_neuron_metrics": trace_metrics,
         })
 
     summary_rows.sort(key=lambda row: row["neuron_loss"])
