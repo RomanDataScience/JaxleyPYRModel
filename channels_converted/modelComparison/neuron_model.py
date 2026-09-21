@@ -22,6 +22,7 @@ from channels_converted.modelComparison.protocol import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 COMBE_DIR = REPO_ROOT / "Combe2023"
 MOD_DIR = REPO_ROOT / "channels_converted" / "mod"
+_LOADED_MECHANISM_DIRS: set[Path] = set()
 
 
 @contextlib.contextmanager
@@ -60,13 +61,26 @@ def _delete_sections() -> None:
 
 def _load_mechanisms(mod_dir: Path = MOD_DIR) -> None:
     mod_dir = mod_dir.resolve()
-    loaded = neuron.load_mechanisms(str(mod_dir))
+    if mod_dir in _LOADED_MECHANISM_DIRS:
+        return
+    try:
+        loaded = neuron.load_mechanisms(str(mod_dir))
+    except RuntimeError as exc:
+        # Jaxley's HOC-derived morphology can load the same compiled library
+        # through another module instance before this helper is called. NEURON
+        # reports that situation as a duplicate hoc name rather than exposing
+        # an "already loaded" flag.
+        if "user defined name already exists" not in str(exc).lower():
+            raise
+        _LOADED_MECHANISM_DIRS.add(mod_dir)
+        return
     has_compiled_library = bool(list(mod_dir.glob("*/special")))
     if not loaded and not has_compiled_library:
         raise RuntimeError(
             f"No compiled NEURON mechanisms found under {mod_dir}. "
             "Run nrnivmodl in channels_converted/mod first."
         )
+    _LOADED_MECHANISM_DIRS.add(mod_dir)
 
 
 def build_combe_neuron_model(
