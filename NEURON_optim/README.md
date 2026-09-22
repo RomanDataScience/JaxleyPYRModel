@@ -9,8 +9,12 @@ offspring, and 1 process worker for the passive and stage-1 searches. Stage 2
 retains 10 seeds, 200 generations, and 30 offspring; its study count depends
 on the number of basins produced by stage 1.
 
-Trace windows are capped to 500 ms before the current step (or time zero) and
-600 ms after it ends, subject to the available recorded data.
+Hyperpolarizing trials are simulated over the existing 500 ms pre-step and
+600 ms post-step window, subject to the available recorded data. Their fitness
+and plots use only the final 100 ms before the hyperpolarizing step onward;
+`runtime.hyperpolarizing_fitness_pre_ms` controls that scoring window without
+changing the simulation duration. Depolarizing trials retain the full prepared
+trial window.
 
 ## Environment
 

@@ -71,6 +71,14 @@ than entering an empty loop and raising `Study produced no generations`.
 The best-so-far state is also written after improvements and restored when a
 partial study resumes.
 
+### Hyperpolarizing fitness window is narrower than the simulation window
+
+Hyperpolarizing and passive studies still replay the full configured
+simulation window, including 500 ms before the step. Their objective and plots
+now use a separate trace beginning 100 ms before the step, while preserving the
+simulation time origin so the scored samples align with the full simulation.
+The interval is configurable as `runtime.hyperpolarizing_fitness_pre_ms`.
+
 ## Remaining findings
 
 The main findings are implemented. The one deliberate exception is the
@@ -105,5 +113,5 @@ The package compiles, and the test suite passes in the documented `Jaxley`
 environment:
 
 ```text
-13 passed in 12.06s
+15 passed in 11.98s
 ```

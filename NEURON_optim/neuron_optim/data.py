@@ -26,6 +26,32 @@ class Trace:
         return self.epoch_stop_ms - self.epoch_start_ms
 
 
+def crop_trace(trace: Trace, *, start_ms: float | None = None,
+               stop_ms: float | None = None) -> Trace:
+    """Return a window of ``trace`` without changing its time origin.
+
+    Keeping the original time coordinates is important when a shorter fitness
+    window is scored against a simulation that was run over the full trial.
+    In particular, the simulator can still use the configured 500 ms
+    pre-stimulus period while the objective starts 100 ms before the step.
+    """
+    start = float(trace.time_ms[0]) if start_ms is None else float(start_ms)
+    stop = float(trace.time_ms[-1]) if stop_ms is None else float(stop_ms)
+    mask = (trace.time_ms >= start - 1e-9) & (trace.time_ms <= stop + 1e-9)
+    if mask.sum() < 2:
+        raise ValueError(f"Requested window is empty for {trace.trace} {trace.protocol}")
+    return Trace(
+        cell=trace.cell,
+        trace=trace.trace,
+        protocol=trace.protocol,
+        time_ms=trace.time_ms[mask],
+        voltage_mV=trace.voltage_mV[mask],
+        current_nA=trace.current_nA[mask],
+        epoch_start_ms=trace.epoch_start_ms,
+        epoch_stop_ms=trace.epoch_stop_ms,
+    )
+
+
 def _read_vector(path: Path) -> np.ndarray:
     values = np.loadtxt(path, dtype=float, ndmin=1)
     if values.ndim != 1 or values.size < 2 or not np.isfinite(values).all():

@@ -13,7 +13,7 @@ import numpy as np
 
 from .cma import CMAES
 from .config import RunConfig
-from .data import Trace, load_protocol_traces
+from .data import Trace, crop_trace, load_protocol_traces
 from .objective import (
     ObjectiveContext,
     build_objective_context,
@@ -29,13 +29,17 @@ LOGGER = logging.getLogger(__name__)
 _WORKER: dict[str, Any] = {}
 
 
-def _init_worker(stage: str, traces: list[Trace], d_lambda: float,
+def _init_worker(stage: str, simulation_traces: list[Trace], fitness_traces: list[Trace],
+                 d_lambda: float,
                  objective_options: dict[str, Any], backend: str) -> None:
     _WORKER["stage"] = stage
-    _WORKER["traces"] = traces
+    _WORKER["simulation_traces"] = simulation_traces
+    _WORKER["fitness_traces"] = fitness_traces
     _WORKER["simulator"] = make_simulator(backend, d_lambda=d_lambda, quiet=True)
     _WORKER["objective_options"] = objective_options
-    _WORKER["objective_context"] = _build_objective_context(traces, stage, objective_options)
+    _WORKER["objective_context"] = _build_objective_context(
+        fitness_traces, stage, objective_options
+    )
 
 
 def _simulation_payload(simulations) -> list[dict[str, np.ndarray]]:
@@ -73,16 +77,18 @@ def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
     if _WORKER["stage"] == "passive":
         mapping = passive_model_values(mapping)
     try:
-        simulations = _WORKER["simulator"].simulate_many(_WORKER["traces"], mapping)
+        simulations = _WORKER["simulator"].simulate_many(
+            _WORKER["simulation_traces"], mapping
+        )
         if _WORKER["stage"] in {"passive", "hyper"}:
             result = hyperpolarizing_objective(
-                _WORKER["traces"], simulations,
+                _WORKER["fitness_traces"], simulations,
                 context=_WORKER["objective_context"], include_details=False,
                 **_WORKER["objective_options"],
             )
         else:
             result = depolarizing_objective(
-                _WORKER["traces"], simulations,
+                _WORKER["fitness_traces"], simulations,
                 context=_WORKER["objective_context"], include_details=False,
                 **_WORKER["objective_options"],
             )
@@ -91,14 +97,17 @@ def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
         return 1.0e12, None, {"error": type(exc).__name__, "message": str(exc)}
 
 
-def _init_worker_with_space(stage: str, traces: list[Trace], d_lambda: float,
+def _init_worker_with_space(stage: str, simulation_traces: list[Trace],
+                            fitness_traces: list[Trace], d_lambda: float,
                             objective_options: dict[str, Any], backend: str,
                             space: ParameterSpace) -> None:
-    _init_worker(stage, traces, d_lambda, objective_options, backend)
+    _init_worker(stage, simulation_traces, fitness_traces, d_lambda,
+                 objective_options, backend)
     _WORKER["space"] = space
 
 
-def _evaluate_serial(normalized: np.ndarray, *, stage: str, traces: list[Trace],
+def _evaluate_serial(normalized: np.ndarray, *, stage: str,
+                     simulation_traces: list[Trace], fitness_traces: list[Trace],
                      space: ParameterSpace, d_lambda: float,
                      objective_options: dict[str, Any], backend: str,
                      simulator=None, objective_context: ObjectiveContext | None = None):
@@ -107,15 +116,16 @@ def _evaluate_serial(normalized: np.ndarray, *, stage: str, traces: list[Trace],
         mapping = space.mapping(normalized)
         if stage == "passive":
             mapping = passive_model_values(mapping)
-        simulations = simulator.simulate_many(traces, mapping)
+        simulations = simulator.simulate_many(simulation_traces, mapping)
         if stage in {"passive", "hyper"}:
             result = hyperpolarizing_objective(
-                traces, simulations, context=objective_context, include_details=False,
+                fitness_traces, simulations, context=objective_context,
+                include_details=False,
                 **objective_options,
             )
         else:
             result = depolarizing_objective(
-                traces, simulations, context=objective_context, include_details=False,
+                fitness_traces, simulations, context=objective_context,
                 **objective_options,
             )
         return result.value, _simulation_payload(simulations), None
@@ -204,6 +214,18 @@ def _load_traces(config: RunConfig, stage: str) -> list[Trace]:
                                 pre_ms=config.simulation_pre_ms,
                                 post_ms=config.simulation_post_ms,
                                 full_trial=True)
+
+
+def _fitness_traces(config: RunConfig, stage: str,
+                    simulation_traces: list[Trace]) -> list[Trace]:
+    """Build objective traces while retaining the simulator time origin."""
+    if stage not in {"passive", "hyper"}:
+        return simulation_traces
+    pre_ms = config.hyperpolarizing_fitness_pre_ms
+    return [
+        crop_trace(trace, start_ms=trace.epoch_start_ms - pre_ms)
+        for trace in simulation_traces
+    ]
 
 
 def validate_current_replay(config: RunConfig, output_path: Path | None = None) -> dict[str, Any]:
@@ -331,23 +353,29 @@ def run_passive_precalibration(config: RunConfig, output_root: Path) -> dict[str
     return dict(result["physical_by_name"])
 
 
-def _evaluate_population(population: np.ndarray, *, stage: str, traces: list[Trace],
+def _evaluate_population(population: np.ndarray, *, stage: str,
+                         simulation_traces: list[Trace], fitness_traces: list[Trace],
                          space: ParameterSpace, config: RunConfig,
                          options: dict[str, Any], executor=None,
                          simulator=None,
                          objective_context: ObjectiveContext | None = None) -> tuple[np.ndarray, list | None, list]:
     if config.workers == 1:
-        pairs = [_evaluate_serial(candidate, stage=stage, traces=traces, space=space,
+        pairs = [_evaluate_serial(
+                                  candidate, stage=stage,
+                                  simulation_traces=simulation_traces,
+                                  fitness_traces=fitness_traces, space=space,
                                   d_lambda=config.d_lambda, objective_options=options,
                                   backend=config.backend, simulator=simulator,
                                   objective_context=objective_context)
                  for candidate in population]
     else:
         if executor is None:
-            with ProcessPoolExecutor(max_workers=config.workers,
-                                     initializer=_init_worker_with_space,
-                                     initargs=(stage, traces, config.d_lambda, options,
-                                               config.backend, space)) as pool:
+            with ProcessPoolExecutor(
+                    max_workers=config.workers,
+                    initializer=_init_worker_with_space,
+                    initargs=(stage, simulation_traces, fitness_traces,
+                              config.d_lambda, options, config.backend, space),
+            ) as pool:
                 pairs = list(pool.map(_evaluate_worker, population, [space.keys] * len(population)))
         else:
             pairs = list(executor.map(_evaluate_worker, population, [space.keys] * len(population)))
@@ -356,7 +384,7 @@ def _evaluate_population(population: np.ndarray, *, stage: str, traces: list[Tra
             [pair[2] for pair in pairs])
 
 
-def _objective_details(stage: str, traces: list[Trace], payload,
+def _objective_details(stage: str, fitness_traces: list[Trace], payload,
                        options: dict[str, Any], context: ObjectiveContext,
                        error: dict | None) -> dict:
     if payload is None:
@@ -364,11 +392,11 @@ def _objective_details(stage: str, traces: list[Trace], payload,
     simulations = _payload_to_simulations(payload)
     if stage in {"passive", "hyper"}:
         result = hyperpolarizing_objective(
-            traces, simulations, context=context, include_details=True, **options
+            fitness_traces, simulations, context=context, include_details=True, **options
         )
     else:
         result = depolarizing_objective(
-            traces, simulations, context=context, include_details=True, **options
+            fitness_traces, simulations, context=context, include_details=True, **options
         )
     return result.details
 
@@ -423,10 +451,12 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
     space = make_parameter_space(include=PASSIVE) if stage == "passive" else config.parameters
     section_name = "passive" if stage == "passive" else "stage1" if stage == "hyper" else "stage2"
     section = config.section(section_name)
-    traces = _load_traces(config, stage)
+    simulation_traces = _load_traces(config, stage)
+    fitness_traces = _fitness_traces(config, stage, simulation_traces)
     run_dir.mkdir(parents=True, exist_ok=True)
     _study_manifest(config, stage, seed, space, run_dir, basin_id, initial_mean)
-    compatibility = f"{config.hash()}:{stage}:{seed}:{basin_id}:{space.keys}"
+    compatibility = (f"{config.hash()}:{stage}:{seed}:{basin_id}:{space.keys}:"
+                     "fitness-window-v2")
     checkpoint_dir = run_dir / "checkpoint"
     optimizer = CMAES.load(checkpoint_dir, seed=seed, compatibility_hash=compatibility)
     resumed = optimizer is not None
@@ -436,7 +466,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                           population_size=int(section.get("population_size", 30)),
                           parent_fraction=float(section.get("parent_fraction", 0.5)))
     options = _objective_options(config.raw, stage)
-    objective_context = _build_objective_context(traces, stage, options)
+    objective_context = _build_objective_context(fitness_traces, stage, options)
     generations = int(section.get("generations", 200))
     checkpoint_every = max(1, int(section.get("checkpoint_every", 1)))
     completed_best_path = run_dir / "best_parameters.json"
@@ -459,7 +489,8 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
         executor = ProcessPoolExecutor(
             max_workers=config.workers,
             initializer=_init_worker_with_space,
-            initargs=(stage, traces, config.d_lambda, options, config.backend, space),
+            initargs=(stage, simulation_traces, fitness_traces, config.d_lambda,
+                      options, config.backend, space),
         )
     else:
         serial_simulator = make_simulator(config.backend, d_lambda=config.d_lambda, quiet=True)
@@ -467,14 +498,15 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
         while optimizer.state.generation < generations:
             population = optimizer.ask()
             losses, simulations, errors = _evaluate_population(
-                population, stage=stage, traces=traces, space=space, config=config,
+                population, stage=stage, simulation_traces=simulation_traces,
+                fitness_traces=fitness_traces, space=space, config=config,
                 options=options, executor=executor, simulator=serial_simulator,
                 objective_context=objective_context,
             )
             best_index = int(np.argmin(losses))
             if best is None or losses[best_index] < best[0]:
                 details = _objective_details(
-                    stage, traces, simulations[best_index], options,
+                    stage, fitness_traces, simulations[best_index], options,
                     objective_context, errors[best_index],
                 )
                 best = (float(losses[best_index]), population[best_index].copy(), details)
@@ -509,7 +541,8 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                     plot_losses = losses[top_indices]
                     if all(item is not None for item in converted):
                         plot_generation(output_dir=run_dir / "plots", generation=generation,
-                                        stage=stage, traces=traces, population=plot_population,
+                                        stage=stage, traces=fitness_traces,
+                                        population=plot_population,
                                         losses=plot_losses, simulations=converted,
                                         space=space, top_k=top_k,
                                         population_indices=top_indices,

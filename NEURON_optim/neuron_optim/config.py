@@ -48,6 +48,12 @@ class RunConfig:
         return float(self.raw.get("runtime", {}).get("simulation_post_ms", 600.0))
 
     @property
+    def hyperpolarizing_fitness_pre_ms(self) -> float:
+        return float(self.raw.get("runtime", {}).get(
+            "hyperpolarizing_fitness_pre_ms", 100.0
+        ))
+
+    @property
     def workers(self) -> int:
         return int(self.raw.get("runtime", {}).get("parallel_workers", 6))
 
@@ -81,6 +87,8 @@ class RunConfig:
             errors.append("runtime.simulation_pre_ms must be >= 0")
         if self.simulation_post_ms < 0:
             errors.append("runtime.simulation_post_ms must be >= 0")
+        if self.hyperpolarizing_fitness_pre_ms < 0:
+            errors.append("runtime.hyperpolarizing_fitness_pre_ms must be >= 0")
         if self.workers < 1:
             errors.append("runtime.parallel_workers must be >= 1")
         if self.study_workers < 1:
