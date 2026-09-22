@@ -1,4 +1,9 @@
-"""Generation-level voltage comparison plots for the best candidates."""
+"""Generation-level voltage comparison plots for the best candidates.
+
+The input traces are the same prepared windows used by the objective. Plotting
+clips simulator outputs to those trace bounds so figures never show samples
+outside the fitness interval.
+"""
 
 from __future__ import annotations
 
@@ -46,20 +51,33 @@ def plot_generation(*, output_dir: Path, generation: int, stage: str,
             zip(traces, simulations[index], strict=True)
         ):
             axis = axes[rank - 1, trace_index]
+            # Trace objects are already cropped to the configured fitness
+            # window. Clip both series explicitly so a backend that returns
+            # extra trial samples cannot expand the plotted interval.
+            fitness_start = float(trace.time_ms[0])
+            fitness_stop = float(trace.time_ms[-1])
+            experimental_mask = ((trace.time_ms >= fitness_start) &
+                                 (trace.time_ms <= fitness_stop))
+            simulated_mask = ((simulation.time_ms >= fitness_start) &
+                              (simulation.time_ms <= fitness_stop))
+            plot_trace_time = trace.time_ms[experimental_mask]
+            plot_trace_voltage = trace.voltage_mV[experimental_mask]
+            plot_sim_time = simulation.time_ms[simulated_mask]
+            plot_sim_voltage = simulation.voltage_mV[simulated_mask]
             if stage == "hyper":
-                pre_exp = trace.time_ms <= trace.epoch_start_ms
-                pre_sim = simulation.time_ms <= trace.epoch_start_ms
-                exp_baseline = float(np.median(trace.voltage_mV[pre_exp]))
-                sim_baseline = float(np.median(simulation.voltage_mV[pre_sim]))
-                exp_voltage = trace.voltage_mV - exp_baseline
-                sim_voltage = simulation.voltage_mV - sim_baseline
+                pre_exp = plot_trace_time <= trace.epoch_start_ms
+                pre_sim = plot_sim_time <= trace.epoch_start_ms
+                exp_baseline = float(np.median(plot_trace_voltage[pre_exp]))
+                sim_baseline = float(np.median(plot_sim_voltage[pre_sim]))
+                exp_voltage = plot_trace_voltage - exp_baseline
+                sim_voltage = plot_sim_voltage - sim_baseline
                 ylabel = "ΔV (mV)"
             else:
-                exp_voltage = trace.voltage_mV
-                sim_voltage = simulation.voltage_mV
+                exp_voltage = plot_trace_voltage
+                sim_voltage = plot_sim_voltage
                 ylabel = "mV"
-            axis.plot(trace.time_ms, exp_voltage, color="black", linewidth=0.8, label="v_exp")
-            axis.plot(simulation.time_ms, sim_voltage, color="#d62728", linewidth=0.8, label="v_sim")
+            axis.plot(plot_trace_time, exp_voltage, color="black", linewidth=0.8, label="v_exp")
+            axis.plot(plot_sim_time, sim_voltage, color="#d62728", linewidth=0.8, label="v_sim")
             axis.axvspan(trace.epoch_start_ms, trace.epoch_stop_ms, color="#9ecae1", alpha=0.25)
             axis.set_ylabel(ylabel)
             axis.set_title(f"rank {rank} · {trace.trace}")

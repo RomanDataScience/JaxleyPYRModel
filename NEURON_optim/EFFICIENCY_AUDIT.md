@@ -60,7 +60,8 @@ the two parallelism levels do not oversubscribe the machine.
 
 Each plotted generation now writes one `candidates.png`: candidate rows and
 trace columns form a single multi-panel figure. `plotting.every` controls the
-generation interval, while the final generation is always plotted.
+generation interval, while the final generation is always plotted. Both traces
+are clipped to the prepared fitness-window bounds before rendering.
 
 ### Completed and partial-study resume is safe
 
