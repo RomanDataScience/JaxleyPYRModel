@@ -30,12 +30,22 @@ def plot_generation(*, output_dir: Path, generation: int, stage: str,
         if population_indices.shape != (len(population),):
             raise ValueError("population_indices must match population length")
     order = np.argsort(losses, kind="stable")[:min(top_k, len(losses))]
+    if not len(order):
+        return
+    # One figure per generation: rows are candidates and columns are traces.
+    # This avoids opening/rendering one figure for every candidate while still
+    # keeping each candidate's four protocol traces visually grouped.
+    figure, axes = plt.subplots(
+        len(order), len(traces),
+        figsize=(4.2 * len(traces), 2.5 * len(order)),
+        sharex=False, constrained_layout=True, squeeze=False,
+    )
     metadata = []
     for rank, index in enumerate(order, start=1):
-        figure, axes = plt.subplots(len(traces), 1, figsize=(11, 2.7 * len(traces)),
-                                    sharex=False, constrained_layout=True)
-        axes = np.atleast_1d(axes)
-        for axis, trace, simulation in zip(axes, traces, simulations[index], strict=True):
+        for trace_index, (trace, simulation) in enumerate(
+            zip(traces, simulations[index], strict=True)
+        ):
+            axis = axes[rank - 1, trace_index]
             if stage == "hyper":
                 pre_exp = trace.time_ms <= trace.epoch_start_ms
                 pre_sim = simulation.time_ms <= trace.epoch_start_ms
@@ -52,16 +62,18 @@ def plot_generation(*, output_dir: Path, generation: int, stage: str,
             axis.plot(simulation.time_ms, sim_voltage, color="#d62728", linewidth=0.8, label="v_sim")
             axis.axvspan(trace.epoch_start_ms, trace.epoch_stop_ms, color="#9ecae1", alpha=0.25)
             axis.set_ylabel(ylabel)
-            axis.set_title(f"{trace.trace} ({trace.protocol})")
-            axis.legend(loc="upper right", fontsize=8)
+            axis.set_title(f"rank {rank} · {trace.trace}")
+            axis.legend(loc="upper right", fontsize=7)
             axis.grid(alpha=0.2)
-        axes[-1].set_xlabel("Time from simulation window start (ms)")
-        figure.suptitle(f"{stage}: generation {generation}, rank {rank}, loss {losses[index]:.6g}")
-        figure.savefig(output_dir / f"rank_{rank:02d}.png", dpi=dpi)
-        plt.close(figure)
+        axes[rank - 1, 0].set_ylabel(f"rank {rank}\nΔV (mV)" if stage == "hyper" else f"rank {rank}\nmV")
+        for axis in axes[rank - 1, :]:
+            axis.set_xlabel("Time from simulation window start (ms)")
         metadata.append({"rank": rank, "population_index": int(population_indices[index]),
                          "loss": float(losses[index]),
                          "normalized": population[index].tolist(),
                          "physical": space.physical(population[index]).tolist(),
-                         "plot": f"rank_{rank:02d}.png"})
+                         "plot": "candidates.png"})
+    figure.suptitle(f"{stage}: generation {generation} · top {len(order)} candidates")
+    figure.savefig(output_dir / "candidates.png", dpi=dpi)
+    plt.close(figure)
     (output_dir / "top_candidates.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")

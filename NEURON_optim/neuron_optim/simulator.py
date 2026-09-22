@@ -189,14 +189,18 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
 
 class NeuronSimulator:
     def __init__(self, *, d_lambda: float = 0.3, quiet: bool = True,
-                 combe_dir: Path | None = None, mod_dir: Path | None = None):
+                 combe_dir: Path | None = None, mod_dir: Path | None = None,
+                 reuse_model: bool = True):
         self.d_lambda = d_lambda
         self.quiet = quiet
         self.combe_dir = combe_dir or ensure_combe_source()
         self.mod_dir = mod_dir or ensure_patched_mod_dir()
+        self.reuse_model = bool(reuse_model)
+        self._h = None
+        self._soma = None
+        self._build_combe_neuron_model = None
 
-    def simulate_many(self, traces: list[Trace], values: dict[str, float],
-                      *, v_init_mode: str = "observed_first_sample") -> list[SimulationOutput]:
+    def _model(self):
         try:
             import sys
             root = str(repository_root())
@@ -209,8 +213,19 @@ class NeuronSimulator:
                 "NEURON is required for production runs. Install NEURON and compile "
                 "channels_converted/mod before running this pipeline."
             ) from exc
+        if self.reuse_model and self._soma is not None:
+            return h, self._soma
         soma = build_combe_neuron_model(quiet=self.quiet, d_lambda=self.d_lambda,
                                         combe_dir=self.combe_dir, mod_dir=self.mod_dir)
+        if self.reuse_model:
+            self._h = h
+            self._soma = soma
+            self._build_combe_neuron_model = build_combe_neuron_model
+        return h, soma
+
+    def simulate_many(self, traces: list[Trace], values: dict[str, float],
+                      *, v_init_mode: str = "observed_first_sample") -> list[SimulationOutput]:
+        h, soma = self._model()
         apply_parameters(soma, values, h)
         h.CVode().active(0)
         outputs = []

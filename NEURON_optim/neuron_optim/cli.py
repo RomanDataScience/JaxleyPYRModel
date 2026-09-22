@@ -11,6 +11,7 @@ from .stages import (
     load_basins,
     make_basins,
     run_hyper_stage,
+    run_depolarizing_stage,
     run_passive_precalibration,
     run_pipeline,
     run_study,
@@ -89,17 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "run-depolarizing":
         basins_path = output / "stage1_hyper" / "basins.jsonl"
         basins = load_basins(basins_path)
-        import numpy as np
-        stage_dir = output / "stage2_depolarizing"
-        for basin in basins:
-            mean = np.asarray(basin["normalized"], dtype=float)
-            for seed in config.section("stage2").get("seeds", range(10)):
-                seed = int(seed)
-                rng = np.random.default_rng(np.random.SeedSequence([seed, int(basin["basin_id"][1:])]))
-                initial = np.clip(mean + rng.uniform(-0.15, 0.15, size=mean.size), 0.0, 1.0)
-                run_study(config, stage="depolarizing", seed=seed,
-                          run_dir=stage_dir / basin["basin_id"] / f"seed_{seed:03d}",
-                          initial_mean=initial, basin_id=basin["basin_id"])
+        run_depolarizing_stage(config, output, basins)
     else:
         run_pipeline(config, output)
     print(f"completed {args.command}: {output}")

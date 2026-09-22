@@ -3,6 +3,7 @@ import numpy as np
 from neuron_optim.data import Trace
 from neuron_optim.objective import (
     SimulationOutput,
+    build_objective_context,
     depolarizing_objective,
     detect_spikes,
     hyperpolarizing_objective,
@@ -61,3 +62,13 @@ def test_depolarizing_extra_spikes_penalty():
     result = depolarizing_objective([observed], [simulated], prominence_mV=1.0,
                                     extra_spike_penalty=4321.0)
     assert result.value == 4321.0
+
+
+def test_precomputed_objective_context_preserves_loss():
+    observed = trace("depolarizing_step")
+    simulated = SimulationOutput(observed.time_ms, observed.voltage_mV.copy())
+    uncached = depolarizing_objective([observed], [simulated])
+    context = build_objective_context([observed], stage="depolarizing")
+    cached = depolarizing_objective([observed], [simulated], context=context)
+    assert cached.value == uncached.value
+    assert cached.details == uncached.details

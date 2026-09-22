@@ -52,11 +52,9 @@ def load_manifest(root: Path, manifest: Path | None = None) -> list[dict[str, st
         return list(csv.DictReader(handle))
 
 
-def load_trace(root: Path, row: dict[str, str], *, start_ms: float | None = None,
-               stop_ms: float | None = None, center_current: bool = False) -> Trace:
-    time = _read_vector(_resolve_path(root, row["time_output"]))
-    voltage = _read_vector(_resolve_path(root, row["voltage_output"]))
-    current_pA = _read_vector(_resolve_path(root, row["current_output"]))
+def _make_trace(row: dict[str, str], time: np.ndarray, voltage: np.ndarray,
+                current_pA: np.ndarray, *, start_ms: float | None = None,
+                stop_ms: float | None = None, center_current: bool = False) -> Trace:
     if not (time.size == voltage.size == current_pA.size):
         raise ValueError(f"Length mismatch in {row['trace']} {row['segment']}")
     if np.any(np.diff(time) <= 0):
@@ -87,6 +85,15 @@ def load_trace(root: Path, row: dict[str, str], *, start_ms: float | None = None
     )
 
 
+def load_trace(root: Path, row: dict[str, str], *, start_ms: float | None = None,
+               stop_ms: float | None = None, center_current: bool = False) -> Trace:
+    time = _read_vector(_resolve_path(root, row["time_output"]))
+    voltage = _read_vector(_resolve_path(root, row["voltage_output"]))
+    current_pA = _read_vector(_resolve_path(root, row["current_output"]))
+    return _make_trace(row, time, voltage, current_pA, start_ms=start_ms,
+                       stop_ms=stop_ms, center_current=center_current)
+
+
 def load_protocol_traces(root: Path, *, cell: str, protocol: str,
                          trace_names: Iterable[str], pre_ms: float = 0.0,
                          post_ms: float | None = None, full_trial: bool = True,
@@ -101,6 +108,12 @@ def load_protocol_traces(root: Path, *, cell: str, protocol: str,
     result: list[Trace] = []
     for row in sorted(selected, key=lambda item: item["trace"]):
         raw_time = _read_vector(_resolve_path(root, row["time_output"]))
+        voltage = _read_vector(_resolve_path(root, row["voltage_output"]))
+        current_pA = _read_vector(_resolve_path(root, row["current_output"]))
+        if not (raw_time.size == voltage.size == current_pA.size):
+            raise ValueError(f"Length mismatch in {row['trace']} {row['segment']}")
+        if np.any(np.diff(raw_time) <= 0):
+            raise ValueError(f"Time is not strictly increasing in {row['trace']}")
         segment_start = float(row.get("segment_start_ms", 0.0))
         epoch_start = float(row["epoch_start_ms"]) - segment_start
         epoch_stop = float(row["epoch_stop_ms"]) - segment_start
@@ -111,9 +124,8 @@ def load_protocol_traces(root: Path, *, cell: str, protocol: str,
                     if post_ms is not None else float(raw_time[-1]))
         else:
             stop = epoch_stop
-        result.append(load_trace(
-            root,
-            row,
+        result.append(_make_trace(
+            row, raw_time, voltage, current_pA,
             start_ms=max(start, float(raw_time[0])),
             stop_ms=stop,
             center_current=center_current,

@@ -52,6 +52,10 @@ class RunConfig:
         return int(self.raw.get("runtime", {}).get("parallel_workers", 6))
 
     @property
+    def study_workers(self) -> int:
+        return int(self.raw.get("runtime", {}).get("study_workers", 1))
+
+    @property
     def parameters(self):
         section = self.raw.get("parameters", {})
         return make_parameter_space(section.get("include"), section.get("exclude", ()))
@@ -79,6 +83,8 @@ class RunConfig:
             errors.append("runtime.simulation_post_ms must be >= 0")
         if self.workers < 1:
             errors.append("runtime.parallel_workers must be >= 1")
+        if self.study_workers < 1:
+            errors.append("runtime.study_workers must be >= 1")
         if self.backend not in {"neuron", "jaxley"}:
             errors.append("runtime.backend must be either 'neuron' or 'jaxley'")
         for name in ("passive", "stage1", "stage2"):
@@ -89,6 +95,10 @@ class RunConfig:
                 errors.append(f"{name}.population_size must be >= 2")
             if not section.get("seeds"):
                 errors.append(f"{name}.seeds must not be empty")
+            if int(section.get("checkpoint_every", 1)) < 1:
+                errors.append(f"{name}.checkpoint_every must be >= 1")
+        if int(self.raw.get("plotting", {}).get("every", 1)) < 1:
+            errors.append("plotting.every must be >= 1")
         if not self.data_root.exists():
             errors.append(f"data root does not exist: {self.data_root}")
         return errors

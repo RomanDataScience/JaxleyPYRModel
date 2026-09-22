@@ -20,6 +20,7 @@ runtime:
   backend: neuron
   d_lambda: 0.3
   parallel_workers: 1
+  study_workers: 1
   simulation_pre_ms: 500.0
   simulation_post_ms: 600.0
 
@@ -27,11 +28,13 @@ passive:
   seeds: [0]
   generations: 200
   population_size: 30
+  checkpoint_every: 1
   sigma0: 0.15
   parent_fraction: 0.5
 
 plotting:
   enabled: true
+  every: 1
   top_k: 10
   dpi: 120
 
@@ -39,6 +42,7 @@ stage1:
   seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
   generations: 200
   population_size: 30
+  checkpoint_every: 1
 
 stage2:
   seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]

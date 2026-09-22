@@ -29,21 +29,92 @@ class ObjectiveResult:
     details: dict
 
 
+@dataclass(frozen=True)
+class TraceObjectiveFeatures:
+    """Trace-derived values that are invariant across candidates."""
+
+    dt_ms: float
+    pre_mask: np.ndarray
+    step_mask: np.ndarray
+    recovery_mask: np.ndarray
+    experimental_centered: np.ndarray
+    experimental_spikes: tuple[Spike, ...]
+    baseline_mV: float
+    terminal_mask: np.ndarray
+    trajectory_weights: np.ndarray
+
+
+@dataclass(frozen=True)
+class ObjectiveContext:
+    """Precomputed objective inputs shared by all candidates in a study."""
+
+    stage: str
+    traces: tuple[Trace, ...]
+    features: tuple[TraceObjectiveFeatures, ...]
+
+
+def build_objective_context(
+    traces: Iterable[Trace], *, stage: str,
+    threshold_mV: float = -20.0, refractory_ms: float = 2.0,
+    prominence_mV: float = 5.0,
+) -> ObjectiveContext:
+    """Precompute experimental features once for a study."""
+    trace_tuple = tuple(traces)
+    features = []
+    for trace in trace_tuple:
+        dt = float(np.median(np.diff(trace.time_ms)))
+        pre_mask = trace.time_ms <= trace.epoch_start_ms
+        if not pre_mask.any():
+            pre_mask = np.ones(trace.time_ms.shape, dtype=bool)
+        step_mask = ((trace.time_ms >= trace.epoch_start_ms) &
+                     (trace.time_ms <= trace.epoch_stop_ms))
+        recovery_mask = trace.time_ms >= trace.epoch_stop_ms
+        baseline = float(np.median(trace.voltage_mV[pre_mask]))
+        experimental_centered = trace.voltage_mV - baseline
+        experimental_spikes = tuple(
+            detect_spikes(trace.time_ms, trace.voltage_mV,
+                          threshold_mV=threshold_mV,
+                          refractory_ms=refractory_ms,
+                          prominence_mV=prominence_mV,
+                          dt_ms=dt)
+        ) if stage == "depolarizing" else ()
+        terminal_count = max(1, int(round(20.0 / dt)))
+        terminal_mask = recovery_mask & (
+            np.arange(trace.time_ms.size) >= trace.time_ms.size - terminal_count
+        )
+        trajectory_weights = np.ones(trace.time_ms.size, dtype=float)
+        features.append(TraceObjectiveFeatures(
+            dt_ms=dt,
+            pre_mask=pre_mask,
+            step_mask=step_mask,
+            recovery_mask=recovery_mask,
+            experimental_centered=experimental_centered,
+            experimental_spikes=experimental_spikes,
+            baseline_mV=float(np.median(trace.voltage_mV[trace.time_ms < trace.epoch_start_ms]))
+            if (trace.time_ms < trace.epoch_start_ms).any() else float(trace.voltage_mV[0]),
+            terminal_mask=terminal_mask,
+            trajectory_weights=trajectory_weights,
+        ))
+    return ObjectiveContext(stage, trace_tuple, tuple(features))
+
+
 def detect_spikes(time_ms: np.ndarray, voltage_mV: np.ndarray, *,
                   threshold_mV: float = -20.0,
                   refractory_ms: float = 2.0,
-                  prominence_mV: float = 5.0) -> list[Spike]:
+                  prominence_mV: float = 5.0,
+                  dt_ms: float | None = None) -> list[Spike]:
     time = np.asarray(time_ms, dtype=float)
     voltage = np.asarray(voltage_mV, dtype=float)
     crossings = np.flatnonzero((voltage[:-1] < threshold_mV) &
                                (voltage[1:] >= threshold_mV))
+    dt = float(np.median(np.diff(time))) if dt_ms is None else float(dt_ms)
     result: list[Spike] = []
     for index in crossings:
         if result and time[index] - result[-1].threshold_ms < refractory_ms:
             continue
-        end = min(voltage.size, index + max(2, int(round(5.0 / np.median(np.diff(time))))) )
+        end = min(voltage.size, index + max(2, int(round(5.0 / dt))))
         peak_index = index + int(np.argmax(voltage[index:end]))
-        left = max(0, index - int(round(1.0 / np.median(np.diff(time)))))
+        left = max(0, index - int(round(1.0 / dt)))
         if voltage[peak_index] - voltage[left] < prominence_mV:
             continue
         fraction = (threshold_mV - voltage[index]) / max(voltage[index + 1] - voltage[index], 1e-12)
@@ -105,24 +176,36 @@ def hyperpolarizing_objective(
     deflection_weight: float = 2.0, sigma_deflection_mV: float = 1.0,
     threshold_mV: float = -20.0, refractory_ms: float = 2.0,
     prominence_mV: float = 5.0, spike_penalty: float = 1.0e4,
+    context: ObjectiveContext | None = None,
+    include_details: bool = True,
 ) -> ObjectiveResult:
     weights = {"pre": 1.0, "step": 4.0, "recovery": 3.0}
     weights.update(region_weights or {})
+    context = context or build_objective_context(
+        traces, stage="hyper", threshold_mV=threshold_mV,
+        refractory_ms=refractory_ms, prominence_mV=prominence_mV,
+    )
+    traces = context.traces
     trace_details = []
     values = []
-    for trace, simulation in zip(traces, simulations, strict=True):
+    for trace, simulation, features in zip(traces, simulations, context.features, strict=True):
         simulated = _interp(simulation, trace.time_ms)
         spikes = detect_spikes(trace.time_ms, simulated, threshold_mV=threshold_mV,
-                               refractory_ms=refractory_ms, prominence_mV=prominence_mV)
-        experimental_centered, simulated_centered = _baseline_centered_voltage(trace, simulated)
-        in_step = [spike for spike in spikes if trace.epoch_start_ms <= spike.peak_ms <= trace.epoch_stop_ms]
+                               refractory_ms=refractory_ms, prominence_mV=prominence_mV,
+                               dt_ms=features.dt_ms)
+        simulated_baseline = float(np.median(simulated[features.pre_mask]))
+        experimental_centered = features.experimental_centered
+        simulated_centered = simulated - simulated_baseline
+        in_step = [spike for spike in spikes
+                   if trace.epoch_start_ms <= spike.peak_ms <= trace.epoch_stop_ms]
         losses: dict[str, float] = {}
-        for region in ("pre", "step", "recovery"):
-            mask = _region_mask(trace, region)
+        for region, mask in (("pre", features.pre_mask),
+                             ("step", features.step_mask),
+                             ("recovery", features.recovery_mask)):
             losses[region] = _kernel_loss(
                 simulated_centered[mask], experimental_centered[mask], sigma_mV
             )
-        step_mask = _region_mask(trace, "step")
+        step_mask = features.step_mask
         if not step_mask.any():
             deflection_loss = 1.0e6
             experimental_deflection = float("nan")
@@ -146,27 +229,29 @@ def hyperpolarizing_objective(
         if penalized:
             total = float(spike_penalty)
         values.append(total)
-        trace_details.append({"trace": trace.trace, "losses": losses,
-                              "deflection_mV": {
-                                  "experimental": experimental_deflection,
-                                  "simulated": simulated_deflection,
-                                  "loss": deflection_loss,
-                              },
-                              "spikes_ms": [s.peak_ms for s in spikes],
-                              "in_step_spikes_ms": [s.peak_ms for s in in_step],
-                              "penalized": penalized})
-    return ObjectiveResult(float(np.mean(values)), {"traces": trace_details,
-                                                     "penalty": spike_penalty})
+        if include_details:
+            trace_details.append({"trace": trace.trace, "losses": losses,
+                                  "deflection_mV": {
+                                      "experimental": experimental_deflection,
+                                      "simulated": simulated_deflection,
+                                      "loss": deflection_loss,
+                                  },
+                                  "spikes_ms": [s.peak_ms for s in spikes],
+                                  "in_step_spikes_ms": [s.peak_ms for s in in_step],
+                                  "penalized": penalized})
+    details = {"traces": trace_details, "penalty": spike_penalty} if include_details else {}
+    return ObjectiveResult(float(np.mean(values)), details)
 
 
 def _matched_spike_loss(trace: Trace, sim: np.ndarray, exp_spikes: list[Spike],
                         sim_spikes: list[Spike], *, sigma_mV: float,
-                        window_ms: float, unmatched_penalty: float) -> tuple[float, dict]:
+                        window_ms: float, unmatched_penalty: float,
+                        dt_ms: float | None = None) -> tuple[float, dict]:
     pairs = min(len(exp_spikes), len(sim_spikes))
     losses: list[float] = []
+    dt = float(np.median(np.diff(trace.time_ms))) if dt_ms is None else float(dt_ms)
+    relative = np.arange(-window_ms, window_ms + 0.5 * dt, dt)
     for expected, actual in zip(exp_spikes[:pairs], sim_spikes[:pairs], strict=True):
-        relative = np.arange(-window_ms, window_ms + 0.5 * np.median(np.diff(trace.time_ms)),
-                             np.median(np.diff(trace.time_ms)))
         exp_values = np.interp(expected.peak_ms + relative, trace.time_ms, trace.voltage_mV)
         sim_values = np.interp(actual.peak_ms + relative, trace.time_ms, sim)
         losses.append(_kernel_loss(sim_values, exp_values, sigma_mV))
@@ -187,34 +272,40 @@ def depolarizing_objective(
     invalid_plateau_penalty: float = 100.0,
     extra_spike_penalty: float = 1.0e4,
     return_alpha: float = 0.7,
+    context: ObjectiveContext | None = None,
+    include_details: bool = True,
 ) -> ObjectiveResult:
     component_weights = {"trajectory": 1.0, "spike_shape": 3.0,
                          "plateau": 2.0, "return_baseline": 3.0}
     component_weights.update(weights or {})
+    context = context or build_objective_context(
+        traces, stage="depolarizing", threshold_mV=threshold_mV,
+        refractory_ms=refractory_ms, prominence_mV=prominence_mV,
+    )
+    traces = context.traces
     all_details = []
     totals = []
-    for trace, simulation in zip(traces, simulations, strict=True):
+    for trace, simulation, features in zip(traces, simulations, context.features, strict=True):
         sim = _interp(simulation, trace.time_ms)
-        exp_spikes = [s for s in detect_spikes(trace.time_ms, trace.voltage_mV,
-                         threshold_mV=threshold_mV, refractory_ms=refractory_ms,
-                         prominence_mV=prominence_mV)
+        exp_spikes = [s for s in features.experimental_spikes
                       if trace.epoch_start_ms <= s.peak_ms <= trace.epoch_stop_ms]
         sim_spikes_all = detect_spikes(trace.time_ms, sim, threshold_mV=threshold_mV,
-                                       refractory_ms=refractory_ms, prominence_mV=prominence_mV)
+                                       refractory_ms=refractory_ms, prominence_mV=prominence_mV,
+                                       dt_ms=features.dt_ms)
         sim_spikes = [s for s in sim_spikes_all if trace.epoch_start_ms <= s.peak_ms <= trace.epoch_stop_ms]
         allowed_start = trace.epoch_start_ms - 50.0
         allowed_stop = trace.epoch_stop_ms + 50.0
         outside = [s for s in sim_spikes_all if s.peak_ms < allowed_start or s.peak_ms > allowed_stop]
 
-        trajectory = np.ones(trace.time_ms.size)
-        for region, factor in (("pre", 1.0), ("step", 1.0), ("recovery", 1.0)):
-            trajectory[_region_mask(trace, region)] = factor
-        l_trajectory = _kernel_loss(sim, trace.voltage_mV, sigma_trajectory_mV, trajectory)
+        l_trajectory = _kernel_loss(
+            sim, trace.voltage_mV, sigma_trajectory_mV, features.trajectory_weights
+        )
         l_spike, spike_details = _matched_spike_loss(
             trace, sim, exp_spikes, sim_spikes, sigma_mV=sigma_spike_mV,
-            window_ms=spike_window_ms, unmatched_penalty=unmatched_spike_penalty)
+            window_ms=spike_window_ms, unmatched_penalty=unmatched_spike_penalty,
+            dt_ms=features.dt_ms)
 
-        step_mask = _region_mask(trace, "step")
+        step_mask = features.step_mask
         exclusion = np.zeros(trace.time_ms.size, dtype=bool)
         for spike in exp_spikes + sim_spikes:
             exclusion |= np.abs(trace.time_ms - spike.peak_ms) <= plateau_exclusion_ms
@@ -222,12 +313,10 @@ def depolarizing_objective(
         l_plateau = (invalid_plateau_penalty if not plateau_mask.any() else
                      _kernel_loss(sim[plateau_mask], trace.voltage_mV[plateau_mask], sigma_plateau_mV))
 
-        recovery_mask = _region_mask(trace, "recovery")
+        recovery_mask = features.recovery_mask
         l_recovery = _kernel_loss(sim[recovery_mask], trace.voltage_mV[recovery_mask], sigma_recovery_mV)
-        terminal_count = max(1, int(round(20.0 / np.median(np.diff(trace.time_ms)))))
-        terminal = recovery_mask & (np.arange(trace.time_ms.size) >= trace.time_ms.size - terminal_count)
-        baseline_mask = trace.time_ms < trace.epoch_start_ms
-        baseline = float(np.median(trace.voltage_mV[baseline_mask])) if baseline_mask.any() else float(trace.voltage_mV[0])
+        terminal = features.terminal_mask
+        baseline = features.baseline_mV
         terminal_value = float(np.mean(sim[terminal])) if terminal.any() else float(sim[-1])
         l_terminal = float(1.0 - np.exp(-((terminal_value - baseline) ** 2) / sigma_terminal_mV ** 2))
         l_return = return_alpha * l_recovery + (1.0 - return_alpha) * l_terminal
@@ -239,10 +328,11 @@ def depolarizing_objective(
         if penalized:
             total = float(extra_spike_penalty)
         totals.append(total)
-        all_details.append({"trace": trace.trace, "components": components,
-                            "spikes_experimental_ms": [s.peak_ms for s in exp_spikes],
-                            "spikes_simulated_ms": [s.peak_ms for s in sim_spikes_all],
-                            "out_of_window_spikes_ms": [s.peak_ms for s in outside],
-                            "penalized": penalized, "spike_shape": spike_details})
-    return ObjectiveResult(float(np.mean(totals)), {"traces": all_details,
-                                                     "weights": component_weights})
+        if include_details:
+            all_details.append({"trace": trace.trace, "components": components,
+                                "spikes_experimental_ms": [s.peak_ms for s in exp_spikes],
+                                "spikes_simulated_ms": [s.peak_ms for s in sim_spikes_all],
+                                "out_of_window_spikes_ms": [s.peak_ms for s in outside],
+                                "penalized": penalized, "spike_shape": spike_details})
+    details = {"traces": all_details, "weights": component_weights} if include_details else {}
+    return ObjectiveResult(float(np.mean(totals)), details)

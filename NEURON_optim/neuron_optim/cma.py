@@ -147,9 +147,10 @@ class CMAES:
         for trial, loss in zip(self._pending_trials, losses, strict=True):
             self.study.tell(trial, float(loss))
         self._pending_trials = []
-        completed = self._completed_trials()
-        self.state.generation = len(completed) // self.population_size
-        self.state.evaluations = len(completed)
+        # The population is fully evaluated here, so no full-study scan is
+        # needed to derive these counters on every generation.
+        self.state.generation += 1
+        self.state.evaluations += self.population_size
 
     def save(self, directory: Path, compatibility_hash: str) -> None:
         directory.mkdir(parents=True, exist_ok=True)

@@ -33,7 +33,7 @@ class JaxleySimulator:
     """
 
     def __init__(self, *, d_lambda: float = 0.3, quiet: bool = True,
-                 morphology_source: str = "hoc"):
+                 morphology_source: str = "hoc", reuse_model: bool = True):
         del quiet  # Jaxley has no equivalent simulator verbosity switch here.
         try:
             import jax.numpy as jnp
@@ -56,15 +56,22 @@ class JaxleySimulator:
         self._set_fitted_parameters = set_fitted_parameters
         self._supported_keys = frozenset(SUPPORTED_FIT_PARAMETER_KEYS)
         self._update_mode = NEURON_UPDATE_MODE
+        self.reuse_model = bool(reuse_model)
+        self._cell = None
         if morphology_source not in {"swc", "hoc"}:
             raise ValueError("morphology_source must be either 'swc' or 'hoc'")
         self.morphology_source = morphology_source
 
     def _model(self, values: dict[str, float]):
-        cell = self._build_model(
-            d_lambda=self.d_lambda,
-            morphology_source=self.morphology_source,
-        )
+        if self.reuse_model and self._cell is not None:
+            cell = self._cell
+        else:
+            cell = self._build_model(
+                d_lambda=self.d_lambda,
+                morphology_source=self.morphology_source,
+            )
+            if self.reuse_model:
+                self._cell = cell
         # NEURON_optim is the gold standard.  Force the Jaxley parameter
         # application layer to use final-compartment rules rather than the
         # historical frozen-HOC endpoint profiles.

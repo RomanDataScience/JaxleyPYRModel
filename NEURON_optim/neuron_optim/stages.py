@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
+import copy
 import json
 import logging
 from pathlib import Path
@@ -13,7 +14,12 @@ import numpy as np
 from .cma import CMAES
 from .config import RunConfig
 from .data import Trace, load_protocol_traces
-from .objective import depolarizing_objective, hyperpolarizing_objective
+from .objective import (
+    ObjectiveContext,
+    build_objective_context,
+    depolarizing_objective,
+    hyperpolarizing_objective,
+)
 from .parameters import DEFAULTS, PASSIVE, ParameterSpace, make_parameter_space, passive_model_values
 from .plotting import plot_generation
 from .simulator import make_simulator
@@ -29,6 +35,7 @@ def _init_worker(stage: str, traces: list[Trace], d_lambda: float,
     _WORKER["traces"] = traces
     _WORKER["simulator"] = make_simulator(backend, d_lambda=d_lambda, quiet=True)
     _WORKER["objective_options"] = objective_options
+    _WORKER["objective_context"] = _build_objective_context(traces, stage, objective_options)
 
 
 def _simulation_payload(simulations) -> list[dict[str, np.ndarray]]:
@@ -47,6 +54,17 @@ def _payload_to_simulations(payload: list[dict[str, np.ndarray]] | None):
             for item in payload]
 
 
+def _build_objective_context(traces: list[Trace], stage: str,
+                             options: dict[str, Any]) -> ObjectiveContext:
+    return build_objective_context(
+        traces,
+        stage="depolarizing" if stage == "depolarizing" else "hyper",
+        threshold_mV=float(options.get("threshold_mV", -20.0)),
+        refractory_ms=float(options.get("refractory_ms", 2.0)),
+        prominence_mV=float(options.get("prominence_mV", 5.0)),
+    )
+
+
 def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
     physical = _WORKER["space"].physical(normalized) if "space" in _WORKER else None
     if physical is None:
@@ -57,12 +75,20 @@ def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
     try:
         simulations = _WORKER["simulator"].simulate_many(_WORKER["traces"], mapping)
         if _WORKER["stage"] in {"passive", "hyper"}:
-            result = hyperpolarizing_objective(_WORKER["traces"], simulations, **_WORKER["objective_options"])
+            result = hyperpolarizing_objective(
+                _WORKER["traces"], simulations,
+                context=_WORKER["objective_context"], include_details=False,
+                **_WORKER["objective_options"],
+            )
         else:
-            result = depolarizing_objective(_WORKER["traces"], simulations, **_WORKER["objective_options"])
-        return result.value, result.details, _simulation_payload(simulations)
+            result = depolarizing_objective(
+                _WORKER["traces"], simulations,
+                context=_WORKER["objective_context"], include_details=False,
+                **_WORKER["objective_options"],
+            )
+        return result.value, _simulation_payload(simulations), None
     except Exception as exc:
-        return 1.0e12, {"error": type(exc).__name__, "message": str(exc)}, None
+        return 1.0e12, None, {"error": type(exc).__name__, "message": str(exc)}
 
 
 def _init_worker_with_space(stage: str, traces: list[Trace], d_lambda: float,
@@ -75,7 +101,7 @@ def _init_worker_with_space(stage: str, traces: list[Trace], d_lambda: float,
 def _evaluate_serial(normalized: np.ndarray, *, stage: str, traces: list[Trace],
                      space: ParameterSpace, d_lambda: float,
                      objective_options: dict[str, Any], backend: str,
-                     simulator=None):
+                     simulator=None, objective_context: ObjectiveContext | None = None):
     try:
         simulator = simulator or make_simulator(backend, d_lambda=d_lambda, quiet=True)
         mapping = space.mapping(normalized)
@@ -83,12 +109,18 @@ def _evaluate_serial(normalized: np.ndarray, *, stage: str, traces: list[Trace],
             mapping = passive_model_values(mapping)
         simulations = simulator.simulate_many(traces, mapping)
         if stage in {"passive", "hyper"}:
-            result = hyperpolarizing_objective(traces, simulations, **objective_options)
+            result = hyperpolarizing_objective(
+                traces, simulations, context=objective_context, include_details=False,
+                **objective_options,
+            )
         else:
-            result = depolarizing_objective(traces, simulations, **objective_options)
-        return result.value, result.details, _simulation_payload(simulations)
+            result = depolarizing_objective(
+                traces, simulations, context=objective_context, include_details=False,
+                **objective_options,
+            )
+        return result.value, _simulation_payload(simulations), None
     except Exception as exc:
-        return 1.0e12, {"error": type(exc).__name__, "message": str(exc)}, None
+        return 1.0e12, None, {"error": type(exc).__name__, "message": str(exc)}
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -132,6 +164,30 @@ def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
             "invalid_plateau_penalty": float(section.get("invalid_plateau_penalty", 100.0)),
             "extra_spike_penalty": float(section.get("depolarizing_extra_spike_penalty", 1.0e4)),
             "return_alpha": float(section.get("return_alpha", 0.7))}
+
+
+def _config_with_workers(config: RunConfig, workers: int) -> RunConfig:
+    raw = copy.deepcopy(config.raw)
+    raw.setdefault("runtime", {})["parallel_workers"] = int(workers)
+    return RunConfig(raw, config.path)
+
+
+def _run_study_task(task):
+    config, stage, seed, run_dir, initial_mean, basin_id = task
+    return run_study(config, stage=stage, seed=seed, run_dir=run_dir,
+                     initial_mean=initial_mean, basin_id=basin_id)
+
+
+def _run_studies(config: RunConfig, tasks: list[tuple]) -> list[dict[str, Any]]:
+    """Run independent studies without oversubscribing candidate workers."""
+    if config.study_workers == 1:
+        return [_run_study_task(task) for task in tasks]
+    inner_config = _config_with_workers(config, 1)
+    inner_tasks = [(
+        inner_config, stage, seed, run_dir, initial_mean, basin_id
+    ) for _, stage, seed, run_dir, initial_mean, basin_id in tasks]
+    with ProcessPoolExecutor(max_workers=config.study_workers) as pool:
+        return list(pool.map(_run_study_task, inner_tasks))
 
 
 def _load_traces(config: RunConfig, stage: str) -> list[Trace]:
@@ -278,11 +334,13 @@ def run_passive_precalibration(config: RunConfig, output_root: Path) -> dict[str
 def _evaluate_population(population: np.ndarray, *, stage: str, traces: list[Trace],
                          space: ParameterSpace, config: RunConfig,
                          options: dict[str, Any], executor=None,
-                         simulator=None) -> tuple[np.ndarray, list[dict], list | None]:
+                         simulator=None,
+                         objective_context: ObjectiveContext | None = None) -> tuple[np.ndarray, list | None, list]:
     if config.workers == 1:
         pairs = [_evaluate_serial(candidate, stage=stage, traces=traces, space=space,
                                   d_lambda=config.d_lambda, objective_options=options,
-                                  backend=config.backend, simulator=simulator)
+                                  backend=config.backend, simulator=simulator,
+                                  objective_context=objective_context)
                  for candidate in population]
     else:
         if executor is None:
@@ -296,6 +354,23 @@ def _evaluate_population(population: np.ndarray, *, stage: str, traces: list[Tra
     return (np.asarray([pair[0] for pair in pairs], dtype=float),
             [pair[1] for pair in pairs],
             [pair[2] for pair in pairs])
+
+
+def _objective_details(stage: str, traces: list[Trace], payload,
+                       options: dict[str, Any], context: ObjectiveContext,
+                       error: dict | None) -> dict:
+    if payload is None:
+        return error or {}
+    simulations = _payload_to_simulations(payload)
+    if stage in {"passive", "hyper"}:
+        result = hyperpolarizing_objective(
+            traces, simulations, context=context, include_details=True, **options
+        )
+    else:
+        result = depolarizing_objective(
+            traces, simulations, context=context, include_details=True, **options
+        )
+    return result.details
 
 
 def _save_generation_simulations(run_dir: Path, generation: int,
@@ -361,7 +436,9 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                           population_size=int(section.get("population_size", 30)),
                           parent_fraction=float(section.get("parent_fraction", 0.5)))
     options = _objective_options(config.raw, stage)
+    objective_context = _build_objective_context(traces, stage, options)
     generations = int(section.get("generations", 200))
+    checkpoint_every = max(1, int(section.get("checkpoint_every", 1)))
     completed_best_path = run_dir / "best_parameters.json"
     if resumed and optimizer.state.generation >= generations and completed_best_path.exists():
         return json.loads(completed_best_path.read_text(encoding="utf-8"))
@@ -389,13 +466,18 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
     try:
         while optimizer.state.generation < generations:
             population = optimizer.ask()
-            losses, details, simulations = _evaluate_population(
+            losses, simulations, errors = _evaluate_population(
                 population, stage=stage, traces=traces, space=space, config=config,
                 options=options, executor=executor, simulator=serial_simulator,
+                objective_context=objective_context,
             )
             best_index = int(np.argmin(losses))
             if best is None or losses[best_index] < best[0]:
-                best = (float(losses[best_index]), population[best_index].copy(), details[best_index])
+                details = _objective_details(
+                    stage, traces, simulations[best_index], options,
+                    objective_context, errors[best_index],
+                )
+                best = (float(losses[best_index]), population[best_index].copy(), details)
                 _write_json(best_state_path, {
                     "loss": best[0], "normalized": best[1], "details": best[2],
                     "generation": optimizer.state.generation + 1,
@@ -408,12 +490,15 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
             # diagnostics and must not make an expensive evaluated generation
             # need to be rerun if a plotting backend fails.
             optimizer.tell(population, losses)
-            optimizer.save(checkpoint_dir, compatibility)
+            if generation % checkpoint_every == 0 or generation == generations:
+                optimizer.save(checkpoint_dir, compatibility)
             with history_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps({"generation": generation, "best": float(losses[best_index]),
                                          "mean": float(np.mean(losses)), "sigma": optimizer.state.sigma}) + "\n")
             plotting = dict(config.raw.get("plotting", {}))
-            if bool(plotting.get("enabled", True)):
+            plot_every = max(1, int(plotting.get("every", 1)))
+            if (bool(plotting.get("enabled", True)) and
+                    (generation % plot_every == 0 or generation == generations)):
                 try:
                     top_k = int(plotting.get("top_k", 10))
                     top_indices = np.argsort(losses, kind="stable")[:min(top_k, len(losses))]
@@ -500,30 +585,36 @@ def run_hyper_stage(config: RunConfig, output_root: Path) -> None:
     passive_values = run_passive_precalibration(config, output_root)
     stage1_dir = output_root / "stage1_hyper"
     stage1_dir.mkdir(parents=True, exist_ok=True)
+    tasks = []
     for seed in config.section("stage1").get("seeds", range(10)):
         seed = int(seed)
         initial = _full_initial_from_passive(config, passive_values, seed)
-        run_study(
-            config,
-            stage="hyper",
-            seed=seed,
-            run_dir=stage1_dir / f"seed_{seed:03d}",
-            initial_mean=initial,
-        )
+        tasks.append((config, "hyper", seed,
+                      stage1_dir / f"seed_{seed:03d}", initial, None))
+    _run_studies(config, tasks)
     make_basins(config, stage1_dir)
 
 
-def run_pipeline(config: RunConfig, output_root: Path) -> None:
-    run_hyper_stage(config, output_root)
+def run_depolarizing_stage(config: RunConfig, output_root: Path,
+                           basins: list[dict] | None = None) -> None:
     stage1_dir = output_root / "stage1_hyper"
-    basins = load_basins(stage1_dir / "basins.jsonl")
+    basins = basins if basins is not None else load_basins(stage1_dir / "basins.jsonl")
     stage2_dir = output_root / "stage2_depolarizing"
+    tasks = []
     for basin in basins:
         mean = np.asarray(basin["normalized"], dtype=float)
         for seed in config.section("stage2").get("seeds", list(range(10))):
             seed = int(seed)
-            rng = np.random.default_rng(np.random.SeedSequence([seed, int(basin["basin_id"][1:])]))
+            rng = np.random.default_rng(
+                np.random.SeedSequence([seed, int(basin["basin_id"][1:])])
+            )
             initial = np.clip(mean + rng.uniform(-0.15, 0.15, size=mean.size), 0.0, 1.0)
-            run_study(config, stage="depolarizing", seed=seed,
-                      run_dir=stage2_dir / basin["basin_id"] / f"seed_{seed:03d}",
-                      initial_mean=initial, basin_id=basin["basin_id"])
+            tasks.append((config, "depolarizing", seed,
+                          stage2_dir / basin["basin_id"] / f"seed_{seed:03d}",
+                          initial, basin["basin_id"]))
+    _run_studies(config, tasks)
+
+
+def run_pipeline(config: RunConfig, output_root: Path) -> None:
+    run_hyper_stage(config, output_root)
+    run_depolarizing_stage(config, output_root)

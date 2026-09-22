@@ -38,6 +38,30 @@ Serial studies construct one simulator wrapper per study instead of repeating
 the wrapper and mechanism/source-cache checks for every candidate. Worker-local
 simulators continue to be initialized once per worker.
 
+### Models, objective features, and trace loading are reused
+
+Both simulator backends now retain their morphology/model within a worker and
+reset simulation state between candidates. Objective contexts precompute trace
+masks, baselines, experimental spikes, terminal masks, and time steps once per
+study. Protocol loading reads each time/voltage/current vector once before
+windowing and constructing a `Trace`.
+
+Candidate evaluation returns scalar losses and simulation arrays; detailed
+objective dictionaries are reconstructed only for a newly selected best
+candidate.
+
+### Independent studies can run at an outer level
+
+`runtime.study_workers` parallelizes independent stage-1 seeds and stage-2
+basin/seed studies. When enabled, each child study uses one candidate worker so
+the two parallelism levels do not oversubscribe the machine.
+
+### Plot output is consolidated and throttled
+
+Each plotted generation now writes one `candidates.png`: candidate rows and
+trace columns form a single multi-panel figure. `plotting.every` controls the
+generation interval, while the final generation is always plotted.
+
 ### Completed and partial-study resume is safe
 
 If a compatible checkpoint already reached the configured generation count and
@@ -48,98 +72,31 @@ partial study resumes.
 
 ## Remaining findings
 
-### 1. A fresh model is built for every candidate
+The main findings are implemented. The one deliberate exception is the
+checkpoint representation: the default still serializes Optuna's complete
+study because that is the mechanism that preserves exact sampler state and
+therefore exact resumed trajectories. Two lower-risk improvements are now in
+place: generation counters no longer scan every completed trial after each
+`tell()`, and `checkpoint_every` can reduce serialization frequency when the
+user accepts replaying uncheckpointed generations after interruption.
 
-- Location: `neuron_optim/simulator.py:212-214`, `neuron_optim/jaxley_simulator.py:63-77`
-- Impact: High. Morphology construction and parameter application traverse the
-  complete model for every parameter vector.
-- Confidence: High.
-- Recommendation: Keep a worker-local model and reset its state between
-  candidates if the backend permits it. Cache static morphology, segment
-  groups, and mechanism handles; apply only candidate-dependent values.
-- Risk: NEURON global state and Jaxley functional parameter semantics need
-  explicit reset tests before changing lifecycle behavior.
+The model-reuse change was numerically checked against the old fresh-model path
+using stored candidates from the existing runs:
 
-### 2. Objective preprocessing is repeated for every candidate
+| Backend | Artifact | Samples | Maximum voltage delta | Maximum time delta |
+| --- | --- | ---: | ---: | ---: |
+| Jaxley | `runs/jaxley_seeded_calibration/.../population_generation_0001.npz` | 13,000 | 0.0 mV | 0.0 ms |
+| NEURON | `runs/smoke_full/.../population_generation_0001.npz` | 13,000 | 0.0 mV | 0.0 ms |
 
-- Location: `neuron_optim/objective.py:113-158`, `196-248`
-- Impact: Medium to high. Experimental baselines, region masks, experimental
-  spike detections, terminal masks, and median time steps are invariant within a
-  study but are recomputed for each objective call.
-- Confidence: High.
-- Recommendation: Build an immutable objective context once per study/worker
-  containing masks, centered experimental voltages, experimental spikes, `dt`,
-  and terminal indices.
-
-### 3. Spike detection recomputes time-step statistics inside loops
-
-- Location: `neuron_optim/objective.py:41-50`, `168-172`
-- Impact: Medium. `np.median(np.diff(time))` is repeated for threshold
-  crossings and matched-spike windows.
-- Confidence: High.
-- Recommendation: Precompute `dt` and reusable window offsets. Consider a
-  single-pass detector for noisy long traces.
-
-### 4. Trace loading repeats disk reads
-
-- Location: `neuron_optim/data.py:55-60`, `90-120`; `neuron_optim/stages.py:349`
-- Impact: Medium. Time vectors are used to determine windows and then loaded
-  again. Stage-2 studies also load the same four traces for every basin/seed.
-- Confidence: High.
-- Recommendation: Read each vector once and construct the prepared `Trace`
-  directly. Cache immutable prepared traces by data/config hash at the outer
-  pipeline level.
-
-### 5. Optuna checkpoints rewrite the full study every generation
-
-- Location: `neuron_optim/cma.py:147-179`, called from
-  `neuron_optim/stages.py`
-- Impact: Medium to high as trial counts grow. The full `study.pkl` is
-  serialized and replaced after every generation, and completed trials are
-  rescanned to derive generation counts.
-- Confidence: High.
-- Recommendation: Benchmark a compact versioned optimizer-state checkpoint or
-  configurable checkpoint interval. Preserve atomic replacement and explicit
-  resume guarantees.
-
-### 6. Default plot volume is potentially very large
-
-- Location: `neuron_optim/plotting.py:34-67`; plotting defaults in the YAML
-  configurations.
-- Impact: High for the full basin workflow. Ten multi-panel PNGs per
-  generation can dominate filesystem usage and wall time.
-- Confidence: High.
-- Recommendation: Add `plot_every`, a generation-best-only mode, or a deferred
-  plotting command. Keep the compact simulation archives as the primary
-  diagnostic artifact.
-
-### 7. Independent studies are serialized
-
-- Location: `neuron_optim/stages.py:484-516`
-- Impact: High for many stage-1 seeds and stage-2 basin/seed combinations.
-- Confidence: High.
-- Recommendation: Add an explicit study-array mode for cluster/job-array use,
-  or parallelize independent studies at the outer level while setting inner
-  candidate workers to one. Avoid oversubscribing both levels.
-
-### 8. Candidate diagnostics are transported for the whole population
-
-- Location: `neuron_optim/stages.py:48-63`, `276-296`
-- Impact: Medium. Detailed objective dictionaries for every candidate are
-  pickled back to the parent even though only the current best is retained.
-- Confidence: High.
-- Recommendation: Return scalar losses for normal generations and request full
-  diagnostics only for the best/top-k candidates, unless per-candidate details
-  are intentionally needed for analysis.
+The comparison used the same candidate and trace with `reuse_model=False` and
+`reuse_model=True`.
 
 ## Recommended follow-up order
 
-1. Cache/reuse the model structure inside each worker, with lifecycle tests.
-2. Precompute objective and trace-derived features once per study.
-3. Add a regression test for partial-resume best-state restoration.
-4. Add configurable plot frequency and a deferred plot command.
-5. Benchmark compact checkpoints against the current Optuna pickle workflow.
-6. Add an outer study-array launcher for independent seeds and basins.
+1. Benchmark compact optimizer checkpoints while preserving exact-resume mode.
+2. Add a regression test for partial-resume best-state restoration.
+3. Benchmark `runtime.study_workers` on the target machine and avoid native
+   backend oversubscription.
 
 ## Verification
 
@@ -147,5 +104,5 @@ The package compiles, and the test suite passes in the documented `Jaxley`
 environment:
 
 ```text
-12 passed in 12.27s
+13 passed in 12.06s
 ```

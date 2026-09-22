@@ -92,8 +92,11 @@ conda run --name Jaxley \
   --output-dir NEURON_optim/runs/example
 ```
 
-The checked-in configs use one worker; `--workers` can override this for
-process-parallel runs. Backend state is kept inside each worker process. A
+The checked-in configs use one candidate worker; `--workers` can override this
+for process-parallel runs. Independent seeds/basins can additionally be
+parallelized with `runtime.study_workers`; when that value is greater than one,
+candidate workers are reduced to one inside each study to avoid
+oversubscription. Backend state is kept inside each worker process. A
 generation advances only after all offspring have returned finite losses and
 the checkpoint has been written.
 
@@ -107,10 +110,13 @@ generation also writes `population_generation_XXXX.npz` and
 parameters/losses and the corresponding per-trace simulation arrays. Plotting
 uses those saved evaluation results; it does not rerun simulations for the
 selected candidates. Both stages write
-`plots/generation_XXXX/rank_XX.png` for the ten lowest-loss candidates after
-every generation, showing measured and simulated voltages for all four traces.
+`plots/generation_XXXX/candidates.png` for the ten lowest-loss candidates after
+every generation. The single figure uses one row per candidate and one panel
+per trace, showing measured and simulated voltages together.
 Plotting is diagnostic and a figure-rendering failure does not discard a
-checkpointed generation. Stage 2 writes one directory per basin and seed with
+checkpointed generation. Set `plotting.every` to a value greater than one to
+render every Nth generation (the final generation is always rendered when
+plotting is enabled). Stage 2 writes one directory per basin and seed with
 its perturbed initial point, checkpoint, generation history, simulation
 archives, plots, and final objective breakdown. Set `plotting.enabled: false`
 when running a diagnostic search without figures.
