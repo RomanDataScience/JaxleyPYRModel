@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from .plotting import plot_generation
 from .simulator import make_simulator
 
 
+LOGGER = logging.getLogger(__name__)
 _WORKER: dict[str, Any] = {}
 
 
@@ -29,7 +31,23 @@ def _init_worker(stage: str, traces: list[Trace], d_lambda: float,
     _WORKER["objective_options"] = objective_options
 
 
-def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]) -> tuple[float, dict]:
+def _simulation_payload(simulations) -> list[dict[str, np.ndarray]]:
+    """Convert simulator outputs to a small, pickle/NPZ-friendly payload."""
+    return [{"time_ms": np.asarray(simulation.time_ms, dtype=float),
+             "voltage_mV": np.asarray(simulation.voltage_mV, dtype=float)}
+            for simulation in simulations]
+
+
+def _payload_to_simulations(payload: list[dict[str, np.ndarray]] | None):
+    if payload is None:
+        return None
+    from .objective import SimulationOutput
+    return [SimulationOutput(np.asarray(item["time_ms"], dtype=float),
+                             np.asarray(item["voltage_mV"], dtype=float))
+            for item in payload]
+
+
+def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
     physical = _WORKER["space"].physical(normalized) if "space" in _WORKER else None
     if physical is None:
         raise RuntimeError("Worker parameter space was not initialized")
@@ -42,22 +60,9 @@ def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]) -> tuple[flo
             result = hyperpolarizing_objective(_WORKER["traces"], simulations, **_WORKER["objective_options"])
         else:
             result = depolarizing_objective(_WORKER["traces"], simulations, **_WORKER["objective_options"])
-        return result.value, result.details
+        return result.value, result.details, _simulation_payload(simulations)
     except Exception as exc:
-        return 1.0e12, {"error": type(exc).__name__, "message": str(exc)}
-
-
-def _simulate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
-    physical = _WORKER["space"].physical(normalized)
-    mapping = dict(zip(keys, physical, strict=True))
-    if _WORKER["stage"] == "passive":
-        mapping = passive_model_values(mapping)
-    try:
-        simulations = _WORKER["simulator"].simulate_many(_WORKER["traces"], mapping)
-        return [{"time_ms": simulation.time_ms, "voltage_mV": simulation.voltage_mV}
-                for simulation in simulations]
-    except Exception:
-        return None
+        return 1.0e12, {"error": type(exc).__name__, "message": str(exc)}, None
 
 
 def _init_worker_with_space(stage: str, traces: list[Trace], d_lambda: float,
@@ -69,9 +74,10 @@ def _init_worker_with_space(stage: str, traces: list[Trace], d_lambda: float,
 
 def _evaluate_serial(normalized: np.ndarray, *, stage: str, traces: list[Trace],
                      space: ParameterSpace, d_lambda: float,
-                     objective_options: dict[str, Any], backend: str) -> tuple[float, dict]:
+                     objective_options: dict[str, Any], backend: str,
+                     simulator=None):
     try:
-        simulator = make_simulator(backend, d_lambda=d_lambda, quiet=True)
+        simulator = simulator or make_simulator(backend, d_lambda=d_lambda, quiet=True)
         mapping = space.mapping(normalized)
         if stage == "passive":
             mapping = passive_model_values(mapping)
@@ -80,9 +86,9 @@ def _evaluate_serial(normalized: np.ndarray, *, stage: str, traces: list[Trace],
             result = hyperpolarizing_objective(traces, simulations, **objective_options)
         else:
             result = depolarizing_objective(traces, simulations, **objective_options)
-        return result.value, result.details
+        return result.value, result.details, _simulation_payload(simulations)
     except Exception as exc:
-        return 1.0e12, {"error": type(exc).__name__, "message": str(exc)}
+        return 1.0e12, {"error": type(exc).__name__, "message": str(exc)}, None
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -271,43 +277,50 @@ def run_passive_precalibration(config: RunConfig, output_root: Path) -> dict[str
 
 def _evaluate_population(population: np.ndarray, *, stage: str, traces: list[Trace],
                          space: ParameterSpace, config: RunConfig,
-                         options: dict[str, Any]) -> tuple[np.ndarray, list[dict]]:
+                         options: dict[str, Any], executor=None,
+                         simulator=None) -> tuple[np.ndarray, list[dict], list | None]:
     if config.workers == 1:
         pairs = [_evaluate_serial(candidate, stage=stage, traces=traces, space=space,
                                   d_lambda=config.d_lambda, objective_options=options,
-                                  backend=config.backend)
+                                  backend=config.backend, simulator=simulator)
                  for candidate in population]
     else:
-        with ProcessPoolExecutor(max_workers=config.workers,
-                                 initializer=_init_worker_with_space,
-                                 initargs=(stage, traces, config.d_lambda, options,
-                                           config.backend, space)) as pool:
-            pairs = list(pool.map(_evaluate_worker, population, [space.keys] * len(population)))
-    return np.asarray([pair[0] for pair in pairs], dtype=float), [pair[1] for pair in pairs]
+        if executor is None:
+            with ProcessPoolExecutor(max_workers=config.workers,
+                                     initializer=_init_worker_with_space,
+                                     initargs=(stage, traces, config.d_lambda, options,
+                                               config.backend, space)) as pool:
+                pairs = list(pool.map(_evaluate_worker, population, [space.keys] * len(population)))
+        else:
+            pairs = list(executor.map(_evaluate_worker, population, [space.keys] * len(population)))
+    return (np.asarray([pair[0] for pair in pairs], dtype=float),
+            [pair[1] for pair in pairs],
+            [pair[2] for pair in pairs])
 
 
-def _simulate_for_plots(population: np.ndarray, *, stage: str, traces: list[Trace],
-                        space: ParameterSpace, config: RunConfig,
-                        options: dict[str, Any]) -> list[list]:
-    if config.workers == 1:
-        simulator = make_simulator(config.backend, d_lambda=config.d_lambda, quiet=True)
-        result = []
-        for candidate in population:
-            try:
-                mapping = space.mapping(candidate)
-                if stage == "passive":
-                    mapping = passive_model_values(mapping)
-                simulations = simulator.simulate_many(traces, mapping)
-                result.append([{"time_ms": simulation.time_ms, "voltage_mV": simulation.voltage_mV}
-                               for simulation in simulations])
-            except Exception:
-                result.append(None)
-        return result
-    with ProcessPoolExecutor(max_workers=config.workers,
-                             initializer=_init_worker_with_space,
-                             initargs=(stage, traces, config.d_lambda, options,
-                                       config.backend, space)) as pool:
-        return list(pool.map(_simulate_worker, population, [space.keys] * len(population)))
+def _save_generation_simulations(run_dir: Path, generation: int,
+                                 population: np.ndarray, losses: np.ndarray,
+                                 simulations: list | None) -> None:
+    """Persist candidate parameters and simulator outputs for later plotting.
+
+    Trace lengths need not be identical, so each candidate/trace pair is stored
+    under its own NPZ key.  Failed candidates are represented in ``valid`` and
+    do not prevent the rest of the generation from being cached.
+    """
+    if simulations is None:
+        return
+    payload: dict[str, np.ndarray] = {
+        "population": np.asarray(population, dtype=float),
+        "losses": np.asarray(losses, dtype=float),
+        "valid": np.asarray([item is not None for item in simulations], dtype=bool),
+    }
+    for candidate_index, candidate in enumerate(simulations):
+        if candidate is None:
+            continue
+        for trace_index, simulation in enumerate(candidate):
+            payload[f"candidate_{candidate_index:04d}_trace_{trace_index:04d}_time_ms"] = simulation["time_ms"]
+            payload[f"candidate_{candidate_index:04d}_trace_{trace_index:04d}_voltage_mV"] = simulation["voltage_mV"]
+    np.savez_compressed(run_dir / f"simulations_generation_{generation:04d}.npz", **payload)
 
 
 def _study_manifest(config: RunConfig, stage: str, seed: int, space: ParameterSpace,
@@ -341,6 +354,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
     compatibility = f"{config.hash()}:{stage}:{seed}:{basin_id}:{space.keys}"
     checkpoint_dir = run_dir / "checkpoint"
     optimizer = CMAES.load(checkpoint_dir, seed=seed, compatibility_hash=compatibility)
+    resumed = optimizer is not None
     if optimizer is None:
         mean = initial_mean if initial_mean is not None else space.normalize(space.reference)
         optimizer = CMAES(mean, sigma=float(section.get("sigma0", 0.15)), seed=seed,
@@ -348,47 +362,78 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                           parent_fraction=float(section.get("parent_fraction", 0.5)))
     options = _objective_options(config.raw, stage)
     generations = int(section.get("generations", 200))
+    completed_best_path = run_dir / "best_parameters.json"
+    if resumed and optimizer.state.generation >= generations and completed_best_path.exists():
+        return json.loads(completed_best_path.read_text(encoding="utf-8"))
+    best_state_path = run_dir / "best_so_far.json"
     best: tuple[float, np.ndarray, dict] | None = None
+    if resumed and best_state_path.exists():
+        saved_best = json.loads(best_state_path.read_text(encoding="utf-8"))
+        best = (float(saved_best["loss"]),
+                np.asarray(saved_best["normalized"], dtype=float),
+                dict(saved_best.get("details", {})))
     history_path = run_dir / "generations.jsonl"
-    while optimizer.state.generation < generations:
-        population = optimizer.ask()
-        losses, details = _evaluate_population(population, stage=stage, traces=traces,
-                                               space=space, config=config, options=options)
-        best_index = int(np.argmin(losses))
-        if best is None or losses[best_index] < best[0]:
-            best = (float(losses[best_index]), population[best_index].copy(), details[best_index])
-        generation = optimizer.state.generation + 1
-        np.savez_compressed(run_dir / f"population_generation_{generation:04d}.npz",
-                            population=population, losses=losses)
-        plotting = dict(config.raw.get("plotting", {}))
-        if bool(plotting.get("enabled", True)):
-            top_k = int(plotting.get("top_k", 10))
-            top_indices = np.argsort(losses, kind="stable")[:min(top_k, len(losses))]
-            captured = _simulate_for_plots(population[top_indices], stage=stage, traces=traces,
-                                           space=space, config=config, options=options)
-            from .objective import SimulationOutput
-            converted = []
-            for item in captured:
-                converted.append(None if item is None else
-                                 [SimulationOutput(np.asarray(entry["time_ms"]), np.asarray(entry["voltage_mV"]))
-                                  for entry in item])
-            # Plot only the selected candidates, but retain their original
-            # population indices/loss ordering in the metadata.
-            plot_population = population[top_indices]
-            plot_losses = losses[top_indices]
-            plot_simulations = [item for item in converted]
-            if all(item is not None for item in plot_simulations):
-                plot_generation(output_dir=run_dir / "plots", generation=generation,
-                                stage=stage, traces=traces, population=plot_population,
-                                losses=plot_losses, simulations=plot_simulations,
-                                space=space, top_k=top_k,
-                                population_indices=top_indices,
-                                dpi=int(plotting.get("dpi", 120)))
-        optimizer.tell(population, losses)
-        optimizer.save(checkpoint_dir, compatibility)
-        with history_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps({"generation": generation, "best": float(losses[best_index]),
-                                     "mean": float(np.mean(losses)), "sigma": optimizer.state.sigma}) + "\n")
+    # Keep one worker pool for the complete study.  More importantly, the
+    # plotting path consumes the outputs returned by the evaluation below;
+    # it never starts a second simulation pool for the same candidates.
+    executor = None
+    serial_simulator = None
+    if config.workers > 1:
+        executor = ProcessPoolExecutor(
+            max_workers=config.workers,
+            initializer=_init_worker_with_space,
+            initargs=(stage, traces, config.d_lambda, options, config.backend, space),
+        )
+    else:
+        serial_simulator = make_simulator(config.backend, d_lambda=config.d_lambda, quiet=True)
+    try:
+        while optimizer.state.generation < generations:
+            population = optimizer.ask()
+            losses, details, simulations = _evaluate_population(
+                population, stage=stage, traces=traces, space=space, config=config,
+                options=options, executor=executor, simulator=serial_simulator,
+            )
+            best_index = int(np.argmin(losses))
+            if best is None or losses[best_index] < best[0]:
+                best = (float(losses[best_index]), population[best_index].copy(), details[best_index])
+                _write_json(best_state_path, {
+                    "loss": best[0], "normalized": best[1], "details": best[2],
+                    "generation": optimizer.state.generation + 1,
+                })
+            generation = optimizer.state.generation + 1
+            np.savez_compressed(run_dir / f"population_generation_{generation:04d}.npz",
+                                population=population, losses=losses)
+            _save_generation_simulations(run_dir, generation, population, losses, simulations)
+            # Commit the optimizer state before rendering.  Figures are
+            # diagnostics and must not make an expensive evaluated generation
+            # need to be rerun if a plotting backend fails.
+            optimizer.tell(population, losses)
+            optimizer.save(checkpoint_dir, compatibility)
+            with history_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"generation": generation, "best": float(losses[best_index]),
+                                         "mean": float(np.mean(losses)), "sigma": optimizer.state.sigma}) + "\n")
+            plotting = dict(config.raw.get("plotting", {}))
+            if bool(plotting.get("enabled", True)):
+                try:
+                    top_k = int(plotting.get("top_k", 10))
+                    top_indices = np.argsort(losses, kind="stable")[:min(top_k, len(losses))]
+                    converted = [_payload_to_simulations(simulations[index]) for index in top_indices]
+                    # Plot only the selected candidates, but retain their original
+                    # population indices/loss ordering in the metadata.
+                    plot_population = population[top_indices]
+                    plot_losses = losses[top_indices]
+                    if all(item is not None for item in converted):
+                        plot_generation(output_dir=run_dir / "plots", generation=generation,
+                                        stage=stage, traces=traces, population=plot_population,
+                                        losses=plot_losses, simulations=converted,
+                                        space=space, top_k=top_k,
+                                        population_indices=top_indices,
+                                        dpi=int(plotting.get("dpi", 120)))
+                except Exception:
+                    LOGGER.exception("Plotting failed for generation %04d; continuing", generation)
+    finally:
+        if executor is not None:
+            executor.shutdown(wait=True)
     if best is None:
         raise RuntimeError("Study produced no generations")
     physical = space.physical(best[1])

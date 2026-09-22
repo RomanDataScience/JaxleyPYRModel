@@ -101,10 +101,16 @@ the checkpoint has been written.
 
 Stage 1 writes one directory per seed, a checkpoint and generation history, and
 `basins.jsonl` containing the best final-generation candidates. With the
-checked-in 3 × 20 stage-1 budget, this produces up to 60 basins. Both stages
-also write `plots/generation_XXXX/rank_XX.png` for the ten
-lowest-loss candidates after every generation, showing measured and simulated
-voltages for all four traces. Stage 2 writes one directory per basin and seed
-with its perturbed initial point, checkpoint, generation history, plots, and
-final objective breakdown. Set `plotting.enabled: false` when running a
-diagnostic search without figures.
+checked-in 3 × 20 stage-1 budget, this produces up to 60 basins. Each
+generation also writes `population_generation_XXXX.npz` and
+`simulations_generation_XXXX.npz`, containing the evaluated candidate
+parameters/losses and the corresponding per-trace simulation arrays. Plotting
+uses those saved evaluation results; it does not rerun simulations for the
+selected candidates. Both stages write
+`plots/generation_XXXX/rank_XX.png` for the ten lowest-loss candidates after
+every generation, showing measured and simulated voltages for all four traces.
+Plotting is diagnostic and a figure-rendering failure does not discard a
+checkpointed generation. Stage 2 writes one directory per basin and seed with
+its perturbed initial point, checkpoint, generation history, simulation
+archives, plots, and final objective breakdown. Set `plotting.enabled: false`
+when running a diagnostic search without figures.
