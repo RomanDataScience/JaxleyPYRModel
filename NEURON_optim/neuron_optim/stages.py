@@ -591,34 +591,49 @@ def make_basins(config: RunConfig, stage1_run: Path, *, output: Path | None = No
     candidates: list[dict] = []
     for seed in config.section("stage1").get("seeds", list(range(10))):
         seed_dir = stage1_run / f"seed_{int(seed):03d}"
-        generation = int(config.section("stage1")["generations"])
-        population_path = seed_dir / f"population_generation_{generation:04d}.npz"
-        if not population_path.exists():
-            raise FileNotFoundError(population_path)
-        with np.load(population_path, allow_pickle=False) as values:
-            population, losses = values["population"], values["losses"]
-        for rank in np.argsort(losses, kind="stable"):
-            candidates.append({"source_seed": int(seed), "source_generation": generation,
-                               "rank": int(rank), "loss": float(losses[rank]),
-                               "normalized": population[rank].tolist(),
-                               "physical": space.physical(population[rank]).tolist()})
+        population_paths = sorted(seed_dir.glob("population_generation_*.npz"))
+        if not population_paths:
+            raise FileNotFoundError(seed_dir / "population_generation_*.npz")
+        for population_path in population_paths:
+            generation = int(population_path.stem.rsplit("_", 1)[1])
+            with np.load(population_path, allow_pickle=False) as values:
+                population, losses = values["population"], values["losses"]
+            for rank in np.argsort(losses, kind="stable"):
+                candidates.append({"source_seed": int(seed), "source_generation": generation,
+                                   "rank": int(rank), "loss": float(losses[rank]),
+                                   "normalized": population[rank].tolist(),
+                                   "physical": space.physical(population[rank]).tolist()})
+    target_count = min(100, len(candidates))
+    quota_per_seed = max(0, int(config.section("stage1").get(
+        "basin_quota_per_seed", 10
+    )))
     selected: list[dict] = []
     seen: set[tuple[float, ...]] = set()
-    for candidate in candidates:
-        if candidate["rank"] >= 10:
-            continue
-        key = tuple(np.round(candidate["normalized"], 14))
-        if key not in seen:
-            seen.add(key)
-            selected.append(candidate)
-    for candidate in candidates:
-        if len(selected) >= min(100, len(candidates)):
+    # Reserve a small quota for every Stage 1 seed before global filling.
+    for seed in config.section("stage1").get("seeds", list(range(10))):
+        seed_candidates = sorted(
+            (candidate for candidate in candidates
+             if candidate["source_seed"] == int(seed)),
+            key=lambda candidate: (candidate["loss"], candidate["source_generation"],
+                                   candidate["rank"]),
+        )
+        for candidate in seed_candidates[:quota_per_seed]:
+            if len(selected) >= target_count:
+                break
+            key = tuple(np.round(candidate["normalized"], 14))
+            if key not in seen:
+                seen.add(key)
+                selected.append(candidate)
+    # Fill the remaining basin budget from the best candidates over all
+    # generations, still removing duplicate normalized solutions.
+    for candidate in sorted(candidates, key=lambda item: (
+            item["loss"], item["source_seed"], item["source_generation"], item["rank"])):
+        if len(selected) >= target_count:
             break
         key = tuple(np.round(candidate["normalized"], 14))
         if key not in seen:
             seen.add(key)
             selected.append(candidate)
-    target_count = min(100, len(candidates))
     if len(selected) < target_count:
         raise RuntimeError(f"Expected {target_count} distinct basins, found {len(selected)}")
     for index, candidate in enumerate(selected[:target_count]):

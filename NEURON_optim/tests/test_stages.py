@@ -8,6 +8,7 @@ from neuron_optim.stages import (
     _payload_to_simulations,
     _save_generation_simulations,
     _simulation_payload,
+    make_basins,
 )
 
 
@@ -49,3 +50,30 @@ def test_hyper_fitness_window_config_defaults_to_100_ms():
     config = RunConfig({"data": {"root": ".", "cell": "cell"}},
                        Path("config.yaml"))
     assert config.hyperpolarizing_fitness_pre_ms == 100.0
+
+
+def test_make_basins_scans_all_stage1_generations(tmp_path):
+    config = RunConfig({
+        "parameters": {"include": ["Epas"], "exclude": []},
+        "stage1": {"seeds": [0, 1], "generations": 2,
+                   "basin_quota_per_seed": 1},
+    }, Path("config.yaml"))
+    stage1_run = tmp_path / "stage1_hyper"
+    for seed in (0, 1):
+        seed_dir = stage1_run / f"seed_{seed:03d}"
+        seed_dir.mkdir(parents=True)
+        for generation in (1, 2):
+            population = np.asarray([[
+                0.1 * (seed + 1) + 0.01 * generation
+            ], [0.8 + 0.01 * seed + 0.001 * generation]])
+            losses = np.asarray([float(generation + seed), 10.0 + generation + seed])
+            np.savez_compressed(
+                seed_dir / f"population_generation_{generation:04d}.npz",
+                population=population, losses=losses,
+            )
+
+    basins = make_basins(config, stage1_run)
+
+    assert len(basins) == 8
+    assert {record["source_generation"] for record in basins} == {1, 2}
+    assert {record["source_seed"] for record in basins} == {0, 1}

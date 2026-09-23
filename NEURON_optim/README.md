@@ -9,6 +9,10 @@ offspring, and 1 process worker for the passive and stage-1 searches. Stage 2
 retains 10 seeds, 200 generations, and 30 offspring; its study count depends
 on the number of basins produced by stage 1.
 
+See [STAGES.md](STAGES.md) for the complete Stage 0 → Stage 1 → Stage 2
+solution handoff, including how passive solutions, basins, and Stage 2 starting
+points are constructed.
+
 Hyperpolarizing trials are simulated over the existing 500 ms pre-step and
 600 ms post-step window, subject to the available recorded data. Their fitness
 and plots use the final 100 ms before the hyperpolarizing step onward. The
@@ -110,8 +114,9 @@ the checkpoint has been written.
 ## Outputs
 
 Stage 1 writes one directory per seed, a checkpoint and generation history, and
-`basins.jsonl` containing the best final-generation candidates. With the
-checked-in 3 × 20 stage-1 budget, this produces up to 60 basins. Each
+`basins.jsonl` containing selected candidates from the complete Stage 1
+history. With the checked-in Stage 1 budget, the basin cap produces up to 100
+basins. Each
 generation also writes `population_generation_XXXX.npz` and
 `simulations_generation_XXXX.npz`, containing the evaluated candidate
 parameters/losses and the corresponding per-trace simulation arrays. Plotting
