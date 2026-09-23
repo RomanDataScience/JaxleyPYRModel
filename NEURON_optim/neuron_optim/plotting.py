@@ -12,16 +12,22 @@ from pathlib import Path
 
 import numpy as np
 
-from .data import Trace
+from .data import Trace, crop_trace
 from .objective import SimulationOutput
 from .parameters import ParameterSpace
+
+
+DEPOLARIZING_STEP_WINDOW_MS = (-50.0, 100.0)
 
 
 def plot_generation(*, output_dir: Path, generation: int, stage: str,
                     traces: list[Trace], population: np.ndarray,
                     losses: np.ndarray, simulations: list[list[SimulationOutput]],
                     space: ParameterSpace, top_k: int = 10, dpi: int = 120,
-                    population_indices: np.ndarray | None = None) -> None:
+                    population_indices: np.ndarray | None = None,
+                    filename: str = "candidates.png",
+                    metadata_filename: str = "top_candidates.json",
+                    title_suffix: str = "") -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -76,6 +82,7 @@ def plot_generation(*, output_dir: Path, generation: int, stage: str,
             axis.set_title(f"rank {rank} · {trace.trace}")
             axis.legend(loc="upper right", fontsize=7)
             axis.grid(alpha=0.2)
+            axis.set_xlim(fitness_start, fitness_stop)
         axes[rank - 1, 0].set_ylabel(f"rank {rank}\nmV")
         for axis in axes[rank - 1, :]:
             axis.set_xlabel("Time from simulation window start (ms)")
@@ -83,8 +90,52 @@ def plot_generation(*, output_dir: Path, generation: int, stage: str,
                          "loss": float(losses[index]),
                          "normalized": population[index].tolist(),
                          "physical": space.physical(population[index]).tolist(),
-                         "plot": "candidates.png"})
-    figure.suptitle(f"{stage}: generation {generation} · top {len(order)} candidates")
-    figure.savefig(output_dir / "candidates.png", dpi=dpi)
+                         "plot": filename})
+    figure.suptitle(
+        f"{stage}: generation {generation} · top {len(order)} candidates{title_suffix}"
+    )
+    figure.savefig(output_dir / filename, dpi=dpi)
     plt.close(figure)
-    (output_dir / "top_candidates.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    (output_dir / metadata_filename).write_text(
+        json.dumps(metadata, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def plot_depolarizing_step_generation(*, output_dir: Path, generation: int,
+                                       traces: list[Trace], population: np.ndarray,
+                                       losses: np.ndarray,
+                                       simulations: list[list[SimulationOutput]],
+                                       space: ParameterSpace, top_k: int = 10,
+                                       dpi: int = 120,
+                                       population_indices: np.ndarray | None = None) -> None:
+    """Plot depolarizing candidates around the current-step transition.
+
+    The requested window is relative to each trace's current-step onset, while
+    retaining the original simulation-time coordinate used by the cached
+    simulator outputs.
+    """
+    start_offset, stop_offset = DEPOLARIZING_STEP_WINDOW_MS
+    windowed_traces = [
+        trace if trace.protocol != "depolarizing_step" else crop_trace(
+            trace,
+            start_ms=trace.epoch_start_ms + start_offset,
+            stop_ms=trace.epoch_start_ms + stop_offset,
+        )
+        for trace in traces
+    ]
+    plot_generation(
+        output_dir=output_dir,
+        generation=generation,
+        stage="depolarizing",
+        traces=windowed_traces,
+        population=population,
+        losses=losses,
+        simulations=simulations,
+        space=space,
+        top_k=top_k,
+        dpi=dpi,
+        population_indices=population_indices,
+        filename="depolarizing_step_candidates.png",
+        metadata_filename="depolarizing_step_top_candidates.json",
+        title_suffix=" · −50 to +100 ms around step",
+    )

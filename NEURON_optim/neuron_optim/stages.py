@@ -21,7 +21,7 @@ from .objective import (
     hyperpolarizing_objective,
 )
 from .parameters import DEFAULTS, PASSIVE, ParameterSpace, make_parameter_space, passive_model_values
-from .plotting import plot_generation
+from .plotting import plot_depolarizing_step_generation, plot_generation
 from .simulator import make_simulator
 
 
@@ -557,6 +557,15 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                                         space=space, top_k=top_k,
                                         population_indices=top_indices,
                                         dpi=int(plotting.get("dpi", 120)))
+                        if stage == "depolarizing":
+                            plot_depolarizing_step_generation(
+                                output_dir=run_dir / "plots", generation=generation,
+                                traces=fitness_traces, population=plot_population,
+                                losses=plot_losses, simulations=converted,
+                                space=space, top_k=top_k,
+                                population_indices=top_indices,
+                                dpi=int(plotting.get("dpi", 120)),
+                            )
                 except Exception:
                     LOGGER.exception("Plotting failed for generation %04d; continuing", generation)
     finally:
