@@ -16,3 +16,4 @@ logs/
 *.pid
 .smoke*
 *smoke_*
+*.zip
