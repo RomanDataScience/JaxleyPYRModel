@@ -342,6 +342,7 @@ def depolarizing_objective(
     sigma_plateau_mV: float = 2.0, sigma_recovery_mV: float = 2.0,
     sigma_terminal_mV: float = 2.0, sigma_firing_rate_hz: float = 5.0,
     sigma_spike_symmetry: float = 0.1,
+    sigma_spike_height_mV: float = 5.0,
     weights: Mapping[str, float] | None = None,
     threshold_mV: float = -20.0, refractory_ms: float = 2.0,
     prominence_mV: float = 5.0, spike_window_ms: float = 5.0,
@@ -352,9 +353,10 @@ def depolarizing_objective(
     context: ObjectiveContext | None = None,
     include_details: bool = True,
 ) -> ObjectiveResult:
-    component_weights = {"trajectory": 1.0, "spike_shape": 3.0,
-                         "spike_symmetry": 1.0, "plateau": 2.0,
-                         "return_baseline": 3.0, "firing_rate": 1.0}
+    component_weights = {"trajectory": 12.0, "spike_shape": 10.0,
+                         "spike_symmetry": 10.0, "spike_height": 10.0,
+                         "plateau": 24.0,
+                         "return_baseline": 24.0, "firing_rate": 30.0}
     component_weights.update(weights or {})
     context = context or build_objective_context(
         traces, stage="depolarizing", threshold_mV=threshold_mV,
@@ -385,6 +387,20 @@ def depolarizing_objective(
         l_symmetry, symmetry_details = _matched_spike_symmetry_loss(
             trace, sim, exp_spikes, sim_spikes, window_ms=spike_window_ms,
             sigma=sigma_spike_symmetry, dt_ms=features.dt_ms)
+        simulated_baseline = float(np.median(sim[features.pre_mask]))
+        height_pairs = min(len(exp_spikes), len(sim_spikes))
+        experimental_heights = [
+            float(spike.peak_mV - features.baseline_mV)
+            for spike in exp_spikes[:height_pairs]
+        ]
+        simulated_heights = [
+            float(spike.peak_mV - simulated_baseline)
+            for spike in sim_spikes[:height_pairs]
+        ]
+        l_height = (_kernel_loss(
+            np.asarray(simulated_heights), np.asarray(experimental_heights),
+            sigma_spike_height_mV,
+        ) if height_pairs else 0.0)
         experimental_rate_hz = _step_firing_rate_hz(trace, exp_spikes)
         simulated_rate_hz = _step_firing_rate_hz(trace, sim_spikes)
         l_firing_rate = _kernel_loss(
@@ -410,7 +426,8 @@ def depolarizing_objective(
         l_return = return_alpha * l_recovery + (1.0 - return_alpha) * l_terminal
 
         components = {"trajectory": l_trajectory, "spike_shape": l_spike,
-                      "spike_symmetry": l_symmetry, "plateau": l_plateau,
+                      "spike_symmetry": l_symmetry, "spike_height": l_height,
+                      "plateau": l_plateau,
                       "return_baseline": l_return,
                       "firing_rate": l_firing_rate}
         total = sum(component_weights[key] * components[key] for key in components) / sum(component_weights.values())
@@ -427,6 +444,14 @@ def depolarizing_objective(
                                     "loss": l_firing_rate,
                                 },
                                 "spike_symmetry": symmetry_details,
+                                "spike_height_mV": {
+                                    "experimental": experimental_heights,
+                                    "simulated": simulated_heights,
+                                    "error": [simulated - experimental for simulated, experimental
+                                              in zip(simulated_heights, experimental_heights,
+                                                     strict=True)],
+                                    "loss": l_height,
+                                },
                                 "spikes_experimental_ms": [s.peak_ms for s in exp_spikes],
                                 "spikes_simulated_ms": [s.peak_ms for s in sim_spikes_all],
                                 "out_of_window_spikes_ms": [s.peak_ms for s in outside],
