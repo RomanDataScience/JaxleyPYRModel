@@ -112,6 +112,30 @@ def test_depolarizing_firing_rate_component_matches_equal_rates():
     assert rate["loss"] == 0.0
 
 
+def test_depolarizing_spike_symmetry_penalizes_rise_fall_mismatch():
+    observed = trace("depolarizing_step")
+    center = 600
+    experimental = observed.voltage_mV.copy()
+    experimental[center - 3:center + 5] = [-45.0, -25.0, 10.0, 35.0,
+                                             5.0, -10.0, -30.0, -45.0]
+    simulated = observed.voltage_mV.copy()
+    simulated[center - 3:center + 5] = [-45.0, -25.0, 10.0, 35.0,
+                                          10.0, -25.0, -45.0, -45.0]
+    observed = Trace(observed.cell, observed.trace, observed.protocol,
+                     observed.time_ms, experimental, observed.current_nA,
+                     observed.epoch_start_ms, observed.epoch_stop_ms)
+    result = depolarizing_objective(
+        [observed], [SimulationOutput(observed.time_ms, simulated)],
+        prominence_mV=1.0, unmatched_spike_penalty=0.0,
+        weights={"trajectory": 0.0, "spike_shape": 0.0,
+                 "spike_symmetry": 1.0, "plateau": 0.0,
+                 "return_baseline": 0.0, "firing_rate": 0.0},
+    )
+    symmetry = result.details["traces"][0]["spike_symmetry"]
+    assert symmetry["matched"] == 1
+    assert symmetry["loss"] > 0.0
+
+
 def test_precomputed_objective_context_preserves_loss():
     observed = trace("depolarizing_step")
     simulated = SimulationOutput(observed.time_ms, observed.voltage_mV.copy())

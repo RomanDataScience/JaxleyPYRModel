@@ -56,7 +56,8 @@ stage2:
   sigma_recovery_mV: 2.0
   sigma_terminal_mV: 2.0
   sigma_firing_rate_hz: 5.0
-  weights: {trajectory: 1.0, spike_shape: 3.0, plateau: 2.0, return_baseline: 3.0, firing_rate: 1.0}
+  sigma_spike_symmetry: 0.1
+  weights: {trajectory: 1.0, spike_shape: 3.0, spike_symmetry: 1.0, plateau: 2.0, return_baseline: 3.0, firing_rate: 1.0}
   threshold_mV: -20.0
   refractory_ms: 2.0
   prominence_mV: 5.0

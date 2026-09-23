@@ -301,11 +301,47 @@ def _step_firing_rate_hz(trace: Trace, spikes: list[Spike]) -> float:
     return len(spikes) / (duration_ms / 1000.0)
 
 
+def _spike_symmetry_index(trace: Trace, voltage_mV: np.ndarray, spike: Spike,
+                          *, window_ms: float, dt_ms: float) -> float:
+    """Measure normalized left/right voltage asymmetry around one spike."""
+    relative = np.arange(dt_ms, window_ms + 0.5 * dt_ms, dt_ms)
+    left = np.interp(spike.peak_ms - relative, trace.time_ms, voltage_mV)
+    right = np.interp(spike.peak_ms + relative, trace.time_ms, voltage_mV)
+    pre_mask = trace.time_ms <= trace.epoch_start_ms
+    baseline = float(np.median(voltage_mV[pre_mask])) if pre_mask.any() else float(voltage_mV[0])
+    peak = float(np.interp(spike.peak_ms, trace.time_ms, voltage_mV))
+    amplitude = max(abs(peak - baseline), 1.0e-6)
+    return float(np.mean(np.abs(left - right)) / amplitude)
+
+
+def _matched_spike_symmetry_loss(
+    trace: Trace, sim: np.ndarray, exp_spikes: list[Spike],
+    sim_spikes: list[Spike], *, window_ms: float, sigma: float,
+    dt_ms: float,
+) -> tuple[float, dict]:
+    pairs = min(len(exp_spikes), len(sim_spikes))
+    experimental = [
+        _spike_symmetry_index(trace, trace.voltage_mV, spike,
+                              window_ms=window_ms, dt_ms=dt_ms)
+        for spike in exp_spikes[:pairs]
+    ]
+    simulated = [
+        _spike_symmetry_index(trace, sim, spike,
+                              window_ms=window_ms, dt_ms=dt_ms)
+        for spike in sim_spikes[:pairs]
+    ]
+    loss = (_kernel_loss(np.asarray(simulated), np.asarray(experimental), sigma)
+            if pairs else 0.0)
+    return loss, {"matched": pairs, "experimental": experimental,
+                  "simulated": simulated, "loss": loss}
+
+
 def depolarizing_objective(
     traces: Iterable[Trace], simulations: Iterable[SimulationOutput], *,
     sigma_trajectory_mV: float = 2.0, sigma_spike_mV: float = 2.0,
     sigma_plateau_mV: float = 2.0, sigma_recovery_mV: float = 2.0,
     sigma_terminal_mV: float = 2.0, sigma_firing_rate_hz: float = 5.0,
+    sigma_spike_symmetry: float = 0.1,
     weights: Mapping[str, float] | None = None,
     threshold_mV: float = -20.0, refractory_ms: float = 2.0,
     prominence_mV: float = 5.0, spike_window_ms: float = 5.0,
@@ -317,8 +353,8 @@ def depolarizing_objective(
     include_details: bool = True,
 ) -> ObjectiveResult:
     component_weights = {"trajectory": 1.0, "spike_shape": 3.0,
-                         "plateau": 2.0, "return_baseline": 3.0,
-                         "firing_rate": 1.0}
+                         "spike_symmetry": 1.0, "plateau": 2.0,
+                         "return_baseline": 3.0, "firing_rate": 1.0}
     component_weights.update(weights or {})
     context = context or build_objective_context(
         traces, stage="depolarizing", threshold_mV=threshold_mV,
@@ -346,6 +382,9 @@ def depolarizing_objective(
             trace, sim, exp_spikes, sim_spikes, sigma_mV=sigma_spike_mV,
             window_ms=spike_window_ms, unmatched_penalty=unmatched_spike_penalty,
             dt_ms=features.dt_ms)
+        l_symmetry, symmetry_details = _matched_spike_symmetry_loss(
+            trace, sim, exp_spikes, sim_spikes, window_ms=spike_window_ms,
+            sigma=sigma_spike_symmetry, dt_ms=features.dt_ms)
         experimental_rate_hz = _step_firing_rate_hz(trace, exp_spikes)
         simulated_rate_hz = _step_firing_rate_hz(trace, sim_spikes)
         l_firing_rate = _kernel_loss(
@@ -371,7 +410,8 @@ def depolarizing_objective(
         l_return = return_alpha * l_recovery + (1.0 - return_alpha) * l_terminal
 
         components = {"trajectory": l_trajectory, "spike_shape": l_spike,
-                      "plateau": l_plateau, "return_baseline": l_return,
+                      "spike_symmetry": l_symmetry, "plateau": l_plateau,
+                      "return_baseline": l_return,
                       "firing_rate": l_firing_rate}
         total = sum(component_weights[key] * components[key] for key in components) / sum(component_weights.values())
         penalized = len(outside) > 1
@@ -386,6 +426,7 @@ def depolarizing_objective(
                                     "error": simulated_rate_hz - experimental_rate_hz,
                                     "loss": l_firing_rate,
                                 },
+                                "spike_symmetry": symmetry_details,
                                 "spikes_experimental_ms": [s.peak_ms for s in exp_spikes],
                                 "spikes_simulated_ms": [s.peak_ms for s in sim_spikes_all],
                                 "out_of_window_spikes_ms": [s.peak_ms for s in outside],
