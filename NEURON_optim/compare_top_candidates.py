@@ -81,7 +81,7 @@ def compare(candidates_path: Path, config_path: Path, output_dir: Path) -> None:
         config.data_root,
         cell=config.cell,
         protocol="hyperpolarizing_pulse",
-        trace_names=config.trace_names,
+        trace_names=config.hyperpolarizing_trace_names,
         pre_ms=config.simulation_pre_ms,
         post_ms=config.simulation_post_ms,
         full_trial=True,

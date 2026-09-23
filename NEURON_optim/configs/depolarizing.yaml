@@ -6,7 +6,6 @@ data:
   trace_names: [v75ctrl, v76ctrl, v77ctrl, v78ctrl]
 
 validation:
-  current_trace: v75ctrl
   expected_before_pulse_nA: 0.081246033
   expected_during_pulse_nA: 0.049997559
   current_tolerance_nA: 0.000001

@@ -52,6 +52,23 @@ def test_hyper_fitness_window_config_defaults_to_100_ms():
     assert config.hyperpolarizing_fitness_pre_ms == 100.0
 
 
+def test_hyperpolarizing_trace_selection_defaults_to_first_trace():
+    config = RunConfig({
+        "data": {"root": ".", "cell": "cell",
+                 "trace_names": ["first", "second", "third", "fourth"]},
+    }, Path("config.yaml"))
+    assert config.hyperpolarizing_trace_names == ("first",)
+
+
+def test_hyperpolarizing_trace_selection_uses_configured_ordinal():
+    config = RunConfig({
+        "data": {"root": ".", "cell": "cell",
+                 "trace_names": ["first", "second", "third", "fourth"],
+                 "hyperpolarizing_trace_index": 2},
+    }, Path("config.yaml"))
+    assert config.hyperpolarizing_trace_names == ("third",)
+
+
 def test_make_basins_scans_all_stage1_generations(tmp_path):
     config = RunConfig({
         "parameters": {"include": ["Epas"], "exclude": []},

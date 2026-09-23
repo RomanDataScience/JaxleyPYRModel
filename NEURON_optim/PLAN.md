@@ -11,10 +11,11 @@ Create a self-contained optimization pipeline under `NEURON_optim/` that:
 
 1. Uses the original Combe2023 model through NEURON, including its HOC
    morphology and compiled MOD mechanisms.
-2. Fits the four hyperpolarizing recordings (`v75ctrl`, `v76ctrl`, `v77ctrl`,
-   and `v78ctrl`) with one scalar CMA-ES objective that makes simulated voltage
-   (`v_sim`) match measured membrane voltage (`v_memb`), with extra emphasis on
-   the hyperpolarizing step and recovery afterward.
+2. Fits the first configured hyperpolarizing recording with one scalar CMA-ES
+   objective that makes simulated voltage (`v_sim`) match measured membrane
+   voltage (`v_memb`), with extra emphasis on the hyperpolarizing step and
+   recovery afterward. The four configured traces remain used for the
+   depolarizing stage.
 3. Runs the hyperpolarizing search for 10 deterministic seeds, 200 generations,
    and 30 offspring per generation.
 4. Retains 100 stage-1 parameter vectors as initialization basins.
@@ -44,8 +45,10 @@ an equivalent activated environment.
 - Experimental segmented traces and epoch metadata in
   `JaxleyModel/Experimental_currentClamp_Analysis/Segmented_Traces/`.
 
-The four signals are paired by trace name. Their metadata supplies the pulse
-onset, offset, current waveform, voltage waveform, time grid, and trial end.
+The four signals are paired by trace name for the depolarizing stage. The
+first configured signal is used for the hyperpolarizing stage. Their metadata
+supplies the pulse onset, offset, current waveform, voltage waveform, time grid,
+and trial end.
 The implementation must resolve paths relative to the repository, not rely on
 absolute paths embedded in `segment_metadata.csv`.
 
@@ -137,7 +140,7 @@ large objective penalty and will not advance the optimizer with NaN/Inf.
 
 ## Trace windows and alignment
 
-For each hyperpolarizing trace:
+For the representative hyperpolarizing trace:
 
 - detect the current-step onset from the metadata/current waveform;
 - set `simulation_start = step_onset - 800 ms`;
@@ -159,7 +162,7 @@ length after alignment, finite values, and the current-unit conversion.
 
 ### Objective
 
-For each of the four hyperpolarizing traces, calculate a weighted
+For the representative hyperpolarizing trace, calculate a weighted
 baseline-centered voltage-shape similarity kernel between `Delta_v_sim(t)` and
 `Delta_v_exp(t)`, together with a separate absolute pre-step voltage-offset
 loss. Here `Delta_v` is voltage relative to each candidate/trace's pre-step
@@ -171,7 +174,7 @@ similarity(t) = exp(-(e(t)^2) / sigma_hyper_mV^2)
 L_region = 1 - weighted_mean(similarity(t))
 L_trace = (w_pre * L_pre + w_step * L_step + w_recovery * L_recovery)
            / (w_pre + w_step + w_recovery)
-L_delta_v = mean(L_trace over the four traces)
+L_delta_v = L_trace
 b_exp = median(v_exp before the step)
 b_sim = median(v_sim before the step)
 L_offset = 1 - exp(-((b_sim - b_exp)^2) / sigma_offset_mV^2)
@@ -194,8 +197,7 @@ not overwhelm the response. The default regions are:
 The exact weights, voltage scales, and optional robust loss will live in the
 config. The implementation saves region-wise ΔV losses, the voltage-offset
 loss, and the scalar objective so it is clear whether a candidate improved the
-shape or absolute voltage alignment. Each trace contributes equally after its
-regional averages are computed.
+shape or absolute voltage alignment.
 
 The exponential width `sigma_hyper_mV` is a required fixed configuration value
 and will be recorded in the run manifest. It will not be estimated from the
@@ -205,7 +207,8 @@ candidate population.
 
 Stage 1 will include a hard spike constraint. A spike detector with a
 configurable voltage threshold, refractory period, and optional minimum
-prominence will be applied to each simulated hyperpolarizing trace. If any
+prominence will be applied to the simulated representative hyperpolarizing
+trace. If any
 spike is detected inside the hyperpolarizing stimulus interval
 `[step_onset, step_offset]`, the candidate will receive the configured finite
 `hyper_spike_penalty` instead of its ordinary objective value. The result will
@@ -251,7 +254,7 @@ Each basin record will contain:
 - a stable basin ID;
 - source seed and source generation;
 - normalized and physical parameter vectors;
-- total and region-wise hyperpolarizing losses for all four traces;
+- total and region-wise hyperpolarizing losses for the representative trace;
 - rank within its source seed;
 - model/config/data hashes.
 
@@ -494,11 +497,11 @@ loss_breakdown.json
 
 When `plotting.enabled` is true (the default), each completed generation also
 writes `plots/generation_XXXX/rank_XX.png` for the 10 lowest-loss candidates.
-Each figure overlays measured and simulated voltage for all four traces and
-marks the stimulus interval. Plot capture runs after ordinary offspring
-evaluation and does not alter CMA-ES state. It adds four NEURON simulations
-per plotted candidate and can be disabled for performance-focused diagnostic
-runs.
+Each figure overlays measured and simulated voltage for the traces selected
+for that stage and marks the stimulus interval. Plot capture runs after
+ordinary offspring evaluation and does not alter CMA-ES state. It adds one
+NEURON simulation per plotted candidate in Stage 1 and four in Stage 2, and can
+be disabled for performance-focused diagnostic runs.
 
 The top-level run will additionally contain `basins.jsonl`, a stage-1 index,
 and a stage-2 index mapping each `(basin_id, seed)` to its output directory.

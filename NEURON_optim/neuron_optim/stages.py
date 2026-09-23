@@ -211,7 +211,7 @@ def _load_traces(config: RunConfig, stage: str) -> list[Trace]:
     if stage in {"passive", "hyper"}:
         return load_protocol_traces(config.data_root, cell=config.cell,
                                     protocol="hyperpolarizing_pulse",
-                                    trace_names=config.trace_names,
+                                    trace_names=config.hyperpolarizing_trace_names,
                                     pre_ms=config.simulation_pre_ms,
                                     post_ms=config.simulation_post_ms,
                                     full_trial=True, center_current=False)
@@ -238,7 +238,7 @@ def _fitness_traces(config: RunConfig, stage: str,
 def validate_current_replay(config: RunConfig, output_path: Path | None = None) -> dict[str, Any]:
     """Run one passive-only trace and record the raw-current replay check."""
     validation = config.raw.get("validation", {})
-    trace_name = str(validation.get("current_trace", config.trace_names[0]))
+    trace_name = config.hyperpolarizing_trace_names[0]
     traces = load_protocol_traces(
         config.data_root,
         cell=config.cell,

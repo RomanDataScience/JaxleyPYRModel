@@ -24,7 +24,8 @@ explicit absolute pre-step voltage-offset term; both component weights are
 configurable in the stage-1 section.
 `runtime.hyperpolarizing_fitness_pre_ms` controls that scoring window without
 changing the simulation duration. Depolarizing trials retain the full prepared
-trial window.
+trial window. The checked-in hyperpolarizing configs use trace index `0` as the
+representative trace; depolarizing trials still use all four configured traces.
 
 ## Environment
 
@@ -60,7 +61,7 @@ conda run --name Jaxley \
 ```
 
 The hyperpolarizing workflow begins with a passive-only pre-calibration. It
-first replays one raw current trace and records the pre-pulse and pulse
+uses one representative raw current trace and records the pre-pulse and pulse
 current medians, then fits only passive parameters with all active
 conductances disabled. The subsequent full-model hyperpolarizing fits start
 from the best passive solution, with deterministic ±15% perturbations applied

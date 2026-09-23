@@ -46,9 +46,11 @@ Each Stage 1 seed then runs an independent full-model CMA-ES search against the
 hyperpolarizing objective. The Stage 1 studies do not start from the same exact
 point because their passive perturbations are seed-dependent.
 
-Stage 1 evaluates all four configured hyperpolarizing recordings. Its objective
-matches the voltage trajectory across pre-step, stimulus, and recovery regions,
-adds a deflection term, and penalizes spikes during a hyperpolarizing trial.
+Stage 1 evaluates the configured representative hyperpolarizing recording
+(`data.hyperpolarizing_trace_index: 0` in the checked-in configs). Its objective matches the voltage
+trajectory across pre-step, stimulus, and recovery regions, adds a deflection
+term, and penalizes spikes during a hyperpolarizing trial. The four configured
+trace names remain available for Stage 2's depolarizing objective.
 
 At the end of Stage 1, all saved generations from every Stage 1 seed are used
 to create basin records. The code first reserves up to

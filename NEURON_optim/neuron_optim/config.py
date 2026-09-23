@@ -27,6 +27,21 @@ class RunConfig:
         return tuple(self.raw["data"].get("trace_names", ["v75ctrl", "v76ctrl", "v77ctrl", "v78ctrl"]))
 
     @property
+    def hyperpolarizing_trace_index(self) -> int:
+        """Ordinal trace selected by the passive and hyperpolarizing stages."""
+        return int(self.raw["data"].get("hyperpolarizing_trace_index", 0))
+
+    @property
+    def hyperpolarizing_trace_names(self) -> tuple[str, ...]:
+        """Resolve the selected hyperpolarizing trace from the trace list.
+
+        The hyperpolarizing current protocol is shared across the configured
+        traces, so the default index is zero. Depolarizing stages continue to
+        use all ``trace_names``.
+        """
+        return (self.trace_names[self.hyperpolarizing_trace_index],)
+
+    @property
     def data_root(self) -> Path:
         path = Path(self.raw["data"]["root"])
         return (self.path.parent / path).resolve() if not path.is_absolute() else path
@@ -83,6 +98,12 @@ class RunConfig:
             errors.append(str(exc))
         if len(self.trace_names) != 4:
             errors.append("data.trace_names must contain exactly four traces")
+        try:
+            hyper_index = self.hyperpolarizing_trace_index
+            if not 0 <= hyper_index < len(self.trace_names):
+                errors.append("data.hyperpolarizing_trace_index must select a trace by valid index")
+        except (TypeError, ValueError):
+            errors.append("data.hyperpolarizing_trace_index must be an integer")
         if self.simulation_pre_ms < 0:
             errors.append("runtime.simulation_pre_ms must be >= 0")
         if self.simulation_post_ms < 0:
