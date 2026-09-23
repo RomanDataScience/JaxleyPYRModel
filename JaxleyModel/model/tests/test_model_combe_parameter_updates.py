@@ -82,7 +82,7 @@ EXPECTED_TARGETS = {
     ),
     "mykca_init": (("mykca_gkbar", "soma"), ("mykca_gkbar", "apical")),
     "soma_kca": (("kca_gbar", "soma"), ("kca_gbar", "apical")),
-    "persist": (("na16a_persist", "soma"), ("na16a_persist", "apical")),
+    "persist": (("na16a_vgp_persist", "soma"), ("na16a_vgp_persist", "apical")),
     "AXNa": (("nax_gbar", "axon"),),
     "gkdrsoma": (("kd_gbar", "soma"),),
     "gkdrdend": (("kd_gbar", "basal"),),
@@ -90,17 +90,17 @@ EXPECTED_TARGETS = {
     "axon_kap": (("kap_gkabar", "axon"),),
     "basal_kap": (("kap_gkabar", "basal"),),
     "soma_kad": (("kad_gkabar", "apical"),),
-    "gna": (("na16a_gbar", "soma"), ("nax_gbar", "axon")),
+    "gna": (("na16a_vgp_gbar", "soma"), ("nax_gbar", "axon")),
     "axongkdr": (("kd_gbar", "axon"),),
-    "gnadend": (("na16a_gbar", "apical"), ("na3dend_gbar", "basal")),
+    "gnadend": (("na16a_vgp_gbar", "apical"), ("na3dend_gbar", "basal")),
     "gkdrapical": (("kd_gbar", "apical"),),
     "gkv2soma": (("Kv2like_gbar", "soma"),),
     "gkv2": (("Kv2like_gbar", "apical"), ("Kv2like_gbar", "basal")),
     "gkv2axon": (("Kv2like_gbar", "axon"),),
     "gkv2scale": (("Kv2like_gbar", "apical"), ("Kv2like_gbar", "basal")),
     "scale_Na_conduct": (
-        ("na16a_gbar", "soma"),
-        ("na16a_gbar", "apical"),
+        ("na16a_vgp_gbar", "soma"),
+        ("na16a_vgp_gbar", "apical"),
     ),
     "icangbar": (("icand_gbar", "soma"), ("icand_gbar", "apical")),
     "kd_deactivation_tau_scale": (
@@ -110,14 +110,14 @@ EXPECTED_TARGETS = {
         ("kd_deactivation_tau_scale", "basal"),
     ),
     "nat_fast_inactivation_tau_scale": (
-        ("na16a_fast_inactivation_tau_scale", "soma"),
-        ("na16a_fast_inactivation_tau_scale", "apical"),
+        ("na16a_vgp_fast_inactivation_tau_scale", "soma"),
+        ("na16a_vgp_fast_inactivation_tau_scale", "apical"),
         ("nax_fast_inactivation_tau_scale", "axon"),
         ("na3dend_fast_inactivation_tau_scale", "basal"),
     ),
     "nat_slow_recovery_tau_scale": (
-        ("na16a_slow_recovery_tau_scale", "soma"),
-        ("na16a_slow_recovery_tau_scale", "apical"),
+        ("na16a_vgp_slow_recovery_tau_scale", "soma"),
+        ("na16a_vgp_slow_recovery_tau_scale", "apical"),
     ),
     "h_tau_scale": (
         ("h_tau_scale", "soma"),
@@ -180,8 +180,8 @@ def test_reference_values_are_bitwise_identity(hoc_cell):
     updates = set_fitted_parameters(hoc_cell, keys, values)
 
     assert updates
-    assert "na16a_dist" not in {update["key"] for update in updates}
-    assert "na16a_C1O1v2" not in {update["key"] for update in updates}
+    assert "na16a_vgp_dist" not in {update["key"] for update in updates}
+    assert "na16a_vgp_C1O1v2" not in {update["key"] for update in updates}
     for update in updates:
         assert np.array_equal(np.asarray(update["val"]), _baseline(hoc_cell, update))
 
@@ -331,7 +331,7 @@ def test_coupled_and_zero_reference_rules(hoc_cell):
     soma_na = next(
         update
         for update in updates
-        if update["key"] == "na16a_gbar"
+        if update["key"] == "na16a_vgp_gbar"
         and _group_for_update(hoc_cell, update) == "soma"
     )
     np.testing.assert_allclose(

@@ -16,6 +16,7 @@ from .km import Km
 from .kv2like import Kv2like
 from .na3dend import Na3Dend
 from .nav16_a import Nav16A
+from .nav16_a_vgated_persist import Nav16AVGP
 from .nax import Nax
 
 
@@ -38,6 +39,7 @@ __all__ = [
     "MyKca",
     "Na3Dend",
     "Nav16A",
+    "Nav16AVGP",
     "Nax",
     "enable_cal4_diffusion",
 ]

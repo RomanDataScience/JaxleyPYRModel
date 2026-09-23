@@ -59,6 +59,34 @@ def _delete_sections() -> None:
         h.delete_section(sec=section)
 
 
+def _replace_nav16a_with_vgp() -> None:
+    """Replace HOC's legacy Nav1.6 mechanism with the gated-persist variant.
+
+    The Combe setup assigns the spatial Nav1.6 profile while building the
+    morphology. Preserve those RANGE values when swapping the mechanism so the
+    only behavioral change is the voltage gate on the ``persist`` transition.
+    """
+    for section in list(h.allsec()):
+        old_values = []
+        for segment in section:
+            mechanism = getattr(segment, "na16a", None)
+            if mechanism is None:
+                old_values = []
+                break
+            old_values.append({
+                name: float(getattr(mechanism, name))
+                for name in ("gbar", "dist", "persist", "slowdown", "C1O1v2", "I2init")
+            })
+        if not old_values:
+            continue
+        section.uninsert("na16a")
+        section.insert("na16a_vgp")
+        for segment, values in zip(section, old_values, strict=True):
+            mechanism = segment.na16a_vgp
+            for name, value in values.items():
+                setattr(mechanism, name, value)
+
+
 def _load_mechanisms(mod_dir: Path = MOD_DIR) -> None:
     mod_dir = mod_dir.resolve()
     if mod_dir in _LOADED_MECHANISM_DIRS:
@@ -126,6 +154,11 @@ def build_combe_neuron_model(
             h("oblique_sections(apical_tip_list,apical_trunk_list,num_tips)")
             h.xopen("lib/vector-distance.hoc")
             h.xopen("cell_setup_pc2b_CCh_driven.hoc")
+
+            # Use the voltage-gated persistent Nav1.6 variant. The swap keeps
+            # the original HOC spatial profile for dist/slowdown and replaces
+            # only the mechanism implementation used by the optimizer.
+            _replace_nav16a_with_vgp()
 
             # The original Combe setup inserts the legacy ``nap`` mechanism
             # with zero conductance. Persistent sodium is already represented

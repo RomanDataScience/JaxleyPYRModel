@@ -57,7 +57,10 @@ def ensure_patched_mod_dir() -> Path:
     lock_path = target / ".build.lock"
     with lock_path.open("w") as lock_handle:
         fcntl.flock(lock_handle, fcntl.LOCK_EX)
-        if list(target.glob("*/special")):
+        # The gated Nav1.6 mechanism was added after the original cache could
+        # already exist. Require its copied source before reusing a compiled
+        # cache, otherwise NEURON would silently keep loading only ``na16a``.
+        if list(target.glob("*/special")) and (target / "Nav16_a_vgated_persist.mod").exists():
             return target
         for path in target.glob("*.mod"):
             path.unlink()
