@@ -27,6 +27,7 @@ from .simulator import make_simulator
 
 LOGGER = logging.getLogger(__name__)
 _WORKER: dict[str, Any] = {}
+HYPER_OBJECTIVE_VERSION = "absolute-voltage-v1"
 
 
 def _init_worker(stage: str, simulation_traces: list[Trace], fitness_traces: list[Trace],
@@ -330,7 +331,9 @@ def run_passive_precalibration(config: RunConfig, output_root: Path) -> dict[str
 
     best_path = passive_root / "passive_best.json"
     if best_path.exists():
-        return dict(json.loads(best_path.read_text(encoding="utf-8"))["physical_by_name"])
+        saved_best = json.loads(best_path.read_text(encoding="utf-8"))
+        if saved_best.get("objective_version") == HYPER_OBJECTIVE_VERSION:
+            return dict(saved_best["physical_by_name"])
 
     results = []
     for seed in config.section("passive").get("seeds", [0]):
@@ -345,6 +348,7 @@ def run_passive_precalibration(config: RunConfig, output_root: Path) -> dict[str
     loss, seed, result = min(results, key=lambda item: item[0])
     best = {
         "stage": "passive",
+        "objective_version": HYPER_OBJECTIVE_VERSION,
         "best_seed": seed,
         "loss": loss,
         "physical_by_name": result["physical_by_name"],
@@ -455,8 +459,11 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
     fitness_traces = _fitness_traces(config, stage, simulation_traces)
     run_dir.mkdir(parents=True, exist_ok=True)
     _study_manifest(config, stage, seed, space, run_dir, basin_id, initial_mean)
+    objective_version = (HYPER_OBJECTIVE_VERSION
+                         if stage in {"passive", "hyper"}
+                         else "depolarizing-v1")
     compatibility = (f"{config.hash()}:{stage}:{seed}:{basin_id}:{space.keys}:"
-                     "fitness-window-v2")
+                     f"fitness-window-v2:{objective_version}")
     checkpoint_dir = run_dir / "checkpoint"
     optimizer = CMAES.load(checkpoint_dir, seed=seed, compatibility_hash=compatibility)
     resumed = optimizer is not None

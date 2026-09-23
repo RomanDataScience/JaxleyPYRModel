@@ -193,17 +193,21 @@ def hyperpolarizing_objective(
         spikes = detect_spikes(trace.time_ms, simulated, threshold_mV=threshold_mV,
                                refractory_ms=refractory_ms, prominence_mV=prominence_mV,
                                dt_ms=features.dt_ms)
-        simulated_baseline = float(np.median(simulated[features.pre_mask]))
         experimental_centered = features.experimental_centered
+        simulated_baseline = float(np.median(simulated[features.pre_mask]))
         simulated_centered = simulated - simulated_baseline
         in_step = [spike for spike in spikes
                    if trace.epoch_start_ms <= spike.peak_ms <= trace.epoch_stop_ms]
         losses: dict[str, float] = {}
+        # Compare absolute voltage for the trajectory terms. A baseline shift
+        # is a real fitting error for the passive and hyperpolarizing stages.
+        # The separate deflection term below remains baseline-relative because
+        # it measures the response to the pulse.
         for region, mask in (("pre", features.pre_mask),
                              ("step", features.step_mask),
                              ("recovery", features.recovery_mask)):
             losses[region] = _kernel_loss(
-                simulated_centered[mask], experimental_centered[mask], sigma_mV
+                simulated[mask], trace.voltage_mV[mask], sigma_mV
             )
         step_mask = features.step_mask
         if not step_mask.any():

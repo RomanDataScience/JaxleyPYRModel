@@ -64,18 +64,13 @@ def plot_generation(*, output_dir: Path, generation: int, stage: str,
             plot_trace_voltage = trace.voltage_mV[experimental_mask]
             plot_sim_time = simulation.time_ms[simulated_mask]
             plot_sim_voltage = simulation.voltage_mV[simulated_mask]
-            if stage == "hyper":
-                pre_exp = plot_trace_time <= trace.epoch_start_ms
-                pre_sim = plot_sim_time <= trace.epoch_start_ms
-                exp_baseline = float(np.median(plot_trace_voltage[pre_exp]))
-                sim_baseline = float(np.median(plot_sim_voltage[pre_sim]))
-                exp_voltage = plot_trace_voltage - exp_baseline
-                sim_voltage = plot_sim_voltage - sim_baseline
-                ylabel = "ΔV (mV)"
-            else:
-                exp_voltage = plot_trace_voltage
-                sim_voltage = plot_sim_voltage
-                ylabel = "mV"
+            # Keep plots in the same absolute-voltage space used by the
+            # hyperpolarizing/passive objective. Baseline offsets are part of
+            # the fit, so centering would make the visual ranking disagree
+            # with the optimizer.
+            exp_voltage = plot_trace_voltage
+            sim_voltage = plot_sim_voltage
+            ylabel = "mV"
             axis.plot(plot_trace_time, exp_voltage, color="black", linewidth=0.8, label="v_exp")
             axis.plot(plot_sim_time, sim_voltage, color="#d62728", linewidth=0.8, label="v_sim")
             axis.axvspan(trace.epoch_start_ms, trace.epoch_stop_ms, color="#9ecae1", alpha=0.25)
@@ -83,7 +78,7 @@ def plot_generation(*, output_dir: Path, generation: int, stage: str,
             axis.set_title(f"rank {rank} · {trace.trace}")
             axis.legend(loc="upper right", fontsize=7)
             axis.grid(alpha=0.2)
-        axes[rank - 1, 0].set_ylabel(f"rank {rank}\nΔV (mV)" if stage == "hyper" else f"rank {rank}\nmV")
+        axes[rank - 1, 0].set_ylabel(f"rank {rank}\nmV")
         for axis in axes[rank - 1, :]:
             axis.set_xlabel("Time from simulation window start (ms)")
         metadata.append({"rank": rank, "population_index": int(population_indices[index]),

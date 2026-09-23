@@ -33,6 +33,13 @@ def test_hyper_exponential_loss_is_zero_for_matching_trace():
     assert result.value == 0.0
 
 
+def test_hyper_objective_penalizes_absolute_baseline_offset():
+    observed = trace()
+    simulated = SimulationOutput(observed.time_ms, observed.voltage_mV + 5.0)
+    result = hyperpolarizing_objective([observed], [simulated])
+    assert result.value > 0.0
+
+
 def test_hyper_objective_reports_explicit_voltage_deflection():
     observed = trace()
     simulated = SimulationOutput(observed.time_ms, np.full(observed.time_ms.size, -70.0))
