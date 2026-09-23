@@ -49,7 +49,7 @@ analyze every finite candidate when memory and runtime permit.
 Use `--contour-top-k N` to change the number of parameters in the pairwise
 contour grid. The contour axes use physical calibrated units, while color shows
 log-scaled loss relative to the best candidate. Since all pairwise combinations
-would be unwieldy for the 43-parameter full model, the default focuses on the
+would be unwieldy for the 44-parameter full model, the default focuses on the
 most important varying parameters.
 
 The Stage 2 result is a pooled analysis across basin/seed studies. Basin and

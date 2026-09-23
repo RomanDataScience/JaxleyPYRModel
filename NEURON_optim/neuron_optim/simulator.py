@@ -122,7 +122,10 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
             if group == "soma":
                 assignments = {
                     "icand": {"gbar": values["icangbar"]},
-                    "na16a": {"gbar": values["gna"] * values["scale_Na_conduct"]},
+                    "na16a": {
+                        "gbar": values["gna"] * values["scale_Na_conduct"],
+                        "persist": values["persist"],
+                    },
                     "kd": {"gbar": values["gkdrsoma"]},
                     "Kv2like": {"gbar": values["gkv2soma"]},
                     "h": {"gbar": values["soma_hbar"]},
@@ -164,7 +167,10 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                     "kap": {"gkabar": values["soma_kap"] * (1.0 + distance / 100.0)},
                     "kad": {"gkabar": values["soma_kad"] * (1.0 + distance / 100.0)},
                     "Kv2like": {"gbar": values["gkv2"] * (values["gkv2scale"] if distance > 100.0 else 1.0)},
-                    "na16a": {"gbar": values["gnadend"] * values["scale_Na_conduct"]},
+                    "na16a": {
+                        "gbar": values["gnadend"] * values["scale_Na_conduct"],
+                        "persist": values["persist"],
+                    },
                     "kd": {"gbar": values["gkdrapical"]},
                     "km": {"gbar": values["soma_km"]},
                     "kir": {"gbar": values["KirGbar"] * min(distance / 100.0, 1.0)},

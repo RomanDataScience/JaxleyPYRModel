@@ -36,6 +36,7 @@ DEFAULTS: dict[str, float] = {
     "soma_km": 0.0,
     "mykca_init": 0.0,
     "soma_kca": 0.0,
+    "persist": 0.00075,
     "AXNa": 3.5,
     "gkdrsoma": 0.0,
     "gkdrdend": 0.0,
@@ -90,6 +91,7 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "soma_km": (0.0, 0.01),
     "mykca_init": (0.0, 0.01),
     "soma_kca": (0.0, 0.01),
+    "persist": (0.0, 0.05),
     "AXNa": (0.1, 10.0),
     "gkdrsoma": (0.0, 0.02),
     "gkdrdend": (0.0, 0.02),
@@ -116,7 +118,7 @@ BOUNDS: dict[str, tuple[float, float]] = {
 CONDUCTANCE = (
     "soma_hbar", "KirGbar", "soma_caL", "soma_car", "gsomacar",
     "soma_caLH", "soma_caT", "soma_km", "mykca_init", "soma_kca",
-    "AXNa", "gkdrsoma", "gkdrdend", "soma_kap", "axon_kap", "basal_kap",
+    "persist", "AXNa", "gkdrsoma", "gkdrdend", "soma_kap", "axon_kap", "basal_kap",
     "soma_kad", "gna", "axongkdr", "gnadend", "gkdrapical", "gkv2soma",
     "gkv2", "gkv2axon", "gkv2scale", "scale_Na_conduct", "icangbar",
 )
