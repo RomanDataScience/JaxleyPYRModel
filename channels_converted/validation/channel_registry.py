@@ -19,7 +19,6 @@ from channels_converted.channels_jaxley import (
     Kv2like,
     MyKca,
     Na3Dend,
-    Nap,
     Nav16A,
     Nax,
 )
@@ -181,13 +180,6 @@ CHANNELS: dict[str, ChannelSpec] = {
         mechanism="na3dend",
         jaxley_class=Na3Dend,
         states=(StateSpec("m"), StateSpec("h"), StateSpec("s")),
-        current=CurrentSpec(neuron_name="ina", neuron_source="formula"),
-    ),
-    "nap": ChannelSpec(
-        key="nap",
-        mechanism="nap",
-        jaxley_class=Nap,
-        states=(StateSpec("n"),),
         current=CurrentSpec(neuron_name="ina", neuron_source="formula"),
     ),
     "na16a": ChannelSpec(

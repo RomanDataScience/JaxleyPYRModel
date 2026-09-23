@@ -128,8 +128,8 @@ Current result:
 The suite covers:
 
 - Empty-update identity.
-- Bitwise identity for all 44 reference values.
-- Exhaustive target isolation and a real property change for all 44 knobs.
+- Bitwise identity for all 43 reference values.
+- Exhaustive target isolation and a real property change for all 43 knobs.
 - Exported HOC endpoint semantics and sectionwise profiles.
 - Simultaneous nonlinear passive updates.
 - Coupled conductance products.

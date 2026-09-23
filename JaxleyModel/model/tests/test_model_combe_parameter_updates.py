@@ -102,7 +102,6 @@ EXPECTED_TARGETS = {
         ("na16a_gbar", "apical"),
     ),
     "icangbar": (("icand_gbar", "soma"), ("icand_gbar", "apical")),
-    "nap_gnabar": (("nap_gnabar", "soma"), ("nap_gnabar", "basal")),
     "kd_deactivation_tau_scale": (
         ("kd_deactivation_tau_scale", "soma"),
         ("kd_deactivation_tau_scale", "apical"),

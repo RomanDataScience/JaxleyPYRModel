@@ -11,7 +11,7 @@ Implemented now:
 - validated YAML configuration and inheritance;
 - live-HOC, checksum-protected HOC artifact, and caller-supplied SWC providers;
 - channel/dependency and spatial-profile registries;
-- canonical 44-parameter catalog (40 legacy plus four kinetic time scales) with
+- canonical 43-parameter catalog (39 legacy plus four kinetic time scales) with
   exact HOC frozen-grid updates;
 - all-trace manifest loading, resampling, weighting, and static-shape buckets;
 - trace-specific initial states with `jit(vmap(...))` and serial kernels;
@@ -171,10 +171,10 @@ Current placement is:
 |---|---|
 | Whole cell | D3, Leak, Cal4 |
 | Soma + apical | Icand, Nav16A, Kd, Kv2like, H, Kap, Km, Kca, MyKca |
-| Soma | Nap, Cal, Cat, Car |
+| Soma | Cal, Cat, Car |
 | Apical | Car, CalH, Cat, Kad, Kir |
 | Axon | Nax, Kd, Km, Kap, Kv2like |
-| Basal | Na3Dend, Nap, Kap, H, Kd, Kv2like, Kir |
+| Basal | Na3Dend, Kap, H, Kd, Kv2like, Kir |
 
 This is embedded at `model_Combe.py:484-525`. Dependencies are implicit:
 

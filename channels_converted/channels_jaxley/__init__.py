@@ -15,7 +15,6 @@ from .kir import Kir
 from .km import Km
 from .kv2like import Kv2like
 from .na3dend import Na3Dend
-from .nap import Nap
 from .nav16_a import Nav16A
 from .nax import Nax
 
@@ -38,7 +37,6 @@ __all__ = [
     "Kv2like",
     "MyKca",
     "Na3Dend",
-    "Nap",
     "Nav16A",
     "Nax",
     "enable_cal4_diffusion",

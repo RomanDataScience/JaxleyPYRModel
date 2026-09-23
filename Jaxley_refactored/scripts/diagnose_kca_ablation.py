@@ -74,7 +74,6 @@ def main():
 
     variants = {
         "original": {},
-        "nap_off": {"nap_gnabar": 0.0},
         "mykca_off": {"mykca_init": 0.0},
         "soma_kca_off": {"soma_kca": 0.0},
         "both_off": {"mykca_init": 0.0, "soma_kca": 0.0},

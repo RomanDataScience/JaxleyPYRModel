@@ -109,7 +109,6 @@ against `cell.channels`, `cell.pumps`, and the enabled-mechanism set.
 | `na16a` | Na; `i_Na` | soma, apical | include |
 | `nax` | Na; `i_Na` | axon | include |
 | `na3dend` | Na; `i_Na` | basal | include |
-| `nap` | persistent Na; `i_Na` | soma, basal | include |
 | `kd` | K; `i_K` | soma, apical, axon, basal | include |
 | `Kv2like` | K; `i_K` | soma, apical, axon, basal | include |
 | `kap` | proximal A-type K; `i_K` | soma, apical, axon, basal | include |
@@ -577,7 +576,7 @@ suite remain unchanged and passing.
   tolerances rather than image-only comparisons.
 
 The existing diagnostic is only an overlapping reference: its manually
-constructed somatic total omits `nap`, `cal`, `cat`, `kca`, and `mykca`, so it
+constructed somatic total omits `cal`, `cat`, `kca`, and `mykca`, so it
 must not be used as the oracle for complete total membrane current.
 
 ## Risks and mitigations

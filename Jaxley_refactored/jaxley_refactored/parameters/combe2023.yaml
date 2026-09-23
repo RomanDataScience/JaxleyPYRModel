@@ -29,7 +29,6 @@ parameters:
   - {name: gkv2scale, initial: 0.3, bounds: [0.0, 2.0]}
   - {name: scale_Na_conduct, initial: 14.0, bounds: [1.0, 30.0]}
   - {name: icangbar, initial: 0.045, bounds: [0.0, 0.2]}
-  - {name: nap_gnabar, initial: 0.0, bounds: [0.0, 3.0e-04]}
   - {name: RmSoma, initial: 149999.0, bounds: [50000.0, 300000.0]}
   - {name: RaSoma, initial: 42.562, bounds: [20.0, 150.0]}
   - {name: RmTuft, initial: 45373.4, bounds: [10000.0, 150000.0]}

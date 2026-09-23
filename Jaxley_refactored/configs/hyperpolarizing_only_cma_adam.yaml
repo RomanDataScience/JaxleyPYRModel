@@ -38,7 +38,7 @@ model:
     value_overrides: {}
     bound_expansion_factor: 1.0
     fit:
-      # Fits all 44 conductance, passive, and kinetic parameters.
+      # Fits all 43 conductance, passive, and kinetic parameters.
       include_tags: [conductance, passive, kinetics]
       include: []
       exclude: []

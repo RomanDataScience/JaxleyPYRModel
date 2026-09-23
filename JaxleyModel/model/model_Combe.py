@@ -47,7 +47,6 @@ from channels_converted.channels_jaxley import (  # noqa: E402
     Kv2like,
     MyKca,
     Na3Dend,
-    Nap,
     Nav16A,
     Nax,
     enable_cal4_diffusion,
@@ -117,7 +116,6 @@ class CombeParameters:
     proximalv: float = 6.0
     icangbar: float = 0.06 * 0.75
     icand_can: float = 0.0
-    nap_gnabar: float = 0.0
     gip3: float = 1.85
     kd_deactivation_tau_scale: float = 1.0
     nat_fast_inactivation_tau_scale: float = 1.0
@@ -155,7 +153,6 @@ CONDUCTANCE_PARAMETER_KEYS = (
     "gkv2scale",
     "scale_Na_conduct",
     "icangbar",
-    "nap_gnabar",
 )
 PASSIVE_PARAMETER_KEYS = (
     "RmSoma",
@@ -224,7 +221,6 @@ bounds = {
     "gkv2scale": [0.0, 2.0],
     "scale_Na_conduct": [1.0, 30.0],
     "icangbar": [0.0, 0.2],
-    "nap_gnabar": [0.0, 0.001],
     "kd_deactivation_tau_scale": [0.25, 4.0],
     "nat_fast_inactivation_tau_scale": [0.5, 2.0],
     "nat_slow_recovery_tau_scale": [0.5, 2.0],
@@ -441,7 +437,6 @@ HOC_CHANNEL_CLASSES = {
     "na16a": Nav16A,
     "kd": Kd,
     "Kv2like": Kv2like,
-    "nap": Nap,
     "h": H,
     "kap": Kap,
     "kad": Kad,
@@ -685,7 +680,6 @@ def insert_combe_channels(cell):
         group.insert(Kca("kca"))
         group.insert(MyKca("mykca"))
 
-    cell.soma.insert(Nap("nap"))
     cell.soma.insert(Cal("cal"))
     cell.soma.insert(Cat("cat"))
     cell.soma.insert(Car("car"))
@@ -703,7 +697,6 @@ def insert_combe_channels(cell):
     cell.axon.insert(Kv2like("Kv2like"))
 
     cell.basal.insert(Na3Dend("na3dend"))
-    cell.basal.insert(Nap("nap"))
     cell.basal.insert(Kap("kap"))
     cell.basal.insert(H("h"))
     cell.basal.insert(Kd("kd"))
@@ -816,9 +809,6 @@ def set_soma_channels(cell, p: CombeParameters = COMBE_PARAMS):
         p.kd_deactivation_tau_scale,
     )
     set_on(cell, soma, "Kv2like_gbar", p.gkv2soma)
-    set_on(cell, soma, "nap_gnabar", p.nap_gnabar)
-    set_on(cell, soma, "nap_K", 4.5)
-    set_on(cell, soma, "nap_vhalf", -60.4)
     set_on(cell, soma, "h_gbar", p.soma_hbar)
     set_on(cell, soma, "h_K", 8.8)
     set_on(cell, soma, "h_vhalf", -82.0)
@@ -931,9 +921,6 @@ def set_basal_channels(cell, p: CombeParameters = COMBE_PARAMS):
         "na3dend_fast_inactivation_tau_scale",
         p.nat_fast_inactivation_tau_scale,
     )
-    set_on(cell, basal, "nap_gnabar", p.nap_gnabar)
-    set_on(cell, basal, "nap_K", 4.5)
-    set_on(cell, basal, "nap_vhalf", -60.4)
     set_on(cell, basal, "kap_gkabar", p.basal_kap)
     set_on(cell, basal, "h_gbar", p.soma_hbar)
     set_on(cell, basal, "h_tau_scale", p.h_tau_scale)
@@ -1235,7 +1222,6 @@ def _conductance_fit_profiles(cell, p, update_mode):
                          "gna", "scale_Na_conduct"),
             _fit_profile(cell.soma, "kd_gbar", p["gkdrsoma"], "gkdrsoma"),
             _fit_profile(cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"),
-            _fit_profile(cell.soma, "nap_gnabar", p["nap_gnabar"], "nap_gnabar"),
             _fit_profile(cell.soma, "h_gbar", p["soma_hbar"], "soma_hbar"),
             _fit_profile(cell.soma, "kap_gkabar", p["soma_kap"], "soma_kap"),
             _fit_profile(cell.soma, "km_gbar", p["soma_km"], "soma_km"),
@@ -1283,7 +1269,6 @@ def _conductance_fit_profiles(cell, p, update_mode):
             _fit_profile(cell.axon, "kap_gkabar", p["axon_kap"], "axon_kap"),
             _fit_profile(cell.axon, "Kv2like_gbar", p["gkv2axon"], "gkv2axon"),
             _fit_profile(cell.basal, "na3dend_gbar", p["gnadend"], "gnadend"),
-            _fit_profile(cell.basal, "nap_gnabar", p["nap_gnabar"], "nap_gnabar"),
             _fit_profile(cell.basal, "kap_gkabar", p["basal_kap"], "basal_kap"),
             _fit_profile(cell.basal, "h_gbar", p["soma_hbar"], "soma_hbar"),
             _fit_profile(cell.basal, "kd_gbar", p["gkdrdend"], "gkdrdend"),
@@ -1311,7 +1296,6 @@ def _conductance_fit_profiles(cell, p, update_mode):
         _fit_profile(
             cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"
         ),
-        _fit_profile(cell.soma, "nap_gnabar", p["nap_gnabar"], "nap_gnabar"),
         _fit_profile(cell.soma, "h_gbar", p["soma_hbar"], "soma_hbar"),
         _fit_profile(cell.soma, "kap_gkabar", p["soma_kap"], "soma_kap"),
         _fit_profile(cell.soma, "km_gbar", p["soma_km"], "soma_km"),
@@ -1439,7 +1423,6 @@ def _conductance_fit_profiles(cell, p, update_mode):
             cell.axon, "Kv2like_gbar", p["gkv2axon"], "gkv2axon"
         ),
         _fit_profile(cell.basal, "na3dend_gbar", p["gnadend"], "gnadend"),
-        _fit_profile(cell.basal, "nap_gnabar", p["nap_gnabar"], "nap_gnabar"),
         _fit_profile(cell.basal, "kap_gkabar", p["basal_kap"], "basal_kap"),
         _fit_profile(cell.basal, "h_gbar", p["soma_hbar"], "soma_hbar"),
         _fit_profile(cell.basal, "kd_gbar", p["gkdrdend"], "gkdrdend"),

@@ -145,7 +145,6 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
             elif group == "basal":
                 assignments = {
                     "na3dend": {"gbar": values["gnadend"]},
-                    "nap": {"gnabar": values["nap_gnabar"]},
                     "h": {"gbar": values["soma_hbar"]},
                     "kd": {"gbar": values["gkdrdend"]},
                     "kap": {"gkabar": values["basal_kap"]},

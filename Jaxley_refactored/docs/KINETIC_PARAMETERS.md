@@ -1,10 +1,10 @@
 # Shared kinetic calibration parameters
 
-The Combe calibration catalog contains the original 40 conductance and passive
+The Combe calibration catalog contains 39 conductance and passive
 parameters followed by four positive, dimensionless kinetic time scales. All
 four have reference value `1.0`, which reproduces the converted channel
 equations without alteration. The default local LSU_1 and hybrid CMA–Adam
-pipelines select all 44 parameters.
+pipelines select all 43 parameters.
 
 | Parameter | Bounds | Channel placements | Effect |
 | --- | --- | --- | --- |
@@ -58,8 +58,5 @@ The ionic reversal potentials and temperature remain fixed. They must not be
 used as compensation parameters for DBLO. Parameter estimates should be
 interpreted together with sensitivity, boundary-occupancy, and multi-seed
 analyses because the available somatic protocols cannot uniquely identify all
-44 individual values.
-
-`nap_gnabar` remains a separate fitted conductance parameter. Its reference is
-exactly zero and its bounds are `0–0.001 S/cm2`; zero-preserving initialization
-does not freeze it during Adam, and CMA–ES can sample positive values.
+43 individual values. Persistent sodium is represented by the Nav1.6
+`persist` gate rather than a separate `nap_gnabar` conductance.

@@ -127,6 +127,12 @@ def build_combe_neuron_model(
             h.xopen("lib/vector-distance.hoc")
             h.xopen("cell_setup_pc2b_CCh_driven.hoc")
 
+            # The original Combe setup inserts the legacy ``nap`` mechanism
+            # with zero conductance. Persistent sodium is already represented
+            # by Nav1.6's ``persist`` gate, so remove the redundant mechanism
+            # from every section before returning the model.
+            h("forall { uninsert nap }")
+
             if d_lambda is not None:
                 h.d_lambda = float(d_lambda)
                 h("forall { nseg = int((L/(d_lambda*lambda_f(freq))+0.9)/2)*2 + 5 }")

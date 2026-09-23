@@ -30,16 +30,16 @@ class CapturingBackend:
         return tuple(keys), np.asarray(values), state
 
 
-def test_catalog_preserves_the_legacy_40_and_appends_four_kinetic_scales():
+def test_catalog_preserves_the_legacy_39_and_appends_four_kinetic_scales():
     catalog = combe2023_catalog()
     legacy = catalog.select(include_tags=("conductance", "passive"))
     selected = catalog.select(
         include_tags=("conductance", "passive", "kinetics")
     )
 
-    assert len(legacy) == 40
+    assert len(legacy) == 39
     assert legacy[-1].name == "SpineFactorTuft"
-    assert len(selected) == 44
+    assert len(selected) == 43
     assert tuple(spec.name for spec in selected[-4:]) == KINETIC_NAMES
 
 
@@ -66,7 +66,7 @@ def test_catalog_yaml_rejects_an_initial_value_outside_bounds(tmp_path):
         combe2023_catalog(path)
 
 
-def test_kinetic_metadata_and_persistent_sodium_remain_explicit():
+def test_kinetic_metadata_excludes_redundant_persistent_sodium_parameter():
     catalog = combe2023_catalog()
     expected_bounds = {
         "kd_deactivation_tau_scale": (0.25, 4.0),
@@ -81,15 +81,8 @@ def test_kinetic_metadata_and_persistent_sodium_remain_explicit():
         assert spec.tags == ("kinetics",)
         assert spec.units == "dimensionless"
 
-    persistent_sodium = catalog.get("nap_gnabar")
-    assert persistent_sodium.default == 0.0
-    assert persistent_sodium.bounds == (0.0, 0.0003)
-    assert persistent_sodium.tags == ("conductance",)
-    assert persistent_sodium.targets == (
-        "soma.nap_gnabar",
-        "basal.nap_gnabar",
-    )
-
+    with pytest.raises(KeyError):
+        catalog.get("nap_gnabar")
     assert catalog.get("soma_kca").bounds == (0.0, 0.005)
 
 
@@ -104,13 +97,13 @@ def test_supported_configs_select_expected_parameters():
         )
         names = tuple(spec.name for spec in specs)
         if path == PROJECT / "configs/LSU_1_cma_adam.yaml":
-            assert len(names) == 43
+            assert len(names) == 42
             assert "icangbar" not in names
         else:
-            assert len(names) == 44
+            assert len(names) == 43
             assert "icangbar" in names
         assert names[-4:] == KINETIC_NAMES
-        assert "nap_gnabar" in names
+        assert "nap_gnabar" not in names
         assert config.search.global_search.parameter_names == ()
 
 

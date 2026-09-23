@@ -60,7 +60,6 @@ DEFAULTS: dict[str, float] = {
     "proximalv": 6.0,
     "icangbar": 0.06 * 0.75,
     "icand_can": 0.0,
-    "nap_gnabar": 0.0,
     "gip3": 1.85,
     "kd_deactivation_tau_scale": 1.0,
     "nat_fast_inactivation_tau_scale": 1.0,
@@ -108,7 +107,6 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "gkv2scale": (0.0, 2.0),
     "scale_Na_conduct": (1.0, 30.0),
     "icangbar": (0.0, 0.2),
-    "nap_gnabar": (0.0, 0.001),
     "kd_deactivation_tau_scale": (0.25, 4.0),
     "nat_fast_inactivation_tau_scale": (0.5, 2.0),
     "nat_slow_recovery_tau_scale": (0.5, 2.0),
@@ -121,7 +119,6 @@ CONDUCTANCE = (
     "AXNa", "gkdrsoma", "gkdrdend", "soma_kap", "axon_kap", "basal_kap",
     "soma_kad", "gna", "axongkdr", "gnadend", "gkdrapical", "gkv2soma",
     "gkv2", "gkv2axon", "gkv2scale", "scale_Na_conduct", "icangbar",
-    "nap_gnabar",
 )
 PASSIVE = (
     "RmSoma", "RaSoma", "RmTuft", "RaTuft", "DistHalfRm", "DistHalfRa",

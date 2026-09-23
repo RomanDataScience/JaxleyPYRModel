@@ -110,7 +110,7 @@ Combe CCh-driven setup already used by
 
 ### Parameter vector
 
-The default fit set will be all 44 numeric Combe parameters already exposed by
+The default fit set will be all 43 numeric Combe parameters already exposed by
 the repository:
 
 - conductance parameters;
@@ -569,7 +569,7 @@ Before a production run:
 2. Confirm the basin interpretation used here: top 10 final-generation
    candidates from each of 10 stage-1 seeds. If “100 basins” means 100 separate
    stage-1 seeds instead, the stage-1 seed budget must change.
-3. Confirm that all 44 Combe parameters should be optimized, or provide the
+3. Confirm that all 43 Combe parameters should be optimized, or provide the
    intended subset.
 4. Confirm whether `v_memb` means the experimental recorded voltage (the
    assumption in this plan) and whether the initial voltage should default to

@@ -241,7 +241,7 @@ To run the full hyperpolarization-only CMA-ES → Adam hybrid pipeline:
 - `runtime`: backend, precision, JIT, solver, rematerialization, and memory. The
   two shipped configurations select CPU and float64.
 
-A distribution override uses the same canonical 44-parameter catalog as
+A distribution override uses the same canonical 43-parameter catalog as
 fitting: the original 28 conductance and 12 passive parameters, followed by
 four shared kinetic time scales. If the coefficient is selected for fitting,
 the override changes its initial value. If it is excluded, the override remains

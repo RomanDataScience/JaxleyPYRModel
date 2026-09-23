@@ -70,7 +70,6 @@ def combe2023_mechanisms() -> MechanismRegistry:
         "km": "M-type potassium current.",
         "kca": "Calcium-activated potassium current.",
         "mykca": "Fast calcium-activated potassium current.",
-        "nap": "Persistent sodium current.",
         "cal": "L-type calcium current.",
         "cat": "T-type calcium current.",
         "car": "R-type calcium current.",

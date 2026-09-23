@@ -176,7 +176,6 @@ _TARGETS = {
     "gkv2scale": ("apical.Kv2like_gbar", "basal.Kv2like_gbar"),
     "scale_Na_conduct": ("soma.na16a_gbar", "apical.na16a_gbar"),
     "icangbar": ("soma.icand_gbar", "apical.icand_gbar"),
-    "nap_gnabar": ("soma.nap_gnabar", "basal.nap_gnabar"),
     "RmSoma": ("all.Leak_gLeak",),
     "RmTuft": ("all.Leak_gLeak",),
     "DistHalfRm": ("all.Leak_gLeak",),

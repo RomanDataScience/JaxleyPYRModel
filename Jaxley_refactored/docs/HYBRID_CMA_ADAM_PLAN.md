@@ -167,14 +167,14 @@ parameters under realistic noise is not ready for biological interpretation.
 ### CMA parameter dimensionality
 
 The shipped `configs/LSU_1_cma_adam.yaml` deliberately leaves
-`search.global.parameter_names` empty, which searches all 44 fitted parameters.
+`search.global.parameter_names` empty, which searches all 43 fitted parameters.
 That is the current production protocol and must be reported as such.
 
 For a preregistered reduced-dimensional ablation or an initial compute-limited
 development study, consider a mechanistically relevant subset of approximately
 12–20 active parameters:
 
-- sodium: `AXNa`, `gna`, `gnadend`, `scale_Na_conduct`, `nap_gnabar`;
+- sodium: `AXNa`, `gna`, `gnadend`, `scale_Na_conduct`;
 - delayed rectifier/Kv2: `gkdrsoma`, `gkdrdend`, `axongkdr`,
   `gkdrapical`, `gkv2soma`, `gkv2`, `gkv2axon`, `gkv2scale`;
 - A-type potassium: `soma_kap`, `axon_kap`, `basal_kap`, `soma_kad`;
