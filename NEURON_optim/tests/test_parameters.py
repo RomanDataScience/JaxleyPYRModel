@@ -5,6 +5,8 @@ from neuron_optim.parameters import (
     CONDUCTANCE,
     KINETIC,
     PASSIVE,
+    complete_parameter_mapping,
+    local_normalized_bounds,
     make_parameter_space,
     passive_model_values,
 )
@@ -29,3 +31,20 @@ def test_passive_model_mapping_disables_active_currents():
     assert all(values[key] == 1.0 for key in KINETIC)
     assert values["persist"] == 0.0
     assert values["Epas"] == space.reference[PASSIVE.index("Epas")]
+
+
+def test_local_bounds_and_complete_mapping_keep_fixed_parameters():
+    space = make_parameter_space(include=("gna", "persist"))
+    centers = {"gna": 0.035, "persist": 0.00075}
+    lower, upper = local_normalized_bounds(centers, space.keys, 0.15)
+    local = make_parameter_space(
+        include=space.keys, lower_overrides=lower, upper_overrides=upper
+    )
+    normalized = local.normalize([centers[key] for key in local.keys])
+    mapping = complete_parameter_mapping(local, normalized, {"Epas": -70.0})
+
+    assert set(mapping) >= set(ALL_KEYS)
+    assert mapping["Epas"] == -70.0
+    assert mapping["gna"] == centers["gna"]
+    assert mapping["persist"] == centers["persist"]
+    assert np.all(local.lower < local.upper)

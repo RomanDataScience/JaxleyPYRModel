@@ -15,6 +15,7 @@ from .stages import (
     run_passive_precalibration,
     run_pipeline,
     run_study,
+    run_stage3,
     validate_current_replay,
 )
 
@@ -27,13 +28,13 @@ def _config(path: str, workers: int | None):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="NEURON Combe two-stage CMA-ES optimization")
+    parser = argparse.ArgumentParser(description="NEURON Combe staged CMA-ES optimization")
     sub = parser.add_subparsers(dest="command", required=True)
 
     validate = sub.add_parser("validate")
     validate.add_argument("--config", required=True)
 
-    for command in ("run-passive", "run-hyper", "run-depolarizing", "run-all"):
+    for command in ("run-passive", "run-hyper", "run-depolarizing", "run-stage3", "run-all"):
         item = sub.add_parser(command)
         item.add_argument("--config", required=True)
         item.add_argument("--output-dir", type=Path, default=Path("runs"))
@@ -91,6 +92,8 @@ def main(argv: list[str] | None = None) -> int:
         basins_path = output / "stage1_hyper" / "basins.jsonl"
         basins = load_basins(basins_path)
         run_depolarizing_stage(config, output, basins)
+    elif args.command == "run-stage3":
+        run_stage3(config, output)
     else:
         run_pipeline(config, output)
     print(f"completed {args.command}: {output}")

@@ -96,6 +96,7 @@ class CombeParameters:
     gkdrsoma: float = 0.0
     gkdrdend: float = 0.0
     psoma: float = 0.00075
+    persist: float = 0.00075
     slowsoma: float = 0.15
     slownotsoma: float = 0.1
     sinfsoma: float = 1.35
@@ -136,6 +137,7 @@ CONDUCTANCE_PARAMETER_KEYS = (
     "soma_km",
     "mykca_init",
     "soma_kca",
+    "persist",
     "AXNa",
     "gkdrsoma",
     "gkdrdend",
@@ -204,6 +206,7 @@ bounds = {
     "soma_km": [0.0, 0.01],
     "mykca_init": [0.0, 0.01],
     "soma_kca": [0.0, 0.01],
+    "persist": [0.0, 0.05],
     "AXNa": [0.1, 10.0],
     "gkdrsoma": [0.0, 0.02],
     "gkdrdend": [0.0, 0.02],
@@ -786,7 +789,7 @@ def set_soma_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_on(cell, soma, "icand_can", p.icand_can)
     set_on(cell, soma, "na16a_gbar", p.gna * p.scale_Na_conduct)
     set_on(cell, soma, "na16a_dist", p.sinfsoma)
-    set_on(cell, soma, "na16a_persist", p.psoma)
+    set_on(cell, soma, "na16a_persist", p.persist)
     set_on(cell, soma, "na16a_slowdown", p.slowsoma)
     set_on(cell, soma, "na16a_C1O1v2", p.proximalv)
     set_on(
@@ -860,7 +863,7 @@ def set_apical_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_on(cell, apical, "kad_gkabar", np.where(capped_h_dist > 100.0, p.soma_kad * (1.0 + capped_h_dist / 100.0), 0.0))
     set_on(cell, apical, "Kv2like_gbar", np.where(capped_h_dist > 100.0, p.gkv2 * p.gkv2scale, p.gkv2))
     set_on(cell, apical, "na16a_gbar", p.gnadend * p.scale_Na_conduct)
-    set_on(cell, apical, "na16a_persist", p.psoma)
+    set_on(cell, apical, "na16a_persist", p.persist)
     set_on(cell, apical, "na16a_slowdown", p.slownotsoma)
     set_on(cell, apical, "na16a_dist", apical_na16a_dist(dist))
     set_on(cell, apical, "na16a_C1O1v2", apical_na16a_c1o1v2(dist, p))
@@ -1220,6 +1223,7 @@ def _conductance_fit_profiles(cell, p, update_mode):
             _fit_profile(cell.soma, "na16a_gbar",
                          p["gna"] * p["scale_Na_conduct"],
                          "gna", "scale_Na_conduct"),
+            _fit_profile(cell.soma, "na16a_persist", p["persist"], "persist"),
             _fit_profile(cell.soma, "kd_gbar", p["gkdrsoma"], "gkdrsoma"),
             _fit_profile(cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"),
             _fit_profile(cell.soma, "h_gbar", p["soma_hbar"], "soma_hbar"),
@@ -1258,6 +1262,7 @@ def _conductance_fit_profiles(cell, p, update_mode):
             _fit_profile(cell.apical, "na16a_gbar",
                          p["gnadend"] * p["scale_Na_conduct"],
                          "gnadend", "scale_Na_conduct"),
+            _fit_profile(cell.apical, "na16a_persist", p["persist"], "persist"),
             _fit_profile(cell.apical, "kd_gbar", p["gkdrapical"], "gkdrapical"),
             _fit_profile(cell.apical, "km_gbar", p["soma_km"], "soma_km"),
             _fit_profile(cell.apical, "kir_gbar",
@@ -1292,6 +1297,7 @@ def _conductance_fit_profiles(cell, p, update_mode):
             "gna",
             "scale_Na_conduct",
         ),
+        _fit_profile(cell.soma, "na16a_persist", p["persist"], "persist"),
         _fit_profile(cell.soma, "kd_gbar", p["gkdrsoma"], "gkdrsoma"),
         _fit_profile(
             cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"
@@ -1401,6 +1407,7 @@ def _conductance_fit_profiles(cell, p, update_mode):
             "gnadend",
             "scale_Na_conduct",
         ),
+        _fit_profile(cell.apical, "na16a_persist", p["persist"], "persist"),
         _fit_profile(cell.apical, "kd_gbar", p["gkdrapical"], "gkdrapical"),
         _fit_profile(cell.apical, "km_gbar", p["soma_km"], "soma_km"),
         _fit_profile(

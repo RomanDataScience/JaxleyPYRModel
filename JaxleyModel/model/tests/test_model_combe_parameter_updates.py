@@ -82,6 +82,7 @@ EXPECTED_TARGETS = {
     ),
     "mykca_init": (("mykca_gkbar", "soma"), ("mykca_gkbar", "apical")),
     "soma_kca": (("kca_gbar", "soma"), ("kca_gbar", "apical")),
+    "persist": (("na16a_persist", "soma"), ("na16a_persist", "apical")),
     "AXNa": (("nax_gbar", "axon"),),
     "gkdrsoma": (("kd_gbar", "soma"),),
     "gkdrdend": (("kd_gbar", "basal"),),

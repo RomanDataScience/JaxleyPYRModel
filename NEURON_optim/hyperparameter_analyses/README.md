@@ -6,7 +6,8 @@ parameters for all three stages:
 
 - Stage 0: passive-only calibration;
 - Stage 1: full-model hyperpolarizing calibration;
-- Stage 2: full-model depolarizing calibration across basins and seeds.
+- Stage 2: AP-core depolarizing calibration across basins and seeds;
+- Stage 3: expanded active-current calibration from the best Stage 2 result per basin.
 
 The main importance score is Optuna fANOVA, following the approach in the
 [Optuna visualization tutorial](https://optuna.readthedocs.io/en/stable/tutorial/10_key_features/005_visualization.html).

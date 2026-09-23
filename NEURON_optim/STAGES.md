@@ -12,11 +12,15 @@ Stage 1: full-model hyperpolarizing optimization
             |
             v
 Stage 2: full-model depolarizing optimization
-    one perturbed CMA-ES study per basin and Stage 2 seed
+    AP-core parameter subset; one study per basin and Stage 2 seed
+            |
+            v
+Stage 3: expanded active-current depolarizing optimization
+    all active parameters; Stage 2 subset constrained locally
 ```
 
-Stage 2 is the final stage. It does not produce starting points for another
-stage.
+Stage 3 is the final stage. It starts from the best Stage 2 result for each
+basin and does not produce starting points for another stage.
 
 ## Stage 0: passive pre-calibration
 
@@ -69,7 +73,7 @@ stage1_hyper/basins.jsonl
 Stage 2 does not use only the single best Stage 1 candidate. It uses every
 retained basin as a separate starting solution.
 
-## Stage 2: depolarizing optimization
+## Stage 2: AP-core depolarizing optimization
 
 For every basin and every configured Stage 2 seed, the code creates a separate
 initial mean:
@@ -96,7 +100,7 @@ stage2_depolarizing/
 ```
 
 The Stage 2 seed therefore controls both the CMA-ES random sequence and the
-deterministic perturbation of the basin starting point. Different basins and
+deterministic perturbation of the selected coordinates. Different basins and
 seeds represent separate starting solutions.
 
 Stage 2 evaluates all four configured depolarizing recordings. Its loss is the
@@ -118,6 +122,18 @@ symmetry and height are evaluated for matched experimental and simulated spikes.
 Extra spikes outside the allowed timing window can trigger the configured large
 penalty.
 
+## Stage 3: expanded active-current optimization
+
+Stage 3 selects the best Stage 2 result within each basin, then adds the
+remaining active-current parameters from `stage3.parameter_names`. The Stage 2
+parameters remain trainable, but their bounds are restricted to
+`±stage3.local_normalized_half_width` around their Stage 2 values in normalized
+coordinates. The default half-width is `0.15`. Passive parameters remain fixed
+to the Stage 1 basin values.
+
+Stage 3 uses the same depolarizing objective and weights as Stage 2. Its output
+is written under `stage3_depolarizing/`.
+
 ## Counts for the smoke configuration
 
 The smoke configuration has one Stage 1 seed, five generations, and a
@@ -128,7 +144,8 @@ study per basin.
 The normal checked-in hyperpolarizing configuration has three Stage 1 seeds,
 100 generations, and 20 candidates per generation, giving up to 6,000 basin
 candidates. The basin cap still limits selection to 100, so ten Stage 2 seeds
-produce up to 1,000 Stage 2 studies.
+produce up to 1,000 Stage 2 studies. The default Stage 3 configuration then
+creates one study per basin using the best Stage 2 seed for that basin.
 
 The larger 100-basin design reaches the cap as soon as the Stage 1 history
 contains at least 100 distinct candidates.

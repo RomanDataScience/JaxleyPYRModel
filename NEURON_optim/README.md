@@ -1,17 +1,17 @@
-# Combe two-stage optimization
+# Combe staged optimization
 
-This package implements the reviewed two-stage CMA-ES plan using the Combe2023
+This package implements the staged CMA-ES plan using the Combe2023
 model. The checked-in configurations select the repository's NEURON backend;
 the Jaxley backend remains available with `runtime.backend: jaxley`.
 
 The checked-in hyperpolarizing settings use 3 seeds, 100 generations, 20
 offspring, and 1 process worker for the passive and stage-1 searches. Stage 2
-retains 10 seeds, 200 generations, and 30 offspring; its study count depends
-on the number of basins produced by stage 1.
+retains 10 seeds, 200 generations, and 30 offspring for the AP-core subset.
+Stage 3 expands the active-current subset while constraining Stage 2
+parameters to local normalized bounds.
 
-See [STAGES.md](STAGES.md) for the complete Stage 0 → Stage 1 → Stage 2
-solution handoff, including how passive solutions, basins, and Stage 2 starting
-points are constructed.
+See [STAGES.md](STAGES.md) for the complete Stage 0 → Stage 1 → Stage 2 → Stage 3
+solution handoff.
 
 For Optuna-style importance analysis of the calibrated parameters in each
 stage, see [hyperparameter_analyses/README.md](hyperparameter_analyses/README.md).
@@ -107,6 +107,15 @@ conda run --name Jaxley \
   --output-dir NEURON_optim/runs/example
 ```
 
+Run Stage 3 from the best Stage 2 result for each basin:
+
+```bash
+conda run --name Jaxley \
+  combe-neuron-optim run-stage3 \
+  --config NEURON_optim/configs/depolarizing.yaml \
+  --output-dir NEURON_optim/runs/example
+```
+
 The checked-in configs use one candidate worker; `--workers` can override this
 for process-parallel runs. Independent seeds/basins can additionally be
 parallelized with `runtime.study_workers`; when that value is greater than one,
@@ -134,5 +143,7 @@ checkpointed generation. Set `plotting.every` to a value greater than one to
 render every Nth generation (the final generation is always rendered when
 plotting is enabled). Stage 2 writes one directory per basin and seed with
 its perturbed initial point, checkpoint, generation history, simulation
-archives, plots, and final objective breakdown. Set `plotting.enabled: false`
+archives, plots, and final objective breakdown. Stage 3 writes one study per
+selected Stage 2 basin and applies `stage3.local_normalized_half_width` to the
+Stage 2 parameter subset. Set `plotting.enabled: false`
 when running a diagnostic search without figures.

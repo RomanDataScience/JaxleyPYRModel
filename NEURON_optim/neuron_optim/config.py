@@ -81,6 +81,29 @@ class RunConfig:
         section = self.raw.get("parameters", {})
         return make_parameter_space(section.get("include"), section.get("exclude", ()))
 
+    def stage_parameter_names(self, stage: str) -> tuple[str, ...]:
+        section = self.section(stage)
+        names = section.get("parameter_names")
+        if names is None:
+            return self.parameters.keys
+        if not isinstance(names, (list, tuple)) or not names:
+            raise ValueError(f"{stage}.parameter_names must be a non-empty list")
+        selected = tuple(str(name) for name in names)
+        unknown = sorted(set(selected) - set(self.parameters.keys))
+        if unknown:
+            raise ValueError(f"{stage}.parameter_names contains unsupported parameters: {unknown}")
+        if len(set(selected)) != len(selected):
+            raise ValueError(f"{stage}.parameter_names contains duplicates")
+        return selected
+
+    def stage_parameter_space(self, stage: str, *, lower_overrides=None,
+                              upper_overrides=None):
+        return make_parameter_space(
+            include=self.stage_parameter_names(stage),
+            lower_overrides=lower_overrides,
+            upper_overrides=upper_overrides,
+        )
+
     def section(self, name: str) -> dict[str, Any]:
         return dict(self.raw.get(name, {}))
 
@@ -116,7 +139,7 @@ class RunConfig:
             errors.append("runtime.study_workers must be >= 1")
         if self.backend not in {"neuron", "jaxley"}:
             errors.append("runtime.backend must be either 'neuron' or 'jaxley'")
-        for name in ("passive", "stage1", "stage2"):
+        for name in ("passive", "stage1", "stage2", "stage3"):
             section = self.section(name)
             if int(section.get("generations", 0)) < 1:
                 errors.append(f"{name}.generations must be >= 1")
@@ -126,6 +149,24 @@ class RunConfig:
                 errors.append(f"{name}.seeds must not be empty")
             if int(section.get("checkpoint_every", 1)) < 1:
                 errors.append(f"{name}.checkpoint_every must be >= 1")
+            if name in {"stage2", "stage3"}:
+                try:
+                    self.stage_parameter_names(name)
+                except Exception as exc:
+                    errors.append(str(exc))
+        try:
+            stage2_names = set(self.stage_parameter_names("stage2"))
+            stage3_names = set(self.stage_parameter_names("stage3"))
+            missing = sorted(stage2_names - stage3_names)
+            if missing:
+                errors.append(
+                    f"stage3.parameter_names must retain Stage 2 parameters: {missing}"
+                )
+            half_width = float(self.section("stage3").get("local_normalized_half_width", 0.15))
+            if not 0.0 <= half_width < 0.5:
+                errors.append("stage3.local_normalized_half_width must be in [0, 0.5)")
+        except Exception as exc:
+            errors.append(str(exc))
         if int(self.raw.get("plotting", {}).get("every", 1)) < 1:
             errors.append("plotting.every must be >= 1")
         if not self.data_root.exists():

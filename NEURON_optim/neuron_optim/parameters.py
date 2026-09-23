@@ -154,7 +154,9 @@ class ParameterSpace:
 
 
 def make_parameter_space(include: Sequence[str] | None = None,
-                         exclude: Sequence[str] = ()) -> ParameterSpace:
+                         exclude: Sequence[str] = (),
+                         lower_overrides: Mapping[str, float] | None = None,
+                         upper_overrides: Mapping[str, float] | None = None) -> ParameterSpace:
     keys = tuple(include) if include else ALL_KEYS
     excluded = set(exclude)
     keys = tuple(key for key in keys if key not in excluded)
@@ -163,10 +165,67 @@ def make_parameter_space(include: Sequence[str] | None = None,
         raise ValueError(f"Unknown Combe parameter(s): {unknown}")
     if not keys:
         raise ValueError("Parameter space cannot be empty.")
-    lower = np.asarray([BOUNDS[key][0] for key in keys], dtype=float)
-    upper = np.asarray([BOUNDS[key][1] for key in keys], dtype=float)
+    lower_overrides = dict(lower_overrides or {})
+    upper_overrides = dict(upper_overrides or {})
+    unknown_overrides = sorted(
+        (set(lower_overrides) | set(upper_overrides)) - set(keys)
+    )
+    if unknown_overrides:
+        raise ValueError(
+            f"Bounds override parameter(s) are not in the selected space: {unknown_overrides}"
+        )
+    lower = np.asarray(
+        [lower_overrides.get(key, BOUNDS[key][0]) for key in keys], dtype=float
+    )
+    upper = np.asarray(
+        [upper_overrides.get(key, BOUNDS[key][1]) for key in keys], dtype=float
+    )
+    if not np.isfinite(lower).all() or not np.isfinite(upper).all():
+        raise ValueError("Parameter-space bounds must be finite.")
+    if not np.all(lower < upper):
+        invalid = [key for key, lo, hi in zip(keys, lower, upper, strict=True) if lo >= hi]
+        raise ValueError(f"Parameter-space bounds must satisfy lower < upper: {invalid}")
     reference = np.asarray([DEFAULTS[key] for key in keys], dtype=float)
     return ParameterSpace(keys, lower, upper, reference)
+
+
+def local_normalized_bounds(
+    centers: Mapping[str, float],
+    keys: Sequence[str],
+    half_width: float,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Return physical bounds around centers using normalized coordinates."""
+    if not np.isfinite(half_width) or half_width < 0.0:
+        raise ValueError("Normalized local-bound half_width must be non-negative.")
+    lower: dict[str, float] = {}
+    upper: dict[str, float] = {}
+    for key in keys:
+        if key not in centers:
+            raise KeyError(f"Missing center value for local bound: {key}")
+        global_lower, global_upper = BOUNDS[key]
+        center = float(centers[key])
+        normalized = np.clip(
+            (center - global_lower) / (global_upper - global_lower), 0.0, 1.0
+        )
+        low_normalized = max(0.0, normalized - half_width)
+        high_normalized = min(1.0, normalized + half_width)
+        if np.isclose(low_normalized, high_normalized):
+            raise ValueError(f"Local bounds collapsed for parameter: {key}")
+        lower[key] = global_lower + low_normalized * (global_upper - global_lower)
+        upper[key] = global_lower + high_normalized * (global_upper - global_lower)
+    return lower, upper
+
+
+def complete_parameter_mapping(
+    space: ParameterSpace,
+    normalized: Sequence[float],
+    fixed_values: Mapping[str, float] | None = None,
+) -> dict[str, float]:
+    """Merge a stage candidate into a complete simulator parameter mapping."""
+    mapping = dict(DEFAULTS)
+    mapping.update({key: float(value) for key, value in (fixed_values or {}).items()})
+    mapping.update(space.mapping(normalized))
+    return mapping
 
 
 def passive_model_values(values: Mapping[str, float]) -> dict[str, float]:

@@ -44,10 +44,93 @@ stage1:
   checkpoint_every: 1
 
 stage2:
+  parameter_names:
+    - gna
+    - gnadend
+    - AXNa
+    - scale_Na_conduct
+    - persist
+    - nat_fast_inactivation_tau_scale
+    - nat_slow_recovery_tau_scale
+    - gkv2soma
+    - gkv2
+    - gkv2axon
+    - gkv2scale
+    - soma_kap
+    - axon_kap
+    - basal_kap
+    - soma_kad
+    - gkdrsoma
+    - axongkdr
+    - gkdrapical
+    - kd_deactivation_tau_scale
+    - soma_kca
+    - mykca_init
+    - soma_km
   seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
   generations: 200
   population_size: 30
   sigma0: 0.15
+  parent_fraction: 0.5
+  sigma_trajectory_mV: 2.0
+  sigma_spike_mV: 2.0
+  sigma_plateau_mV: 2.0
+  sigma_recovery_mV: 2.0
+  sigma_terminal_mV: 2.0
+  sigma_firing_rate_hz: 5.0
+  sigma_spike_symmetry: 0.1
+  sigma_spike_height_mV: 5.0
+  weights: {trajectory: 12.0, spike_shape: 10.0, spike_symmetry: 10.0, spike_height: 10.0, plateau: 24.0, return_baseline: 24.0, firing_rate: 30.0}
+  threshold_mV: -20.0
+  refractory_ms: 2.0
+  prominence_mV: 5.0
+  spike_window_ms: 5.0
+  plateau_exclusion_ms: 3.0
+  unmatched_spike_penalty: 100.0
+  invalid_plateau_penalty: 100.0
+  depolarizing_extra_spike_penalty: 10000.0
+  return_alpha: 0.7
+
+stage3:
+  parameter_names:
+    - gna
+    - gnadend
+    - AXNa
+    - scale_Na_conduct
+    - persist
+    - nat_fast_inactivation_tau_scale
+    - nat_slow_recovery_tau_scale
+    - gkv2soma
+    - gkv2
+    - gkv2axon
+    - gkv2scale
+    - soma_kap
+    - axon_kap
+    - basal_kap
+    - soma_kad
+    - gkdrsoma
+    - axongkdr
+    - gkdrapical
+    - kd_deactivation_tau_scale
+    - soma_kca
+    - mykca_init
+    - soma_km
+    - gkdrdend
+    - soma_caL
+    - soma_car
+    - gsomacar
+    - soma_caLH
+    - soma_caT
+    - icangbar
+    - soma_hbar
+    - KirGbar
+    - h_tau_scale
+  local_normalized_half_width: 0.15
+  seeds: [0]
+  generations: 200
+  population_size: 30
+  checkpoint_every: 1
+  sigma0: 0.10
   parent_fraction: 0.5
   sigma_trajectory_mV: 2.0
   sigma_spike_mV: 2.0

@@ -1,4 +1,4 @@
-# NEURON Combe two-stage CMA-ES optimization plan
+# NEURON Combe staged CMA-ES optimization plan
 
 ## Status
 

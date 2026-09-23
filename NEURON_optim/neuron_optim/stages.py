@@ -1,4 +1,4 @@
-"""Parallel two-stage orchestration and basin generation."""
+"""Parallel staged orchestration and basin generation."""
 
 from __future__ import annotations
 
@@ -20,7 +20,16 @@ from .objective import (
     depolarizing_objective,
     hyperpolarizing_objective,
 )
-from .parameters import DEFAULTS, PASSIVE, ParameterSpace, make_parameter_space, passive_model_values
+from .parameters import (
+    ALL_KEYS,
+    DEFAULTS,
+    PASSIVE,
+    ParameterSpace,
+    complete_parameter_mapping,
+    local_normalized_bounds,
+    make_parameter_space,
+    passive_model_values,
+)
 from .plotting import plot_depolarizing_step_generation, plot_generation
 from .simulator import make_simulator
 
@@ -63,7 +72,7 @@ def _build_objective_context(traces: list[Trace], stage: str,
                              options: dict[str, Any]) -> ObjectiveContext:
     return build_objective_context(
         traces,
-        stage="depolarizing" if stage == "depolarizing" else "hyper",
+        stage="depolarizing" if stage in {"depolarizing", "stage3"} else "hyper",
         threshold_mV=float(options.get("threshold_mV", -20.0)),
         refractory_ms=float(options.get("refractory_ms", 2.0)),
         prominence_mV=float(options.get("prominence_mV", 5.0)),
@@ -74,7 +83,9 @@ def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
     physical = _WORKER["space"].physical(normalized) if "space" in _WORKER else None
     if physical is None:
         raise RuntimeError("Worker parameter space was not initialized")
-    mapping = dict(zip(keys, physical, strict=True))
+    mapping = complete_parameter_mapping(
+        _WORKER["space"], normalized, _WORKER.get("fixed_values")
+    )
     if _WORKER["stage"] == "passive":
         mapping = passive_model_values(mapping)
     try:
@@ -101,20 +112,23 @@ def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
 def _init_worker_with_space(stage: str, simulation_traces: list[Trace],
                             fitness_traces: list[Trace], d_lambda: float,
                             objective_options: dict[str, Any], backend: str,
-                            space: ParameterSpace) -> None:
+                            space: ParameterSpace,
+                            fixed_values: dict[str, float] | None = None) -> None:
     _init_worker(stage, simulation_traces, fitness_traces, d_lambda,
                  objective_options, backend)
     _WORKER["space"] = space
+    _WORKER["fixed_values"] = fixed_values or {}
 
 
 def _evaluate_serial(normalized: np.ndarray, *, stage: str,
                      simulation_traces: list[Trace], fitness_traces: list[Trace],
                      space: ParameterSpace, d_lambda: float,
                      objective_options: dict[str, Any], backend: str,
-                     simulator=None, objective_context: ObjectiveContext | None = None):
+                     simulator=None, objective_context: ObjectiveContext | None = None,
+                     fixed_values: dict[str, float] | None = None):
     try:
         simulator = simulator or make_simulator(backend, d_lambda=d_lambda, quiet=True)
-        mapping = space.mapping(normalized)
+        mapping = complete_parameter_mapping(space, normalized, fixed_values)
         if stage == "passive":
             mapping = passive_model_values(mapping)
         simulations = simulator.simulate_many(simulation_traces, mapping)
@@ -150,7 +164,11 @@ def _json_default(value):
 
 
 def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
-    section = dict(raw["stage1"] if stage in {"passive", "hyper"} else raw["stage2"])
+    section_name = (
+        "stage1" if stage in {"passive", "hyper"}
+        else "stage3" if stage == "stage3" else "stage2"
+    )
+    section = dict(raw[section_name])
     if stage in {"passive", "hyper"}:
         return {"sigma_mV": float(section.get("sigma_hyper_mV", 1.0)),
                 "region_weights": section.get("region_weights", {"pre": 1.0, "step": 4.0, "recovery": 3.0}),
@@ -190,9 +208,11 @@ def _config_with_workers(config: RunConfig, workers: int) -> RunConfig:
 
 
 def _run_study_task(task):
-    config, stage, seed, run_dir, initial_mean, basin_id = task
+    (config, stage, seed, run_dir, initial_mean, basin_id,
+     space, fixed_values) = task
     return run_study(config, stage=stage, seed=seed, run_dir=run_dir,
-                     initial_mean=initial_mean, basin_id=basin_id)
+                     initial_mean=initial_mean, basin_id=basin_id,
+                     space=space, fixed_values=fixed_values)
 
 
 def _run_studies(config: RunConfig, tasks: list[tuple]) -> list[dict[str, Any]]:
@@ -201,8 +221,9 @@ def _run_studies(config: RunConfig, tasks: list[tuple]) -> list[dict[str, Any]]:
         return [_run_study_task(task) for task in tasks]
     inner_config = _config_with_workers(config, 1)
     inner_tasks = [(
-        inner_config, stage, seed, run_dir, initial_mean, basin_id
-    ) for _, stage, seed, run_dir, initial_mean, basin_id in tasks]
+        inner_config, stage, seed, run_dir, initial_mean, basin_id,
+        space, fixed_values
+    ) for _, stage, seed, run_dir, initial_mean, basin_id, space, fixed_values in tasks]
     with ProcessPoolExecutor(max_workers=config.study_workers) as pool:
         return list(pool.map(_run_study_task, inner_tasks))
 
@@ -368,7 +389,8 @@ def _evaluate_population(population: np.ndarray, *, stage: str,
                          space: ParameterSpace, config: RunConfig,
                          options: dict[str, Any], executor=None,
                          simulator=None,
-                         objective_context: ObjectiveContext | None = None) -> tuple[np.ndarray, list | None, list]:
+                         objective_context: ObjectiveContext | None = None,
+                         fixed_values: dict[str, float] | None = None) -> tuple[np.ndarray, list | None, list]:
     if config.workers == 1:
         pairs = [_evaluate_serial(
                                   candidate, stage=stage,
@@ -376,7 +398,8 @@ def _evaluate_population(population: np.ndarray, *, stage: str,
                                   fitness_traces=fitness_traces, space=space,
                                   d_lambda=config.d_lambda, objective_options=options,
                                   backend=config.backend, simulator=simulator,
-                                  objective_context=objective_context)
+                                  objective_context=objective_context,
+                                  fixed_values=fixed_values)
                  for candidate in population]
     else:
         if executor is None:
@@ -384,7 +407,8 @@ def _evaluate_population(population: np.ndarray, *, stage: str,
                     max_workers=config.workers,
                     initializer=_init_worker_with_space,
                     initargs=(stage, simulation_traces, fitness_traces,
-                              config.d_lambda, options, config.backend, space),
+                              config.d_lambda, options, config.backend, space,
+                              fixed_values),
             ) as pool:
                 pairs = list(pool.map(_evaluate_worker, population, [space.keys] * len(population)))
         else:
@@ -438,13 +462,19 @@ def _save_generation_simulations(run_dir: Path, generation: int,
 
 def _study_manifest(config: RunConfig, stage: str, seed: int, space: ParameterSpace,
                     run_dir: Path, basin_id: str | None = None,
-                    initial_mean: np.ndarray | None = None) -> None:
-    section_name = "passive" if stage == "passive" else "stage1" if stage == "hyper" else "stage2"
+                    initial_mean: np.ndarray | None = None,
+                    fixed_values: dict[str, float] | None = None) -> None:
+    section_name = (
+        "passive" if stage == "passive" else
+        "stage1" if stage == "hyper" else
+        "stage3" if stage == "stage3" else "stage2"
+    )
     section = config.section(section_name)
     payload = {
         "stage": stage, "model_mode": "passive_only" if stage == "passive" else "full",
         "seed": seed, "basin_id": basin_id,
         "config_hash": config.hash(), "parameter_keys": list(space.keys),
+        "fixed_parameter_keys": sorted(set(ALL_KEYS) - set(space.keys)),
         "generations": int(section["generations"]),
         "population_size": int(section["population_size"]),
         "backend": config.backend,
@@ -452,23 +482,46 @@ def _study_manifest(config: RunConfig, stage: str, seed: int, space: ParameterSp
     }
     if initial_mean is not None:
         payload["initial_mean_normalized"] = np.asarray(initial_mean, dtype=float).tolist()
+    if fixed_values:
+        payload["fixed_values"] = {
+            key: float(fixed_values[key])
+            for key in sorted(set(ALL_KEYS) - set(space.keys))
+            if key in fixed_values
+        }
     _write_json(run_dir / "manifest.json", payload)
 
 
 def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
               initial_mean: np.ndarray | None = None,
-              basin_id: str | None = None) -> dict[str, Any]:
-    space = make_parameter_space(include=PASSIVE) if stage == "passive" else config.parameters
-    section_name = "passive" if stage == "passive" else "stage1" if stage == "hyper" else "stage2"
+              basin_id: str | None = None,
+              space: ParameterSpace | None = None,
+              fixed_values: dict[str, float] | None = None) -> dict[str, Any]:
+    if space is None:
+        space = make_parameter_space(include=PASSIVE) if stage == "passive" else config.parameters
+    section_name = (
+        "passive" if stage == "passive" else
+        "stage1" if stage == "hyper" else
+        "stage3" if stage == "stage3" else "stage2"
+    )
     section = config.section(section_name)
     simulation_traces = _load_traces(config, stage)
     fitness_traces = _fitness_traces(config, stage, simulation_traces)
     run_dir.mkdir(parents=True, exist_ok=True)
-    _study_manifest(config, stage, seed, space, run_dir, basin_id, initial_mean)
+    _study_manifest(config, stage, seed, space, run_dir, basin_id, initial_mean,
+                    fixed_values)
     objective_version = (HYPER_OBJECTIVE_VERSION
                          if stage in {"passive", "hyper"}
                          else "depolarizing-v1")
+    bounds_signature = tuple(
+        (float(lower), float(upper))
+        for lower, upper in zip(space.lower, space.upper, strict=True)
+    )
+    fixed_signature = tuple(sorted(
+        (key, float(value)) for key, value in (fixed_values or {}).items()
+        if key in ALL_KEYS and key not in space.keys
+    ))
     compatibility = (f"{config.hash()}:{stage}:{seed}:{basin_id}:{space.keys}:"
+                     f"{bounds_signature}:{fixed_signature}:"
                      f"fitness-window-v2:{objective_version}")
     checkpoint_dir = run_dir / "checkpoint"
     optimizer = CMAES.load(checkpoint_dir, seed=seed, compatibility_hash=compatibility)
@@ -503,7 +556,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
             max_workers=config.workers,
             initializer=_init_worker_with_space,
             initargs=(stage, simulation_traces, fitness_traces, config.d_lambda,
-                      options, config.backend, space),
+                      options, config.backend, space, fixed_values),
         )
     else:
         serial_simulator = make_simulator(config.backend, d_lambda=config.d_lambda, quiet=True)
@@ -514,7 +567,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                 population, stage=stage, simulation_traces=simulation_traces,
                 fitness_traces=fitness_traces, space=space, config=config,
                 options=options, executor=executor, simulator=serial_simulator,
-                objective_context=objective_context,
+                objective_context=objective_context, fixed_values=fixed_values,
             )
             best_index = int(np.argmin(losses))
             if best is None or losses[best_index] < best[0]:
@@ -560,7 +613,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                                         space=space, top_k=top_k,
                                         population_indices=top_indices,
                                         dpi=int(plotting.get("dpi", 120)))
-                        if stage == "depolarizing":
+                        if stage in {"depolarizing", "stage3"}:
                             plot_depolarizing_step_generation(
                                 output_dir=run_dir / "plots", generation=generation,
                                 traces=fitness_traces, population=plot_population,
@@ -578,10 +631,16 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
         raise RuntimeError("Study produced no generations")
     physical = space.physical(best[1])
     physical_by_name = dict(zip(space.keys, physical.tolist(), strict=True))
+    complete_physical_by_name = dict(DEFAULTS)
+    complete_physical_by_name.update(fixed_values or {})
+    complete_physical_by_name.update(physical_by_name)
     result = {"loss": best[0], "normalized": best[1].tolist(),
               "physical": physical.tolist(), "physical_by_name": physical_by_name,
+              "complete_physical_by_name": complete_physical_by_name,
               "details": best[2], "generation": optimizer.state.generation}
-    _write_json(run_dir / "best_parameters.json", {"keys": list(space.keys), **result})
+    _write_json(run_dir / "best_parameters.json", {
+        "keys": list(space.keys), "complete_keys": list(ALL_KEYS), **result
+    })
     return result
 
 
@@ -660,19 +719,31 @@ def run_hyper_stage(config: RunConfig, output_root: Path) -> None:
         seed = int(seed)
         initial = _full_initial_from_passive(config, passive_values, seed)
         tasks.append((config, "hyper", seed,
-                      stage1_dir / f"seed_{seed:03d}", initial, None))
+                      stage1_dir / f"seed_{seed:03d}", initial, None,
+                      config.parameters, None))
     _run_studies(config, tasks)
     make_basins(config, stage1_dir)
 
 
-def run_depolarizing_stage(config: RunConfig, output_root: Path,
-                           basins: list[dict] | None = None) -> None:
-    stage1_dir = output_root / "stage1_hyper"
-    basins = basins if basins is not None else load_basins(stage1_dir / "basins.jsonl")
+def _basin_physical_values(config: RunConfig, basin: dict) -> dict[str, float]:
+    space = config.parameters
+    if "physical" in basin:
+        values = dict(zip(space.keys, basin["physical"], strict=True))
+    else:
+        values = dict(zip(space.keys, space.physical(basin["normalized"]), strict=True))
+    complete = dict(DEFAULTS)
+    complete.update({key: float(value) for key, value in values.items()})
+    return complete
+
+
+def _stage2_tasks(config: RunConfig, output_root: Path,
+                  basins: list[dict]) -> list[tuple]:
     stage2_dir = output_root / "stage2_depolarizing"
+    space = config.stage_parameter_space("stage2")
     tasks = []
     for basin in basins:
-        mean = np.asarray(basin["normalized"], dtype=float)
+        fixed_values = _basin_physical_values(config, basin)
+        mean = space.normalize([fixed_values[key] for key in space.keys])
         for seed in config.section("stage2").get("seeds", list(range(10))):
             seed = int(seed)
             rng = np.random.default_rng(
@@ -681,10 +752,61 @@ def run_depolarizing_stage(config: RunConfig, output_root: Path,
             initial = np.clip(mean + rng.uniform(-0.15, 0.15, size=mean.size), 0.0, 1.0)
             tasks.append((config, "depolarizing", seed,
                           stage2_dir / basin["basin_id"] / f"seed_{seed:03d}",
-                          initial, basin["basin_id"]))
+                          initial, basin["basin_id"], space, fixed_values))
+    return tasks
+
+
+def run_depolarizing_stage(config: RunConfig, output_root: Path,
+                           basins: list[dict] | None = None) -> None:
+    stage1_dir = output_root / "stage1_hyper"
+    basins = basins if basins is not None else load_basins(stage1_dir / "basins.jsonl")
+    _run_studies(config, _stage2_tasks(config, output_root, basins))
+
+
+def _best_stage2_results(output_root: Path) -> list[tuple[str, dict]]:
+    stage2_dir = output_root / "stage2_depolarizing"
+    if not stage2_dir.exists():
+        raise FileNotFoundError(stage2_dir)
+    selected = []
+    for basin_dir in sorted(stage2_dir.glob("b*")):
+        candidates = []
+        for result_path in sorted(basin_dir.glob("seed_*/best_parameters.json")):
+            payload = json.loads(result_path.read_text(encoding="utf-8"))
+            candidates.append((float(payload["loss"]), payload))
+        if candidates:
+            selected.append((basin_dir.name, min(candidates, key=lambda item: item[0])[1]))
+    if not selected:
+        raise FileNotFoundError(stage2_dir / "b*/seed_*/best_parameters.json")
+    return selected
+
+
+def run_stage3(config: RunConfig, output_root: Path) -> None:
+    """Expand depolarizing fits while keeping Stage 2 parameters local."""
+    stage3_dir = output_root / "stage3_depolarizing"
+    stage2_names = config.stage_parameter_names("stage2")
+    half_width = float(config.section("stage3").get(
+        "local_normalized_half_width", 0.15
+    ))
+
+    tasks = []
+    for basin_id, stage2_result in _best_stage2_results(output_root):
+        complete = dict(DEFAULTS)
+        complete.update(stage2_result.get("complete_physical_by_name", {}))
+        complete.update(stage2_result.get("physical_by_name", {}))
+        lower, upper = local_normalized_bounds(complete, stage2_names, half_width)
+        space = config.stage_parameter_space(
+            "stage3", lower_overrides=lower, upper_overrides=upper
+        )
+        initial = space.normalize([complete[key] for key in space.keys])
+        for seed in config.section("stage3").get("seeds", [0]):
+            seed = int(seed)
+            tasks.append((config, "stage3", seed,
+                          stage3_dir / basin_id / f"seed_{seed:03d}",
+                          initial, basin_id, space, complete))
     _run_studies(config, tasks)
 
 
 def run_pipeline(config: RunConfig, output_root: Path) -> None:
     run_hyper_stage(config, output_root)
     run_depolarizing_stage(config, output_root)
+    run_stage3(config, output_root)
