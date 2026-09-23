@@ -13,6 +13,9 @@ See [STAGES.md](STAGES.md) for the complete Stage 0 → Stage 1 → Stage 2
 solution handoff, including how passive solutions, basins, and Stage 2 starting
 points are constructed.
 
+For Optuna-style importance analysis of the calibrated parameters in each
+stage, see [hyperparameter_analyses/README.md](hyperparameter_analyses/README.md).
+
 Hyperpolarizing trials are simulated over the existing 500 ms pre-step and
 600 ms post-step window, subject to the available recorded data. Their fitness
 and plots use the final 100 ms before the hyperpolarizing step onward. The

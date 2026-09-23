@@ -46,11 +46,16 @@ Each Stage 1 seed then runs an independent full-model CMA-ES search against the
 hyperpolarizing objective. The Stage 1 studies do not start from the same exact
 point because their passive perturbations are seed-dependent.
 
+Stage 1 evaluates all four configured hyperpolarizing recordings. Its objective
+matches the voltage trajectory across pre-step, stimulus, and recovery regions,
+adds a deflection term, and penalizes spikes during a hyperpolarizing trial.
+
 At the end of Stage 1, all saved generations from every Stage 1 seed are used
-to create basin records. The code first reserves up to ten of the best
-candidates per seed, removes duplicate normalized vectors, and then backfills
-with the globally best remaining candidates across all seeds and generations.
-Selection stops at `min(100, number of available candidates)`.
+to create basin records. The code first reserves up to
+`stage1.basin_quota_per_seed` candidates per seed, defaulting to ten, removes
+duplicate normalized vectors, and then backfills with the globally best
+remaining candidates across all seeds and generations. Selection stops at
+`min(100, number of available candidates)`.
 
 Each basin stores both normalized and physical parameter vectors, along with
 its source seed, source generation, rank, and loss. The records are written to:
@@ -91,6 +96,25 @@ stage2_depolarizing/
 The Stage 2 seed therefore controls both the CMA-ES random sequence and the
 deterministic perturbation of the basin starting point. Different basins and
 seeds represent separate starting solutions.
+
+Stage 2 evaluates all four configured depolarizing recordings. Its loss is the
+weighted mean of these seven components:
+
+| Component | Weight |
+|---|---:|
+| Voltage trajectory | 12/120 = 10% |
+| Spike shape | 10/120 = 8.33% |
+| Spike symmetry | 10/120 = 8.33% |
+| Spike height | 10/120 = 8.33% |
+| Plateau | 24/120 = 20% |
+| Return to baseline | 24/120 = 20% |
+| Firing rate during the current step | 30/120 = 25% |
+
+The firing-rate term compares the experimental and simulated spike counts within
+the depolarizing current step, converted to Hz using the step duration. Spike
+symmetry and height are evaluated for matched experimental and simulated spikes.
+Extra spikes outside the allowed timing window can trigger the configured large
+penalty.
 
 ## Counts for the smoke configuration
 
