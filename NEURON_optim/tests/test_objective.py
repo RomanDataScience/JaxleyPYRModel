@@ -85,6 +85,33 @@ def test_depolarizing_extra_spikes_penalty():
     assert result.value == 4321.0
 
 
+def test_depolarizing_firing_rate_match_is_zero():
+    observed = trace("depolarizing_step")
+    voltage = observed.voltage_mV.copy()
+    voltage[600:603] = [-10.0, 30.0, -10.0]
+    simulated = SimulationOutput(observed.time_ms, voltage)
+    result = depolarizing_objective([observed], [simulated], prominence_mV=1.0)
+    rate = result.details["traces"][0]["firing_rate_hz"]
+    assert rate["experimental"] == 0.0
+    assert rate["simulated"] == 10.0
+    assert rate["loss"] > 0.0
+
+
+def test_depolarizing_firing_rate_component_matches_equal_rates():
+    observed = trace("depolarizing_step")
+    voltage = observed.voltage_mV.copy()
+    voltage[600:603] = [-10.0, 30.0, -10.0]
+    observed = Trace(observed.cell, observed.trace, observed.protocol, observed.time_ms,
+                     voltage, observed.current_nA, observed.epoch_start_ms,
+                     observed.epoch_stop_ms)
+    simulated = SimulationOutput(observed.time_ms, voltage.copy())
+    result = depolarizing_objective([observed], [simulated], prominence_mV=1.0)
+    rate = result.details["traces"][0]["firing_rate_hz"]
+    assert rate["experimental"] == 10.0
+    assert rate["simulated"] == 10.0
+    assert rate["loss"] == 0.0
+
+
 def test_precomputed_objective_context_preserves_loss():
     observed = trace("depolarizing_step")
     simulated = SimulationOutput(observed.time_ms, observed.voltage_mV.copy())

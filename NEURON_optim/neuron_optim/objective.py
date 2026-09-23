@@ -293,11 +293,20 @@ def _matched_spike_loss(trace: Trace, sim: np.ndarray, exp_spikes: list[Spike],
     return value, {"matched": pairs, "unmatched": unmatched, "losses": losses}
 
 
+def _step_firing_rate_hz(trace: Trace, spikes: list[Spike]) -> float:
+    """Return the detected spike rate during the current step in Hz."""
+    duration_ms = float(trace.epoch_stop_ms - trace.epoch_start_ms)
+    if duration_ms <= 0.0:
+        return 0.0
+    return len(spikes) / (duration_ms / 1000.0)
+
+
 def depolarizing_objective(
     traces: Iterable[Trace], simulations: Iterable[SimulationOutput], *,
     sigma_trajectory_mV: float = 2.0, sigma_spike_mV: float = 2.0,
     sigma_plateau_mV: float = 2.0, sigma_recovery_mV: float = 2.0,
-    sigma_terminal_mV: float = 2.0, weights: Mapping[str, float] | None = None,
+    sigma_terminal_mV: float = 2.0, sigma_firing_rate_hz: float = 5.0,
+    weights: Mapping[str, float] | None = None,
     threshold_mV: float = -20.0, refractory_ms: float = 2.0,
     prominence_mV: float = 5.0, spike_window_ms: float = 5.0,
     plateau_exclusion_ms: float = 3.0, unmatched_spike_penalty: float = 100.0,
@@ -308,7 +317,8 @@ def depolarizing_objective(
     include_details: bool = True,
 ) -> ObjectiveResult:
     component_weights = {"trajectory": 1.0, "spike_shape": 3.0,
-                         "plateau": 2.0, "return_baseline": 3.0}
+                         "plateau": 2.0, "return_baseline": 3.0,
+                         "firing_rate": 1.0}
     component_weights.update(weights or {})
     context = context or build_objective_context(
         traces, stage="depolarizing", threshold_mV=threshold_mV,
@@ -336,6 +346,13 @@ def depolarizing_objective(
             trace, sim, exp_spikes, sim_spikes, sigma_mV=sigma_spike_mV,
             window_ms=spike_window_ms, unmatched_penalty=unmatched_spike_penalty,
             dt_ms=features.dt_ms)
+        experimental_rate_hz = _step_firing_rate_hz(trace, exp_spikes)
+        simulated_rate_hz = _step_firing_rate_hz(trace, sim_spikes)
+        l_firing_rate = _kernel_loss(
+            np.asarray([simulated_rate_hz]),
+            np.asarray([experimental_rate_hz]),
+            sigma_firing_rate_hz,
+        )
 
         step_mask = features.step_mask
         exclusion = np.zeros(trace.time_ms.size, dtype=bool)
@@ -354,7 +371,8 @@ def depolarizing_objective(
         l_return = return_alpha * l_recovery + (1.0 - return_alpha) * l_terminal
 
         components = {"trajectory": l_trajectory, "spike_shape": l_spike,
-                      "plateau": l_plateau, "return_baseline": l_return}
+                      "plateau": l_plateau, "return_baseline": l_return,
+                      "firing_rate": l_firing_rate}
         total = sum(component_weights[key] * components[key] for key in components) / sum(component_weights.values())
         penalized = len(outside) > 1
         if penalized:
@@ -362,6 +380,12 @@ def depolarizing_objective(
         totals.append(total)
         if include_details:
             all_details.append({"trace": trace.trace, "components": components,
+                                "firing_rate_hz": {
+                                    "experimental": experimental_rate_hz,
+                                    "simulated": simulated_rate_hz,
+                                    "error": simulated_rate_hz - experimental_rate_hz,
+                                    "loss": l_firing_rate,
+                                },
                                 "spikes_experimental_ms": [s.peak_ms for s in exp_spikes],
                                 "spikes_simulated_ms": [s.peak_ms for s in sim_spikes_all],
                                 "out_of_window_spikes_ms": [s.peak_ms for s in outside],
