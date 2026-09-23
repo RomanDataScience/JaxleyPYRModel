@@ -206,7 +206,7 @@ bounds = {
     "soma_km": [0.0, 0.01],
     "mykca_init": [0.0, 0.01],
     "soma_kca": [0.0, 0.01],
-    "persist": [0.0, 0.05],
+    "persist": [0.0, 0.02],
     "AXNa": [0.1, 10.0],
     "gkdrsoma": [0.0, 0.02],
     "gkdrdend": [0.0, 0.02],

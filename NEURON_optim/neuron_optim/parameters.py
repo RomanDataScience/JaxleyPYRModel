@@ -91,7 +91,10 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "soma_km": (0.0, 0.01),
     "mykca_init": (0.0, 0.01),
     "soma_kca": (0.0, 0.01),
-    "persist": (0.0, 0.05),
+    # Nav1.6 persistent recovery is a strong nonlinear lever on sustained Na+
+    # current; keep its calibration range below the unstable high-persist
+    # regime observed in the depolarizing smoke fits.
+    "persist": (0.0, 0.02),
     "AXNa": (0.1, 10.0),
     "gkdrsoma": (0.0, 0.02),
     "gkdrdend": (0.0, 0.02),
