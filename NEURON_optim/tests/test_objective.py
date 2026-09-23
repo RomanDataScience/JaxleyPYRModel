@@ -38,6 +38,20 @@ def test_hyper_objective_penalizes_absolute_baseline_offset():
     simulated = SimulationOutput(observed.time_ms, observed.voltage_mV + 5.0)
     result = hyperpolarizing_objective([observed], [simulated])
     assert result.value > 0.0
+    offset = result.details["traces"][0]["voltage_offset_mV"]
+    assert offset["error"] == 5.0
+    assert offset["loss"] > 0.0
+
+
+def test_hyper_objective_can_separate_delta_v_from_voltage_offset():
+    observed = trace()
+    simulated = SimulationOutput(observed.time_ms, observed.voltage_mV + 5.0)
+    shape_only = hyperpolarizing_objective(
+        [observed], [simulated], voltage_offset_weight=0.0
+    )
+    combined = hyperpolarizing_objective([observed], [simulated])
+    assert shape_only.value == 0.0
+    assert combined.value > shape_only.value
 
 
 def test_hyper_objective_reports_explicit_voltage_deflection():

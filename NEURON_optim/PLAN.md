@@ -159,9 +159,11 @@ length after alignment, finite values, and the current-unit conversion.
 
 ### Objective
 
-For each of the four hyperpolarizing traces, calculate a weighted voltage-shape
-similarity kernel between `v_sim(t)` and `v_exp(t)` (where `v_exp` is the
-recorded membrane voltage, also referred to as `v_memb`):
+For each of the four hyperpolarizing traces, calculate a weighted
+baseline-centered voltage-shape similarity kernel between `Delta_v_sim(t)` and
+`Delta_v_exp(t)`, together with a separate absolute pre-step voltage-offset
+loss. Here `Delta_v` is voltage relative to each candidate/trace's pre-step
+baseline and `v_exp` is the recorded membrane voltage:
 
 ```text
 e(t) = v_sim(t) - v_exp(t)
@@ -169,7 +171,12 @@ similarity(t) = exp(-(e(t)^2) / sigma_hyper_mV^2)
 L_region = 1 - weighted_mean(similarity(t))
 L_trace = (w_pre * L_pre + w_step * L_step + w_recovery * L_recovery)
            / (w_pre + w_step + w_recovery)
-L_hyper = mean(L_trace over the four traces)
+L_delta_v = mean(L_trace over the four traces)
+b_exp = median(v_exp before the step)
+b_sim = median(v_sim before the step)
+L_offset = 1 - exp(-((b_sim - b_exp)^2) / sigma_offset_mV^2)
+L_hyper = (w_delta_v * L_delta_v + w_offset * L_offset)
+           / (w_delta_v + w_offset)
 ```
 
 The raw exponential is highest when the traces match, so `1 - similarity` is
@@ -184,11 +191,11 @@ not overwhelm the response. The default regions are:
 | Hyperpolarizing step | onset through offset | 4.0 |
 | Recovery | offset through trial end | 3.0 |
 
-The exact weights, voltage scale, and optional robust loss will live in the
-config. The implementation will save region-wise losses as well as the scalar
-objective so it is clear whether a candidate improved the step, recovery, or
-baseline. Each trace contributes equally after its regional averages are
-computed.
+The exact weights, voltage scales, and optional robust loss will live in the
+config. The implementation saves region-wise ΔV losses, the voltage-offset
+loss, and the scalar objective so it is clear whether a candidate improved the
+shape or absolute voltage alignment. Each trace contributes equally after its
+regional averages are computed.
 
 The exponential width `sigma_hyper_mV` is a required fixed configuration value
 and will be recorded in the run manifest. It will not be estimated from the

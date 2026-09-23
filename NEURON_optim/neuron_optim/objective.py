@@ -174,6 +174,8 @@ def hyperpolarizing_objective(
     traces: Iterable[Trace], simulations: Iterable[SimulationOutput], *,
     sigma_mV: float = 1.0, region_weights: Mapping[str, float] | None = None,
     deflection_weight: float = 2.0, sigma_deflection_mV: float = 1.0,
+    delta_v_weight: float = 1.0, voltage_offset_weight: float = 1.0,
+    sigma_offset_mV: float = 1.0,
     threshold_mV: float = -20.0, refractory_ms: float = 2.0,
     prominence_mV: float = 5.0, spike_penalty: float = 1.0e4,
     context: ObjectiveContext | None = None,
@@ -199,15 +201,15 @@ def hyperpolarizing_objective(
         in_step = [spike for spike in spikes
                    if trace.epoch_start_ms <= spike.peak_ms <= trace.epoch_stop_ms]
         losses: dict[str, float] = {}
-        # Compare absolute voltage for the trajectory terms. A baseline shift
-        # is a real fitting error for the passive and hyperpolarizing stages.
-        # The separate deflection term below remains baseline-relative because
-        # it measures the response to the pulse.
+        # The trajectory terms compare baseline-centered voltage (Delta_V),
+        # while a separate term scores the absolute pre-pulse voltage offset.
+        # This preserves waveform shape and makes resting-voltage alignment an
+        # explicit, independently weighted part of the objective.
         for region, mask in (("pre", features.pre_mask),
                              ("step", features.step_mask),
                              ("recovery", features.recovery_mask)):
             losses[region] = _kernel_loss(
-                simulated[mask], trace.voltage_mV[mask], sigma_mV
+                simulated_centered[mask], experimental_centered[mask], sigma_mV
             )
         step_mask = features.step_mask
         if not step_mask.any():
@@ -225,10 +227,25 @@ def hyperpolarizing_objective(
                 sigma_deflection_mV,
             )
         losses["deflection"] = deflection_loss
-        total = (
+        delta_v_loss = (
             sum(weights[name] * losses[name] for name in ("pre", "step", "recovery"))
             + float(deflection_weight) * deflection_loss
         ) / (sum(weights.values()) + float(deflection_weight))
+        experimental_baseline = float(np.median(trace.voltage_mV[features.pre_mask]))
+        voltage_offset_loss = _kernel_loss(
+            np.asarray([simulated_baseline]),
+            np.asarray([experimental_baseline]),
+            sigma_offset_mV,
+        )
+        losses["delta_v"] = delta_v_loss
+        losses["voltage_offset"] = voltage_offset_loss
+        component_weight_total = float(delta_v_weight) + float(voltage_offset_weight)
+        if component_weight_total <= 0.0:
+            raise ValueError("delta_v_weight + voltage_offset_weight must be positive")
+        total = (
+            float(delta_v_weight) * delta_v_loss
+            + float(voltage_offset_weight) * voltage_offset_loss
+        ) / component_weight_total
         penalized = bool(in_step)
         if penalized:
             total = float(spike_penalty)
@@ -239,6 +256,17 @@ def hyperpolarizing_objective(
                                       "experimental": experimental_deflection,
                                       "simulated": simulated_deflection,
                                       "loss": deflection_loss,
+                                  },
+                                  "delta_v_loss": delta_v_loss,
+                                  "voltage_offset_mV": {
+                                      "experimental": experimental_baseline,
+                                      "simulated": simulated_baseline,
+                                      "error": simulated_baseline - experimental_baseline,
+                                      "loss": voltage_offset_loss,
+                                  },
+                                  "component_weights": {
+                                      "delta_v": float(delta_v_weight),
+                                      "voltage_offset": float(voltage_offset_weight),
                                   },
                                   "spikes_ms": [s.peak_ms for s in spikes],
                                   "in_step_spikes_ms": [s.peak_ms for s in in_step],

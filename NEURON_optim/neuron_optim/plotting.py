@@ -64,10 +64,8 @@ def plot_generation(*, output_dir: Path, generation: int, stage: str,
             plot_trace_voltage = trace.voltage_mV[experimental_mask]
             plot_sim_time = simulation.time_ms[simulated_mask]
             plot_sim_voltage = simulation.voltage_mV[simulated_mask]
-            # Keep plots in the same absolute-voltage space used by the
-            # hyperpolarizing/passive objective. Baseline offsets are part of
-            # the fit, so centering would make the visual ranking disagree
-            # with the optimizer.
+            # Show absolute voltage so the separately scored baseline offset
+            # remains visible alongside the Delta_V waveform shape.
             exp_voltage = plot_trace_voltage
             sim_voltage = plot_sim_voltage
             ylabel = "mV"

@@ -27,7 +27,7 @@ from .simulator import make_simulator
 
 LOGGER = logging.getLogger(__name__)
 _WORKER: dict[str, Any] = {}
-HYPER_OBJECTIVE_VERSION = "absolute-voltage-v1"
+HYPER_OBJECTIVE_VERSION = "delta-v-plus-offset-v1"
 
 
 def _init_worker(stage: str, simulation_traces: list[Trace], fitness_traces: list[Trace],
@@ -156,6 +156,9 @@ def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
                 "region_weights": section.get("region_weights", {"pre": 1.0, "step": 4.0, "recovery": 3.0}),
                 "deflection_weight": float(section.get("deflection_weight", 2.0)),
                 "sigma_deflection_mV": float(section.get("sigma_deflection_mV", 1.0)),
+                "delta_v_weight": float(section.get("delta_v_weight", 1.0)),
+                "voltage_offset_weight": float(section.get("voltage_offset_weight", 1.0)),
+                "sigma_offset_mV": float(section.get("sigma_offset_mV", 1.0)),
                 "threshold_mV": float(section.get("threshold_mV", -20.0)),
                 "refractory_ms": float(section.get("refractory_ms", 2.0)),
                 "prominence_mV": float(section.get("prominence_mV", 5.0)),
