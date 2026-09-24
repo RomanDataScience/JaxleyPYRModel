@@ -46,6 +46,18 @@ def vtrap(x, y):
     return jnp.where(jnp.abs(arg) < 1e-6, y, raw)
 
 
+def neuron_table(x, function):
+    """Evaluate a NEURON ``TABLE FROM -150 TO 150 WITH 200`` function.
+
+    NEURON stores 201 samples and linearly interpolates between them.  The
+    converted calcium channels use this form for their rate functions, so
+    evaluating the analytic expression directly would give a different
+    initialization at voltages that are not table grid points.
+    """
+    grid = jnp.linspace(-150.0, 150.0, 201)
+    return jnp.interp(x, grid, function(grid))
+
+
 def trap0(v, th, a, q):
     arg = -(v - th) / q
     denom = 1.0 - safe_exp(arg)

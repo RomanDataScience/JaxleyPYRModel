@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 
-from .common import Channel, channel_prefix, gate_update, ghk, safe_exp, state_or_param
+from .common import Channel, channel_prefix, gate_update, ghk, neuron_table, safe_exp, state_or_param
 
 
 class Cat(Channel):
@@ -43,14 +43,25 @@ class Cat(Channel):
 
     def rates(self, v, params):
         prefix = channel_prefix(self)
-        alph = 1.6e-4 * safe_exp(-(v + 57.0) / 19.0)
-        beth = 1.0 / (safe_exp((-v + 15.0) / 10.0) + 1.0)
-        denom = safe_exp((-v + 19.88) / 10.0) - 1.0
-        alpm = 0.1967 * (-v + 19.88) / jnp.where(jnp.abs(denom) < 1e-12, 1e-12, denom)
-        betm = 0.046 * safe_exp(-v / 22.73)
+        def alpha_h_rate(voltage):
+            return 1.6e-4 * safe_exp(-(voltage + 57.0) / 19.0)
+
+        def beta_h_rate(voltage):
+            return 1.0 / (safe_exp((-voltage + 15.0) / 10.0) + 1.0)
+
+        def alpha_m_rate(voltage):
+            denom = safe_exp((-voltage + 19.88) / 10.0) - 1.0
+            return 0.1967 * (-voltage + 19.88) / jnp.where(jnp.abs(denom) < 1e-12, 1e-12, denom)
+
+        def beta_m_rate(voltage):
+            return 0.046 * safe_exp(-voltage / 22.73)
+
+        alph = neuron_table(v, alpha_h_rate)
+        beth = neuron_table(v, beta_h_rate)
+        alpm = neuron_table(v, alpha_m_rate)
+        betm = neuron_table(v, beta_m_rate)
         taum = 1.0 / (params[f"{prefix}_tfa"] * (alpm + betm))
         minf = alpm / (alpm + betm)
         tauh = 1.0 / (params[f"{prefix}_tfi"] * (alph + beth))
         hinf = alph / (alph + beth)
         return minf, taum, hinf, tauh
-

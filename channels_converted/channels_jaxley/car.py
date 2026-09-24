@@ -30,10 +30,10 @@ class Car(Channel):
 
     def init_state(self, states, v, params, delta_t):
         prefix = channel_prefix(self)
-        minf, _, hinf, _ = self.rates(v)
-        return {f"{prefix}_m": minf, f"{prefix}_h": hinf}
+        # car.mod explicitly initializes m=0 and h=1. It does not use the
+        # voltage-dependent steady states for the initial condition.
+        return {f"{prefix}_m": 0.0, f"{prefix}_h": 1.0}
 
     @staticmethod
     def rates(v):
         return sigmoid_arg((v + 48.5) / -3.0), 5.0, sigmoid_arg((v + 53.0) / 1.0), 50.0
-
