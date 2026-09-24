@@ -32,7 +32,9 @@ NAV16_RANGES = {
     "O1I1b2": (8.0, 10.0),
     "O1I1v2": (0.0, 5.0),
     "O1I1k2": (-10.0, -8.0),
-    "persist": (0.0015, 0.0030),
+    "persist": (0.004, 0.010),
+    "persist_vhalf": (-56.5, -55.0),
+    "persist_k": (-0.8, -0.4),
 }
 
 # Constants copied from channels_converted/mod/Nav16_a.mod.  These are the
@@ -81,7 +83,9 @@ def rates(v: float, params: dict[str, float], *, dist: float = 1.35,
         _rate(v, p["O1I1b1"], p["O1I1v1"], p["O1I1k1"])
         + _rate(v, p["O1I1b2"], p["O1I1v2"], p["O1I1k2"])
     ) / fast_scale
-    i1o1 = p["persist"] * o1i1
+    persist_arg = (v - p["persist_vhalf"]) / p["persist_k"]
+    persist_gate = 1.0 / (1.0 + np.exp(np.clip(persist_arg, -50.0, 50.0)))
+    i1o1 = p["persist"] * persist_gate * o1i1
     i1c1 = q10 * _rate(v, p["I1C1b1"], p["I1C1v1"], p["I1C1k1"]) / fast_scale
     c1i1 = q10 * _rate(v, p["C1I1b2"], p["C1I1v2"], p["C1I1k2"]) / fast_scale
     i1i2 = slowdown * dist * q10 * _rate(

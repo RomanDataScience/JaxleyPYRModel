@@ -125,6 +125,8 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                     "na16a": {
                         "gbar": values["gna"],
                         "persist": values["persist"],
+                        "persist_vhalf": values["nav16_persist_vhalf"],
+                        "persist_k": values["nav16_persist_k"],
                         "C1O1v2": values["nav16_C1O1v2"],
                         "C1O1k2": values["nav16_C1O1k2"],
                         "C1I1b2": values["nav16_C1I1b2"],
@@ -178,6 +180,8 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                     "na16a": {
                         "gbar": values["gnadend"],
                         "persist": values["persist"],
+                        "persist_vhalf": values["nav16_persist_vhalf"],
+                        "persist_k": values["nav16_persist_k"],
                         "C1O1v2": values["nav16_C1O1v2"],
                         "C1O1k2": values["nav16_C1O1k2"],
                         "C1I1b2": values["nav16_C1I1b2"],

@@ -16,7 +16,7 @@ parameters:
 
 runtime:
   environment: Jaxley
-  backend: neuron
+  backend: jaxley
   d_lambda: 0.3
   parallel_workers: 1
   study_workers: 1
@@ -49,6 +49,8 @@ stage2:
     - gnadend
     - AXNa
     - persist
+    - nav16_persist_vhalf
+    - nav16_persist_k
     - nav16_C1O1v2
     - nav16_C1O1k2
     - nav16_C1I1b2

@@ -96,7 +96,9 @@ class CombeParameters:
     gkdrsoma: float = 0.0
     gkdrdend: float = 0.0
     psoma: float = 0.00075
-    persist: float = 0.00225
+    persist: float = 0.006
+    nav16_persist_vhalf: float = -56.0
+    nav16_persist_k: float = -0.6
     nav16_C1O1v2: float = -42.0
     nav16_C1O1k2: float = -3.5
     nav16_C1I1b2: float = 0.175
@@ -190,6 +192,8 @@ KINETIC_PARAMETER_KEYS = (
     "nav16_O1I1b2",
     "nav16_O1I1v2",
     "nav16_O1I1k2",
+    "nav16_persist_vhalf",
+    "nav16_persist_k",
 )
 
 params = {
@@ -221,7 +225,9 @@ bounds = {
     "soma_km": [0.0, 0.01],
     "mykca_init": [0.0, 0.01],
     "soma_kca": [0.0, 0.01],
-    "persist": [0.0015, 0.003],
+    "persist": [0.004, 0.010],
+    "nav16_persist_vhalf": [-56.5, -55.0],
+    "nav16_persist_k": [-0.8, -0.4],
     "AXNa": [0.1, 10.0],
     "gkdrsoma": [0.0, 0.02],
     "gkdrdend": [0.0, 0.02],
@@ -812,6 +818,8 @@ def set_soma_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_on(cell, soma, "na16a_gbar", p.gna)
     set_on(cell, soma, "na16a_dist", p.sinfsoma)
     set_on(cell, soma, "na16a_persist", p.persist)
+    set_on(cell, soma, "na16a_persist_vhalf", p.nav16_persist_vhalf)
+    set_on(cell, soma, "na16a_persist_k", p.nav16_persist_k)
     set_on(cell, soma, "na16a_slowdown", p.slowsoma)
     set_on(cell, soma, "na16a_C1O1v2", p.nav16_C1O1v2)
     set_on(cell, soma, "na16a_C1O1k2", p.nav16_C1O1k2)
@@ -893,6 +901,8 @@ def set_apical_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_on(cell, apical, "Kv2like_gbar", np.where(capped_h_dist > 100.0, p.gkv2 * p.gkv2scale, p.gkv2))
     set_on(cell, apical, "na16a_gbar", p.gnadend)
     set_on(cell, apical, "na16a_persist", p.persist)
+    set_on(cell, apical, "na16a_persist_vhalf", p.nav16_persist_vhalf)
+    set_on(cell, apical, "na16a_persist_k", p.nav16_persist_k)
     set_on(cell, apical, "na16a_slowdown", p.slownotsoma)
     set_on(cell, apical, "na16a_dist", apical_na16a_dist(dist))
     set_on(cell, apical, "na16a_C1O1v2", p.nav16_C1O1v2)
@@ -1536,6 +1546,30 @@ def _kinetic_fit_profiles(cell, p):
             "na16a_slow_recovery_tau_scale",
             p["nat_slow_recovery_tau_scale"],
             "nat_slow_recovery_tau_scale",
+        ),
+        _fit_profile(
+            cell.soma,
+            "na16a_persist_vhalf",
+            p["nav16_persist_vhalf"],
+            "nav16_persist_vhalf",
+        ),
+        _fit_profile(
+            cell.apical,
+            "na16a_persist_vhalf",
+            p["nav16_persist_vhalf"],
+            "nav16_persist_vhalf",
+        ),
+        _fit_profile(
+            cell.soma,
+            "na16a_persist_k",
+            p["nav16_persist_k"],
+            "nav16_persist_k",
+        ),
+        _fit_profile(
+            cell.apical,
+            "na16a_persist_k",
+            p["nav16_persist_k"],
+            "nav16_persist_k",
         ),
         _fit_profile(cell.soma, "na16a_C1O1v2", p["nav16_C1O1v2"], "nav16_C1O1v2"),
         _fit_profile(cell.apical, "na16a_C1O1v2", p["nav16_C1O1v2"], "nav16_C1O1v2"),

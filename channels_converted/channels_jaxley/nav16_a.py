@@ -49,6 +49,8 @@ class Nav16A(Channel):
             f"{prefix}_dist": 0.0,
             f"{prefix}_slowdown": 0.2,
             f"{prefix}_persist": 0.0,
+            f"{prefix}_persist_vhalf": -56.0,
+            f"{prefix}_persist_k": -0.6,
             f"{prefix}_fast_inactivation_tau_scale": 1.0,
             f"{prefix}_slow_recovery_tau_scale": 1.0,
             "eNa": 50.0,
@@ -135,7 +137,11 @@ class Nav16A(Channel):
             self.rates2(v, params[f"{prefix}_O1I1b1"], params[f"{prefix}_O1I1v1"], params[f"{prefix}_O1I1k1"])
             + self.rates2(v, params[f"{prefix}_O1I1b2"], params[f"{prefix}_O1I1v2"], params[f"{prefix}_O1I1k2"])
         ) / fast_scale
-        I1O1 = params[f"{prefix}_persist"] * O1I1
+        persist_arg = (
+            v - params[f"{prefix}_persist_vhalf"]
+        ) / params[f"{prefix}_persist_k"]
+        persist_gate = 1.0 / (1.0 + safe_exp(persist_arg))
+        I1O1 = params[f"{prefix}_persist"] * persist_gate * O1I1
         I1C1 = q10 * self.rates2(
             v,
             params[f"{prefix}_I1C1b1"],

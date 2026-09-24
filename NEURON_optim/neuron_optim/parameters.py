@@ -36,7 +36,9 @@ DEFAULTS: dict[str, float] = {
     "soma_km": 0.0,
     "mykca_init": 0.0,
     "soma_kca": 0.0,
-    "persist": 0.00225,
+    "persist": 0.006,
+    "nav16_persist_vhalf": -56.0,
+    "nav16_persist_k": -0.6,
     "nav16_C1O1v2": -42.0,
     "nav16_C1O1k2": -3.5,
     "nav16_C1I1b2": 0.175,
@@ -103,7 +105,12 @@ BOUNDS: dict[str, tuple[float, float]] = {
     # Nav1.6 persistent recovery is a strong nonlinear lever on sustained Na+
     # current; keep its calibration range below the unstable high-persist
     # regime observed in the depolarizing smoke fits.
-    "persist": (0.0015, 0.003),
+    "persist": (0.004, 0.010),
+    # Smooth voltage dependence of the I1 -> O1 persistent-recovery
+    # transition. The hyperpolarized suppression is an emergent steady-state
+    # property, not an imposed voltage cutoff.
+    "nav16_persist_vhalf": (-56.5, -55.0),
+    "nav16_persist_k": (-0.8, -0.4),
     "nav16_C1O1v2": (-43.0, -41.0),
     "nav16_C1O1k2": (-3.75, -3.25),
     "nav16_C1I1b2": (0.15, 0.2),
@@ -151,6 +158,7 @@ KINETIC = (
     "nat_slow_recovery_tau_scale", "h_tau_scale", "nav16_C1O1v2",
     "nav16_C1O1k2", "nav16_C1I1b2", "nav16_C1I1v2", "nav16_C1I1k2",
     "nav16_O1I1b2", "nav16_O1I1v2", "nav16_O1I1k2",
+    "nav16_persist_vhalf", "nav16_persist_k",
 )
 ALL_KEYS = PASSIVE + CONDUCTANCE + KINETIC
 
