@@ -93,7 +93,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tstop", type=float, default=500.0)
     parser.add_argument("--delay", type=float, default=100.0)
     parser.add_argument("--duration", type=float, default=300.0)
-    parser.add_argument("--amp", type=float, default=0.3, help="Current step amplitude in nA.")
+    parser.add_argument("--amp", type=float, default=0.7, help="Current step amplitude in nA.")
     parser.add_argument("--v-init", type=float, default=-72.0)
     parser.add_argument("--jaxley-d-lambda", type=float, default=0.1)
     parser.add_argument("--output-dir", type=Path, default=RESULTS_DIR)
