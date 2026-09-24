@@ -35,7 +35,7 @@ def test_passive_model_mapping_disables_active_currents():
 
 def test_local_bounds_and_complete_mapping_keep_fixed_parameters():
     space = make_parameter_space(include=("gna", "persist"))
-    centers = {"gna": 0.08, "persist": 0.006}
+    centers = {"gna": 0.08, "persist": 0.00225}
     lower, upper = local_normalized_bounds(centers, space.keys, 0.15)
     local = make_parameter_space(
         include=space.keys, lower_overrides=lower, upper_overrides=upper

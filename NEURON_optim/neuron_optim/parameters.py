@@ -36,7 +36,7 @@ DEFAULTS: dict[str, float] = {
     "soma_km": 0.0,
     "mykca_init": 0.0,
     "soma_kca": 0.0,
-    "persist": 0.006,
+    "persist": 0.00225,
     "nav16_persist_vhalf": -56.0,
     "nav16_persist_k": -0.6,
     "nav16_C1O1v2": -42.0,
@@ -105,7 +105,7 @@ BOUNDS: dict[str, tuple[float, float]] = {
     # Nav1.6 persistent recovery is a strong nonlinear lever on sustained Na+
     # current; keep its calibration range below the unstable high-persist
     # regime observed in the depolarizing smoke fits.
-    "persist": (0.004, 0.010),
+    "persist": (0.0015, 0.0030),
     # Smooth voltage dependence of the I1 -> O1 persistent-recovery
     # transition. The hyperpolarized suppression is an emergent steady-state
     # property, not an imposed voltage cutoff.

@@ -96,7 +96,7 @@ class CombeParameters:
     gkdrsoma: float = 0.0
     gkdrdend: float = 0.0
     psoma: float = 0.00075
-    persist: float = 0.006
+    persist: float = 0.00225
     nav16_persist_vhalf: float = -56.0
     nav16_persist_k: float = -0.6
     nav16_C1O1v2: float = -42.0
@@ -225,7 +225,7 @@ bounds = {
     "soma_km": [0.0, 0.01],
     "mykca_init": [0.0, 0.01],
     "soma_kca": [0.0, 0.01],
-    "persist": [0.004, 0.010],
+    "persist": [0.0015, 0.0030],
     "nav16_persist_vhalf": [-56.5, -55.0],
     "nav16_persist_k": [-0.8, -0.4],
     "AXNa": [0.1, 10.0],
