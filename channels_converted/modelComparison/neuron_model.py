@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -91,6 +92,23 @@ def _load_mechanisms(mod_dir: Path = MOD_DIR) -> None:
     mod_dir = mod_dir.resolve()
     if mod_dir in _LOADED_MECHANISM_DIRS:
         return
+    compiled = list(mod_dir.glob("*/special"))
+    sources = list(mod_dir.glob("*.mod"))
+    if sources and (not compiled or max(path.stat().st_mtime for path in sources) >
+                    max(path.stat().st_mtime for path in compiled)):
+        try:
+            subprocess.run(
+                ["nrnivmodl"],
+                cwd=mod_dir,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("nrnivmodl is required to compile the NEURON mechanisms") from exc
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(f"Could not compile NEURON mechanisms:\n{exc.stdout}") from exc
     try:
         loaded = neuron.load_mechanisms(str(mod_dir))
     except RuntimeError as exc:

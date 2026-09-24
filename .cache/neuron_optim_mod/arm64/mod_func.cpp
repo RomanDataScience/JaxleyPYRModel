@@ -5,6 +5,7 @@ extern int nrn_nobanner_;
 
 extern "C" void _Kv2like_reg(void);
 extern "C" void _Nav16_a_reg(void);
+extern "C" void _Nav16_a_vgated_persist_reg(void);
 extern "C" void _PotassiumInwardRectifier_reg(void);
 extern "C" void _cagk_reg(void);
 extern "C" void _cal_reg(void);
@@ -29,6 +30,7 @@ extern "C" void modl_reg() {
     fprintf(stderr, "Additional mechanisms from files\n");
     fprintf(stderr, " \"Kv2like.mod\"");
     fprintf(stderr, " \"Nav16_a.mod\"");
+    fprintf(stderr, " \"Nav16_a_vgated_persist.mod\"");
     fprintf(stderr, " \"PotassiumInwardRectifier.mod\"");
     fprintf(stderr, " \"cagk.mod\"");
     fprintf(stderr, " \"cal.mod\"");
@@ -51,6 +53,7 @@ extern "C" void modl_reg() {
   }
   _Kv2like_reg();
   _Nav16_a_reg();
+  _Nav16_a_vgated_persist_reg();
   _PotassiumInwardRectifier_reg();
   _cagk_reg();
   _cal_reg();

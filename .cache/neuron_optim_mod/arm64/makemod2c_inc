@@ -14,6 +14,14 @@ Nav16_a.cpp: ../Nav16_a.mod $(NOCMODL)
 	@printf " -> $(C_GREEN)Compiling$(C_RESET) /Users/romanbaravalle/Documents/Consultancy/JaxleyPYRModel/.cache/neuron_optim_mod/arm64/$<\\n"
 	$(CXXCOMPILE) -I".." $(INCLUDES) -fPIC -c "/Users/romanbaravalle/Documents/Consultancy/JaxleyPYRModel/.cache/neuron_optim_mod/arm64/$<" -o $@
 
+Nav16_a_vgated_persist.cpp: ../Nav16_a_vgated_persist.mod $(NOCMODL)
+	@printf " -> $(C_GREEN)NMODL$(C_RESET) $<\\n"
+	(cd "..";  MODLUNIT=$(NRNUNITS) $(NOCMODL) "Nav16_a_vgated_persist.mod"  -o "/Users/romanbaravalle/Documents/Consultancy/JaxleyPYRModel/.cache/neuron_optim_mod/arm64" )
+
+./Nav16_a_vgated_persist.o: Nav16_a_vgated_persist.cpp
+	@printf " -> $(C_GREEN)Compiling$(C_RESET) /Users/romanbaravalle/Documents/Consultancy/JaxleyPYRModel/.cache/neuron_optim_mod/arm64/$<\\n"
+	$(CXXCOMPILE) -I".." $(INCLUDES) -fPIC -c "/Users/romanbaravalle/Documents/Consultancy/JaxleyPYRModel/.cache/neuron_optim_mod/arm64/$<" -o $@
+
 PotassiumInwardRectifier.cpp: ../PotassiumInwardRectifier.mod $(NOCMODL)
 	@printf " -> $(C_GREEN)NMODL$(C_RESET) $<\\n"
 	(cd "..";  MODLUNIT=$(NRNUNITS) $(NOCMODL) "PotassiumInwardRectifier.mod"  -o "/Users/romanbaravalle/Documents/Consultancy/JaxleyPYRModel/.cache/neuron_optim_mod/arm64" )
