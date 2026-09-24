@@ -23,7 +23,18 @@ from neuron_optim.simulator import make_simulator
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA_ROOT = ROOT / "JaxleyModel" / "Experimental_currentClamp_Analysis" / "Segmented_Traces"
-PERSISTENT_KEYS = ("persist", "nav16_persist_vhalf", "nav16_persist_k")
+SUSTAINED_NA_KEYS = (
+    "gna",
+    "nav16_C1O1v2",
+    "nav16_C1O1k2",
+    "nav16_I1O1b1",
+    "nav16_C1I1b2",
+    "nav16_C1I1v2",
+    "nav16_C1I1k2",
+    "nav16_O1I1b2",
+    "nav16_O1I1v2",
+    "nav16_O1I1k2",
+)
 
 
 def _corner_values(space, upper: bool) -> dict[str, float]:
@@ -76,7 +87,7 @@ def _coarsen(trace: Trace, stride: int) -> Trace:
 def run(backend: str, output: Path, stride: int = 1, scope: str = "full") -> dict:
     output.mkdir(parents=True, exist_ok=True)
     space = make_parameter_space(
-        include=PERSISTENT_KEYS if scope == "persistent" else None
+        include=SUSTAINED_NA_KEYS if scope == "persistent" else None
     )
     raw_traces = {
         "hyperpolarizing_pulse": load_protocol_traces(
@@ -140,7 +151,7 @@ def main() -> None:
     parser.add_argument("--stride", type=int, default=1,
                         help="Keep every Nth input sample for diagnostic runs.")
     parser.add_argument("--scope", choices=("full", "persistent"), default="full",
-                        help="Vary all optimizer parameters or only persistent-Nav16 parameters.")
+                        help="Vary all optimizer parameters or only sustained-Na Nav16 parameters.")
     parser.add_argument("--output", type=Path, default=ROOT / "NEURON_optim" / "runs" / "nav16_range_corners")
     args = parser.parse_args()
     payload = run(args.backend, args.output, stride=max(1, args.stride), scope=args.scope)

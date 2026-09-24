@@ -24,17 +24,15 @@ import numpy as np
 
 STATE_NAMES = ("C1", "O1", "I1", "I2")
 NAV16_RANGES = {
-    "C1O1v2": (-43.0, -41.0),
-    "C1O1k2": (-3.75, -3.25),
-    "C1I1b2": (0.15, 0.20),
-    "C1I1v2": (-53.0, -50.0),
-    "C1I1k2": (-10.0, -8.0),
-    "O1I1b2": (8.0, 10.0),
-    "O1I1v2": (0.0, 5.0),
-    "O1I1k2": (-10.0, -8.0),
-    "persist": (0.0015, 0.0030),
-    "persist_vhalf": (-56.5, -55.0),
-    "persist_k": (-0.8, -0.4),
+    "C1O1v2": (-55.0, -20.0),
+    "C1O1k2": (-12.0, -1.0),
+    "I1O1b1": (0.0001, 0.5),
+    "C1I1b2": (0.01, 1.0),
+    "C1I1v2": (-75.0, -30.0),
+    "C1I1k2": (-25.0, -2.0),
+    "O1I1b2": (1.0, 500.0),
+    "O1I1v2": (-20.0, 40.0),
+    "O1I1k2": (-25.0, -1.0),
 }
 
 # Constants copied from channels_converted/mod/Nav16_a.mod.  These are the
@@ -50,6 +48,8 @@ FIXED = {
     "O1I1b1": 1.0,
     "O1I1v1": -42.0,
     "O1I1k1": 12.0,
+    "I1O1v1": -40.0,
+    "I1O1k1": -10.0,
     "I1C1b1": 0.2,
     "I1C1v1": -65.0,
     "I1C1k1": 10.0,
@@ -83,9 +83,7 @@ def rates(v: float, params: dict[str, float], *, dist: float = 1.35,
         _rate(v, p["O1I1b1"], p["O1I1v1"], p["O1I1k1"])
         + _rate(v, p["O1I1b2"], p["O1I1v2"], p["O1I1k2"])
     ) / fast_scale
-    persist_arg = (v - p["persist_vhalf"]) / p["persist_k"]
-    persist_gate = 1.0 / (1.0 + np.exp(np.clip(persist_arg, -50.0, 50.0)))
-    i1o1 = p["persist"] * persist_gate * o1i1
+    i1o1 = q10 * _rate(v, p["I1O1b1"], p["I1O1v1"], p["I1O1k1"])
     i1c1 = q10 * _rate(v, p["I1C1b1"], p["I1C1v1"], p["I1C1k1"]) / fast_scale
     c1i1 = q10 * _rate(v, p["C1I1b2"], p["C1I1v2"], p["C1I1k2"]) / fast_scale
     i1i2 = slowdown * dist * q10 * _rate(

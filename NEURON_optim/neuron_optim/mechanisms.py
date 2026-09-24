@@ -33,8 +33,8 @@ def _patch_sources(source: Path, target: Path) -> None:
             text = text.replace("if (htau<hmin)", "htau = htau * fast_inactivation_tau_scale\n        if (htau<hmin)")
         elif name == "Nav16_a.mod":
             text = text.replace(
-                "RANGE gbar, ina, g, dist, persist, persist_vhalf, persist_k, C1O1v2, C1O1k2, C1I1b2, C1I1v2, C1I1k2, O1I1b2, O1I1v2, O1I1k2, I2init",
-                "RANGE gbar, ina, g, dist, persist, persist_vhalf, persist_k, C1O1v2, C1O1k2, C1I1b2, C1I1v2, C1I1k2, O1I1b2, O1I1v2, O1I1k2, I2init, fast_inactivation_tau_scale, slow_recovery_tau_scale",
+                "RANGE gbar, ina, g, dist, slowdown",
+                "RANGE gbar, ina, g, dist, slowdown, fast_inactivation_tau_scale, slow_recovery_tau_scale",
             )
             text = text.replace("gbar  = 0.1", "gbar  = 0.1\n\tfast_inactivation_tau_scale = 1\n\tslow_recovery_tau_scale = 1")
             text = text.replace("O1I1_a = 0.5*Q10*", "O1I1_a = 0.5*Q10*")

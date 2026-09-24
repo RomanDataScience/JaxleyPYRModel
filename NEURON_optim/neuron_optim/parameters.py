@@ -36,9 +36,6 @@ DEFAULTS: dict[str, float] = {
     "soma_km": 0.0,
     "mykca_init": 0.0,
     "soma_kca": 0.0,
-    "persist": 0.00225,
-    "nav16_persist_vhalf": -56.0,
-    "nav16_persist_k": -0.6,
     # Keep Nav1.6 activation near the MOD/Jaxley channel default.  The old
     # -42 mV value leaves a measurable O1 population at the -64 mV resting
     # potential and drives the model away from rest under the baseline current.
@@ -48,7 +45,7 @@ DEFAULTS: dict[str, float] = {
     "nav16_C1I1b2": 0.175,
     "nav16_C1I1v2": -51.5,
     "nav16_C1I1k2": -9.0,
-    "nav16_O1I1b2": 9.0,
+    "nav16_O1I1b2": 144.0,
     "nav16_O1I1v2": 2.5,
     "nav16_O1I1k2": -9.0,
     "AXNa": 3.5,
@@ -106,24 +103,17 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "soma_km": (0.0, 0.01),
     "mykca_init": (0.0, 0.01),
     "soma_kca": (0.0, 0.01),
-    # Nav1.6 persistent recovery is a strong nonlinear lever on sustained Na+
-    # current; keep its calibration range below the unstable high-persist
-    # regime observed in the depolarizing smoke fits.
-    "persist": (0.0015, 0.0030),
-    # Smooth voltage dependence of the I1 -> O1 persistent-recovery
-    # transition. The hyperpolarized suppression is an emergent steady-state
-    # property, not an imposed voltage cutoff.
-    "nav16_persist_vhalf": (-56.5, -55.0),
-    "nav16_persist_k": (-0.8, -0.4),
-    "nav16_C1O1v2": (-38.0, -34.0),
-    "nav16_C1O1k2": (-3.75, -3.25),
-    "nav16_I1O1b1": (0.005, 0.02),
-    "nav16_C1I1b2": (0.15, 0.2),
-    "nav16_C1I1v2": (-53.0, -50.0),
-    "nav16_C1I1k2": (-10.0, -8.0),
-    "nav16_O1I1b2": (8.0, 10.0),
-    "nav16_O1I1v2": (0.0, 5.0),
-    "nav16_O1I1k2": (-10.0, -8.0),
+    # Broad Nav16 gating ranges: activation, closed-state inactivation,
+    # open-state inactivation, and I1 -> O1 recovery all shape sustained Na+.
+    "nav16_C1O1v2": (-55.0, -20.0),
+    "nav16_C1O1k2": (-12.0, -1.0),
+    "nav16_I1O1b1": (0.0001, 0.5),
+    "nav16_C1I1b2": (0.01, 1.0),
+    "nav16_C1I1v2": (-75.0, -30.0),
+    "nav16_C1I1k2": (-25.0, -2.0),
+    "nav16_O1I1b2": (1.0, 500.0),
+    "nav16_O1I1v2": (-20.0, 40.0),
+    "nav16_O1I1k2": (-25.0, -1.0),
     "AXNa": (0.1, 10.0),
     "gkdrsoma": (0.0, 0.02),
     "gkdrdend": (0.0, 0.02),
@@ -131,7 +121,8 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "axon_kap": (0.0, 0.2),
     "basal_kap": (0.0, 0.05),
     "soma_kad": (0.0, 0.2),
-    "gna": (0.075, 0.085),
+    # Nav16 total conductance also scales the persistent component directly.
+    "gna": (0.02, 0.2),
     "axongkdr": (0.0, 0.05),
     "gnadend": (0.0, 0.1),
     "gkdrapical": (0.0, 0.01),
@@ -149,7 +140,7 @@ BOUNDS: dict[str, tuple[float, float]] = {
 CONDUCTANCE = (
     "soma_hbar", "KirGbar", "soma_caL", "soma_car", "gsomacar",
     "soma_caLH", "soma_caT", "soma_km", "mykca_init", "soma_kca",
-    "persist", "AXNa", "gkdrsoma", "gkdrdend", "soma_kap", "axon_kap", "basal_kap",
+    "AXNa", "gkdrsoma", "gkdrdend", "soma_kap", "axon_kap", "basal_kap",
     "soma_kad", "gna", "axongkdr", "gnadend", "gkdrapical", "gkv2soma",
     "gkv2", "gkv2axon", "gkv2scale", "icangbar",
 )
@@ -163,7 +154,6 @@ KINETIC = (
     "nat_slow_recovery_tau_scale", "h_tau_scale", "nav16_C1O1v2",
     "nav16_C1O1k2", "nav16_I1O1b1", "nav16_C1I1b2", "nav16_C1I1v2", "nav16_C1I1k2",
     "nav16_O1I1b2", "nav16_O1I1v2", "nav16_O1I1k2",
-    "nav16_persist_vhalf", "nav16_persist_k",
 )
 ALL_KEYS = PASSIVE + CONDUCTANCE + KINETIC
 

@@ -125,9 +125,6 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                     "icand": {"gbar": values["icangbar"]},
                     "na16a": {
                         "gbar": values["gna"],
-                        "persist": values["persist"],
-                        "persist_vhalf": values["nav16_persist_vhalf"],
-                        "persist_k": values["nav16_persist_k"],
                         "C1O1v2": values["nav16_C1O1v2"],
                         "C1O1k2": values["nav16_C1O1k2"],
                         "I1O1b1": values["nav16_I1O1b1"],
@@ -181,9 +178,6 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                     "Kv2like": {"gbar": values["gkv2"] * (values["gkv2scale"] if distance > 100.0 else 1.0)},
                     "na16a": {
                         "gbar": values["gnadend"],
-                        "persist": values["persist"],
-                        "persist_vhalf": values["nav16_persist_vhalf"],
-                        "persist_k": values["nav16_persist_k"],
                         "C1O1v2": values["nav16_C1O1v2"],
                         "C1O1k2": values["nav16_C1O1k2"],
                         "I1O1b1": values["nav16_I1O1b1"],

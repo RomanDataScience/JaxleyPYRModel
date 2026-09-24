@@ -14,8 +14,8 @@ from neuron_optim.parameters import (
 
 def test_default_parameter_space_is_bounded_and_51_dimensional():
     space = make_parameter_space()
-    assert len(ALL_KEYS) == 53
-    assert len(space.keys) == 53
+    assert len(ALL_KEYS) == 51
+    assert len(space.keys) == 51
     assert np.all(space.lower < space.upper)
     normalized = space.normalize(space.reference)
     assert np.all((normalized >= 0.0) & (normalized <= 1.0))
@@ -29,13 +29,12 @@ def test_passive_model_mapping_disables_active_currents():
     assert set(space.keys) == set(PASSIVE)
     assert all(values[key] == 0.0 for key in CONDUCTANCE)
     assert all(values[key] == 1.0 for key in KINETIC)
-    assert values["persist"] == 0.0
     assert values["Epas"] == space.reference[PASSIVE.index("Epas")]
 
 
 def test_local_bounds_and_complete_mapping_keep_fixed_parameters():
-    space = make_parameter_space(include=("gna", "persist"))
-    centers = {"gna": 0.08, "persist": 0.00225}
+    space = make_parameter_space(include=("gna", "nav16_I1O1b1"))
+    centers = {"gna": 0.08, "nav16_I1O1b1": 0.005}
     lower, upper = local_normalized_bounds(centers, space.keys, 0.15)
     local = make_parameter_space(
         include=space.keys, lower_overrides=lower, upper_overrides=upper
@@ -46,5 +45,5 @@ def test_local_bounds_and_complete_mapping_keep_fixed_parameters():
     assert set(mapping) >= set(ALL_KEYS)
     assert mapping["Epas"] == -70.0
     assert mapping["gna"] == centers["gna"]
-    assert mapping["persist"] == centers["persist"]
+    assert mapping["nav16_I1O1b1"] == centers["nav16_I1O1b1"]
     assert np.all(local.lower < local.upper)

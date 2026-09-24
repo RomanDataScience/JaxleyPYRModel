@@ -31,7 +31,7 @@ class Nav16A(Channel):
             f"{prefix}_O1I1b1": 1.0,
             f"{prefix}_O1I1v1": -42.0,
             f"{prefix}_O1I1k1": 12.0,
-            f"{prefix}_O1I1b2": 5.0,
+            f"{prefix}_O1I1b2": 144.0,
             f"{prefix}_O1I1v2": 10.0,
             f"{prefix}_O1I1k2": -12.0,
             f"{prefix}_I1O1b1": 0.005,
@@ -51,12 +51,6 @@ class Nav16A(Channel):
             f"{prefix}_I2I1k1": 12.0,
             f"{prefix}_dist": 0.0,
             f"{prefix}_slowdown": 0.2,
-            # Retained as no-op compatibility parameters for the existing
-            # Combe parameter schema. They are not present in the new MOD
-            # RANGE list and do not affect the converted kinetics.
-            f"{prefix}_persist": 0.0,
-            f"{prefix}_persist_vhalf": -56.0,
-            f"{prefix}_persist_k": -0.6,
             f"{prefix}_fast_inactivation_tau_scale": 1.0,
             f"{prefix}_slow_recovery_tau_scale": 1.0,
             "eNa": 50.0,
