@@ -50,7 +50,7 @@ class Nav16A(Channel):
             f"{prefix}_slowdown": 0.2,
             f"{prefix}_persist": 0.0,
             f"{prefix}_persist_vhalf": -40.0,
-            f"{prefix}_persist_k": +0.6,
+            f"{prefix}_persist_k": 0.6,
             f"{prefix}_fast_inactivation_tau_scale": 1.0,
             f"{prefix}_slow_recovery_tau_scale": 1.0,
             "eNa": 50.0,
