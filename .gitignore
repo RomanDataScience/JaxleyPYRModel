@@ -18,3 +18,4 @@ logs/
 *smoke_*
 *.zip
 .cache*
+arm64
