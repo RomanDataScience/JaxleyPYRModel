@@ -101,7 +101,7 @@ class CombeParameters:
     nav16_persist_k: float = -0.6
     nav16_C1O1v2: float = -35.0
     nav16_C1O1k2: float = -3.5
-    nav16_I1O1b1: float = 0.01
+    nav16_I1O1b1: float = 0.005
     nav16_C1I1b2: float = 0.175
     nav16_C1I1v2: float = -51.5
     nav16_C1I1k2: float = -9.0

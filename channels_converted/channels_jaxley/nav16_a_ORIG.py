@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from .common import Channel, channel_prefix, safe_exp
 
 
-class Nav16A(Channel):
+class Nav16A_Orig(Channel):
     """Jaxley translation of the Markov channel in `Nav16_a.mod`.
 
     The NEURON mechanism solves a sparse kinetic system. This translation uses

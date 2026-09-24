@@ -44,7 +44,7 @@ DEFAULTS: dict[str, float] = {
     # potential and drives the model away from rest under the baseline current.
     "nav16_C1O1v2": -35.0,
     "nav16_C1O1k2": -3.5,
-    "nav16_I1O1b1": 0.01,
+    "nav16_I1O1b1": 0.005,
     "nav16_C1I1b2": 0.175,
     "nav16_C1I1v2": -51.5,
     "nav16_C1I1k2": -9.0,
