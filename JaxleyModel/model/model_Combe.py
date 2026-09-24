@@ -99,8 +99,9 @@ class CombeParameters:
     persist: float = 0.00225
     nav16_persist_vhalf: float = -56.0
     nav16_persist_k: float = -0.6
-    nav16_C1O1v2: float = -42.0
+    nav16_C1O1v2: float = -35.0
     nav16_C1O1k2: float = -3.5
+    nav16_I1O1b1: float = 0.01
     nav16_C1I1b2: float = 0.175
     nav16_C1I1v2: float = -51.5
     nav16_C1I1k2: float = -9.0
@@ -186,6 +187,7 @@ KINETIC_PARAMETER_KEYS = (
     "h_tau_scale",
     "nav16_C1O1v2",
     "nav16_C1O1k2",
+    "nav16_I1O1b1",
     "nav16_C1I1b2",
     "nav16_C1I1v2",
     "nav16_C1I1k2",
@@ -248,8 +250,9 @@ bounds = {
     "nat_fast_inactivation_tau_scale": [0.5, 2.0],
     "nat_slow_recovery_tau_scale": [0.5, 2.0],
     "h_tau_scale": [0.5, 2.0],
-    "nav16_C1O1v2": [-43.0, -41.0],
+    "nav16_C1O1v2": [-38.0, -34.0],
     "nav16_C1O1k2": [-3.75, -3.25],
+    "nav16_I1O1b1": [0.005, 0.02],
     "nav16_C1I1b2": [0.15, 0.2],
     "nav16_C1I1v2": [-53.0, -50.0],
     "nav16_C1I1k2": [-10.0, -8.0],
@@ -823,6 +826,7 @@ def set_soma_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_on(cell, soma, "na16a_slowdown", p.slowsoma)
     set_on(cell, soma, "na16a_C1O1v2", p.nav16_C1O1v2)
     set_on(cell, soma, "na16a_C1O1k2", p.nav16_C1O1k2)
+    set_on(cell, soma, "na16a_I1O1b1", p.nav16_I1O1b1)
     set_on(cell, soma, "na16a_C1I1b2", p.nav16_C1I1b2)
     set_on(cell, soma, "na16a_C1I1v2", p.nav16_C1I1v2)
     set_on(cell, soma, "na16a_C1I1k2", p.nav16_C1I1k2)
@@ -907,6 +911,7 @@ def set_apical_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_on(cell, apical, "na16a_dist", apical_na16a_dist(dist))
     set_on(cell, apical, "na16a_C1O1v2", p.nav16_C1O1v2)
     set_on(cell, apical, "na16a_C1O1k2", p.nav16_C1O1k2)
+    set_on(cell, apical, "na16a_I1O1b1", p.nav16_I1O1b1)
     set_on(cell, apical, "na16a_C1I1b2", p.nav16_C1I1b2)
     set_on(cell, apical, "na16a_C1I1v2", p.nav16_C1I1v2)
     set_on(cell, apical, "na16a_C1I1k2", p.nav16_C1I1k2)
@@ -1575,6 +1580,8 @@ def _kinetic_fit_profiles(cell, p):
         _fit_profile(cell.apical, "na16a_C1O1v2", p["nav16_C1O1v2"], "nav16_C1O1v2"),
         _fit_profile(cell.soma, "na16a_C1O1k2", p["nav16_C1O1k2"], "nav16_C1O1k2"),
         _fit_profile(cell.apical, "na16a_C1O1k2", p["nav16_C1O1k2"], "nav16_C1O1k2"),
+        _fit_profile(cell.soma, "na16a_I1O1b1", p["nav16_I1O1b1"], "nav16_I1O1b1"),
+        _fit_profile(cell.apical, "na16a_I1O1b1", p["nav16_I1O1b1"], "nav16_I1O1b1"),
         _fit_profile(cell.soma, "na16a_C1I1b2", p["nav16_C1I1b2"], "nav16_C1I1b2"),
         _fit_profile(cell.apical, "na16a_C1I1b2", p["nav16_C1I1b2"], "nav16_C1I1b2"),
         _fit_profile(cell.soma, "na16a_C1I1v2", p["nav16_C1I1v2"], "nav16_C1I1v2"),

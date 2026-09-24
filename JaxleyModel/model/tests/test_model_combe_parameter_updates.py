@@ -117,6 +117,7 @@ EXPECTED_TARGETS = {
     ),
     "nav16_C1O1v2": (("na16a_C1O1v2", "soma"), ("na16a_C1O1v2", "apical")),
     "nav16_C1O1k2": (("na16a_C1O1k2", "soma"), ("na16a_C1O1k2", "apical")),
+    "nav16_I1O1b1": (("na16a_I1O1b1", "soma"), ("na16a_I1O1b1", "apical")),
     "nav16_C1I1b2": (("na16a_C1I1b2", "soma"), ("na16a_C1I1b2", "apical")),
     "nav16_C1I1v2": (("na16a_C1I1v2", "soma"), ("na16a_C1I1v2", "apical")),
     "nav16_C1I1k2": (("na16a_C1I1k2", "soma"), ("na16a_C1I1k2", "apical")),

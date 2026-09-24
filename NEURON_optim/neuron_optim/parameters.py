@@ -39,8 +39,12 @@ DEFAULTS: dict[str, float] = {
     "persist": 0.00225,
     "nav16_persist_vhalf": -56.0,
     "nav16_persist_k": -0.6,
-    "nav16_C1O1v2": -42.0,
+    # Keep Nav1.6 activation near the MOD/Jaxley channel default.  The old
+    # -42 mV value leaves a measurable O1 population at the -64 mV resting
+    # potential and drives the model away from rest under the baseline current.
+    "nav16_C1O1v2": -35.0,
     "nav16_C1O1k2": -3.5,
+    "nav16_I1O1b1": 0.01,
     "nav16_C1I1b2": 0.175,
     "nav16_C1I1v2": -51.5,
     "nav16_C1I1k2": -9.0,
@@ -111,8 +115,9 @@ BOUNDS: dict[str, tuple[float, float]] = {
     # property, not an imposed voltage cutoff.
     "nav16_persist_vhalf": (-56.5, -55.0),
     "nav16_persist_k": (-0.8, -0.4),
-    "nav16_C1O1v2": (-43.0, -41.0),
+    "nav16_C1O1v2": (-38.0, -34.0),
     "nav16_C1O1k2": (-3.75, -3.25),
+    "nav16_I1O1b1": (0.005, 0.02),
     "nav16_C1I1b2": (0.15, 0.2),
     "nav16_C1I1v2": (-53.0, -50.0),
     "nav16_C1I1k2": (-10.0, -8.0),
@@ -156,7 +161,7 @@ PASSIVE = (
 KINETIC = (
     "kd_deactivation_tau_scale", "nat_fast_inactivation_tau_scale",
     "nat_slow_recovery_tau_scale", "h_tau_scale", "nav16_C1O1v2",
-    "nav16_C1O1k2", "nav16_C1I1b2", "nav16_C1I1v2", "nav16_C1I1k2",
+    "nav16_C1O1k2", "nav16_I1O1b1", "nav16_C1I1b2", "nav16_C1I1v2", "nav16_C1I1k2",
     "nav16_O1I1b2", "nav16_O1I1v2", "nav16_O1I1k2",
     "nav16_persist_vhalf", "nav16_persist_k",
 )

@@ -34,7 +34,7 @@ class Nav16A(Channel):
             f"{prefix}_O1I1b2": 5.0,
             f"{prefix}_O1I1v2": 10.0,
             f"{prefix}_O1I1k2": -12.0,
-            f"{prefix}_I1O1b1": 0.05,
+            f"{prefix}_I1O1b1": 0.01,
             f"{prefix}_I1O1v1": -40.0,
             f"{prefix}_I1O1k1": -10.0,
             f"{prefix}_I1C1b1": 0.2,
