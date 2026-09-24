@@ -12,24 +12,16 @@ Stage 1: full-model hyperpolarizing optimization
             |
             v
 Stage 2: full-model depolarizing optimization
-    AP-core parameter subset; one study per basin and Stage 2 seed
-            |
-            v
-Stage 3: expanded active-current depolarizing optimization
-    all active parameters; Stage 2 subset constrained locally
+    all active-current parameters; one study per basin and Stage 2 seed
 ```
-
-Stage 3 is the final stage. It starts from the best Stage 2 result for each
-basin and does not produce starting points for another stage.
 
 The parameter dimensions are:
 
 | Stage | Free parameters | What is free |
 |---|---:|---|
 | Stage 0 | 12 | Passive membrane and cable parameters |
-| Stage 1 | 44 | All 12 passive parameters plus all 32 active parameters |
-| Stage 2 | 22 | AP-core sodium, potassium, and kinetic parameters |
-| Stage 3 | 32 active parameters | The Stage 2 set plus the remaining calcium, H, Kir, CAN, and dendritic K parameters |
+| Stage 1 | 48 | All 12 passive parameters plus all 36 active parameters |
+| Stage 2 | 36 active parameters | Sodium, potassium, calcium, H, Kir, CAN, and kinetic parameters |
 
 The optimizer uses the same parameter catalog for NEURON and Jaxley. A
 parameter name describes a shared model control, although the corresponding
@@ -79,8 +71,8 @@ Each Stage 1 seed then runs an independent full-model CMA-ES search against the
 hyperpolarizing objective. The Stage 1 studies do not start from the same exact
 point because their passive perturbations are seed-dependent.
 
-Stage 1 uses the complete 44-dimensional parameter space. The passive
-parameters listed above remain free, and all 32 active parameters are also
+Stage 1 uses the complete 48-dimensional parameter space. The passive
+parameters listed above remain free, and all 36 active parameters are also
 free, although they begin at their configured defaults. Consequently, Stage 1
 can use active conductances to improve a hyperpolarizing trace; its active
 parameter estimates should therefore be treated as provisional rather than as
@@ -107,9 +99,11 @@ stage1_hyper/basins.jsonl
 ```
 
 Stage 2 does not use only the single best Stage 1 candidate. It uses every
-retained basin as a separate starting solution.
+retained basin as a separate starting solution. All active-current parameters
+are free in this same stage, so there is no Stage 3 handoff or local-bound
+refinement.
 
-## Stage 2: AP-core depolarizing optimization
+## Stage 2: complete active-current depolarizing optimization
 
 For every basin and every configured Stage 2 seed, the code creates a separate
 initial mean:
@@ -160,18 +154,19 @@ penalty.
 
 ### Stage 2 calibrated parameters and roles
 
-Stage 2 frees the 22 parameters most directly connected to action-potential
-generation, spike shape, sustained depolarization, and firing rate. The
-passive values and the ten active parameters reserved for Stage 3 are fixed to
-the Stage 1 basin values during this stage.
+Stage 2 frees the Nav1.6 kinetic and active-current parameters most directly
+connected to action-potential generation, spike shape, sustained depolarization,
+and firing rate. Passive values remain fixed to the Stage 1 basin values during
+this stage.
 
 | Parameters | Mechanism or model role | Expected influence on the depolarizing response |
 |---|---|---|
 | `gna` | Main somatic Nav1.6 conductance and the base axonal sodium conductance | Spike threshold, upstroke strength, spike amplitude, and excitability |
 | `gnadend` | Dendritic Nav1.6/Na3 conductance scale | Dendritic recruitment, back-propagation, and support for prolonged depolarization |
 | `AXNa` | Axonal sodium conductance multiplier | Axonal spike initiation and reliable propagation into the soma |
-| `scale_Na_conduct` | Shared multiplier for the soma/apical Nav1.6 conductances | Strongly changes sodium drive; interacts multiplicatively with `gna` and `gnadend` |
 | `persist` | Nav1.6 `I1 → O1` recovery rate, producing persistent channel availability | Sustained inward sodium current, plateau height, extra spikes, and depolarization-block risk; bounded to 0–0.02 |
+| `nav16_C1O1v2`, `nav16_C1O1k2` | Regular Nav1.6 `C1 → O1` activation voltage and slope | Moves and sharpens the sodium window near −50/−55 mV |
+| `nav16_C1I1b2`, `nav16_C1I1v2`, `nav16_C1I1k2` | Regular Nav1.6 closed-state inactivation branch | Controls loss of available/open channels during strong depolarization |
 | `nat_fast_inactivation_tau_scale` | Nav1.6 and related sodium fast-inactivation time scale | Spike width, sodium current termination, and recovery between spikes |
 | `nat_slow_recovery_tau_scale` | Nav1.6 slow `I1 ↔ I2` pathway time scale | Slow recovery/adaptation and the ability to sustain or terminate repetitive firing |
 | `gkv2soma`, `gkv2`, `gkv2axon`, `gkv2scale` | Kv2-like delayed-rectifier potassium conductances and their dendritic scale | Repolarization, interspike voltage, firing rate, and suppression of an excessive plateau |
@@ -182,29 +177,16 @@ the Stage 1 basin values during this stage.
 | `soma_kca`, `mykca_init` | Calcium-activated K conductances | Afterhyperpolarization, spike-frequency adaptation, and termination of sustained firing |
 | `soma_km` | Slowly activating, non-inactivating M-type K conductance | Subthreshold adaptation, firing-rate control, and slow return from depolarization |
 
-`persist` and `scale_Na_conduct` should be interpreted jointly. A modest
-`persist` value can have a large effect when the fitted Nav1.6 conductance is
-also large, because the persistent current scales with the underlying sodium
-conductance.
+`scale_Na_conduct` is fixed at `1.0`; `gna` and `gnadend` are now the direct
+somatic/apical Nav1.6 conductance parameters. A modest `persist` value can
+still have a large effect because the persistent current scales with the
+underlying sodium conductance.
 
-## Stage 3: expanded active-current optimization
+### Additional active-current roles included in Stage 2
 
-Stage 3 selects the best Stage 2 result within each basin, then adds the
-remaining active-current parameters from `stage3.parameter_names`. The Stage 2
-parameters remain trainable, but their bounds are restricted to
-`±stage3.local_normalized_half_width` around their Stage 2 values in normalized
-coordinates. The default half-width is `0.15`. Passive parameters remain fixed
-to the Stage 1 basin values.
-
-Stage 3 uses the same depolarizing objective and weights as Stage 2. Its output
-is written under `stage3_depolarizing/`.
-
-### Stage 3 additions and roles
-
-Stage 3 makes the remaining ten active parameters free. These parameters were
-held at their Stage 1 basin values in Stage 2, then initialized at those same
-values in Stage 3. The newly added parameters use their normal catalog bounds;
-the Stage 2 parameters use the local ±15% normalized bounds described above.
+These parameters were previously reserved for a separate refinement stage.
+They are now free from the beginning of Stage 2 and use their normal catalog
+bounds.
 
 | Parameters | Mechanism or model role | Expected influence on the depolarizing response |
 |---|---|---|
@@ -218,9 +200,9 @@ the Stage 2 parameters use the local ±15% normalized bounds described above.
 | `KirGbar` | Inward-rectifier potassium conductance | Resting stabilization, suppression of depolarized states, and recovery toward baseline |
 | `h_tau_scale` | H-current kinetics | Timing of sag and rebound, and slow recovery after a current step |
 
-Stage 3 is therefore intended to refine plateau duration, return to baseline,
-and slow firing behavior after Stage 2 has established a plausible spike
-shape. It does not change the loss function.
+These parameters refine plateau duration, return to baseline, and slow firing
+behavior within the same Stage 2 objective that fits spike shape and firing
+rate.
 
 ## Active parameters that remain fixed
 
@@ -233,7 +215,7 @@ kinetic scales:
 |---|---|---|
 | `dist` | Soma uses the configured Nav1.6 distance factor; apical values follow the distance-dependent profile | Controls entry into the slow-inactivated `I2` state and encodes spatial channel specialization |
 | `slowdown` | Soma and apical compartments use fixed profile values (`slowsoma` and `slownotsoma`) | Sets the time scale of the slow-inactivation pathway; adding it as a free parameter would introduce another strong plateau/adaptation lever |
-| `C1O1v2` / `proximalv` / `distalv` | Fixed voltage-dependence profile | Changes Nav1.6 activation and would be strongly confounded with sodium conductance and `persist` |
+| `proximalv` / `distalv` | Legacy HOC profile constants retained for compatibility | The calibrated regular-Nav1.6 control is `nav16_C1O1v2`, which is free in Stage 2 |
 | `sinfsoma` | Fixed soma Nav1.6 distance/profile control | Preserves the original channel distribution convention |
 | `psoma` | Legacy HOC variable; the optimizer's active parameter is `persist` | Avoids calibrating two names for the same persistent Nav1.6 mechanism |
 | `icand_can`, `gip3` | Fixed at their model defaults in the current catalog | Keeps the calcium-dependent signaling/background model outside the AP-core search |
@@ -254,8 +236,7 @@ study per basin.
 The normal checked-in hyperpolarizing configuration has three Stage 1 seeds,
 100 generations, and 20 candidates per generation, giving up to 6,000 basin
 candidates. The basin cap still limits selection to 100, so ten Stage 2 seeds
-produce up to 1,000 Stage 2 studies. The default Stage 3 configuration then
-creates one study per basin using the best Stage 2 seed for that basin.
+produce up to 1,000 complete active-current Stage 2 studies.
 
 The larger 100-basin design reaches the cap as soon as the Stage 1 history
 contains at least 100 distinct candidates.

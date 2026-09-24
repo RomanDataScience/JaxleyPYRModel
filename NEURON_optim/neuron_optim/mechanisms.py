@@ -32,8 +32,10 @@ def _patch_sources(source: Path, target: Path) -> None:
             text = text.replace("gbar = 0.010", "gbar = 0.010\n\tfast_inactivation_tau_scale = 1")
             text = text.replace("if (htau<hmin)", "htau = htau * fast_inactivation_tau_scale\n        if (htau<hmin)")
         elif name == "Nav16_a.mod":
-            text = text.replace("RANGE gbar, ina, g, dist, persist, slowdown, C1O1v2, I2init",
-                                "RANGE gbar, ina, g, dist, persist, slowdown, C1O1v2, I2init, fast_inactivation_tau_scale, slow_recovery_tau_scale")
+            text = text.replace(
+                "RANGE gbar, ina, g, dist, persist, slowdown, C1O1v2, C1O1k2, C1I1b2, C1I1v2, C1I1k2, I2init",
+                "RANGE gbar, ina, g, dist, persist, slowdown, C1O1v2, C1O1k2, C1I1b2, C1I1v2, C1I1k2, I2init, fast_inactivation_tau_scale, slow_recovery_tau_scale",
+            )
             text = text.replace("gbar  = 0.1", "gbar  = 0.1\n\tfast_inactivation_tau_scale = 1\n\tslow_recovery_tau_scale = 1")
             text = text.replace("O1I1_a = 0.5*Q10*", "O1I1_a = 0.5*Q10*")
             text = text.replace("rates2(v, O1I1b1, O1I1v1, O1I1k1) + rates2(v, O1I1b2, O1I1v2, O1I1k2))",
@@ -59,7 +61,7 @@ def ensure_patched_mod_dir() -> Path:
         fcntl.flock(lock_handle, fcntl.LOCK_EX)
         # Rebuild when the gated Nav1.6 source is missing or any copied MOD
         # source is newer than the compiled library. Otherwise NEURON could
-        # silently keep loading an older version of ``na16a_vgp``.
+        # silently keep loading an older version of ``na16a``.
         compiled = list(target.glob("*/special"))
         source_mods = list(source.glob("*.mod"))
         if (

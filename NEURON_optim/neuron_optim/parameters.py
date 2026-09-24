@@ -37,6 +37,11 @@ DEFAULTS: dict[str, float] = {
     "mykca_init": 0.0,
     "soma_kca": 0.0,
     "persist": 0.00075,
+    "nav16_C1O1v2": -35.0,
+    "nav16_C1O1k2": -5.0,
+    "nav16_C1I1b2": 0.2,
+    "nav16_C1I1v2": -55.0,
+    "nav16_C1I1k2": -11.0,
     "AXNa": 3.5,
     "gkdrsoma": 0.0,
     "gkdrdend": 0.0,
@@ -56,9 +61,10 @@ DEFAULTS: dict[str, float] = {
     "gkv2": 0.00198 * 10.0,
     "gkv2axon": 0.00198 * 10.0,
     "gkv2scale": 0.3,
-    "scale_Na_conduct": 14.0,
+    # Kept as a fixed compatibility constant; it is not an optimization key.
+    "scale_Na_conduct": 1.0,
     "distalv": 0.0,
-    "proximalv": 6.0,
+    "proximalv": -35.0,
     "icangbar": 0.06 * 0.75,
     "icand_can": 0.0,
     "gip3": 1.85,
@@ -95,6 +101,11 @@ BOUNDS: dict[str, tuple[float, float]] = {
     # current; keep its calibration range below the unstable high-persist
     # regime observed in the depolarizing smoke fits.
     "persist": (0.0, 0.02),
+    "nav16_C1O1v2": (-50.0, -20.0),
+    "nav16_C1O1k2": (-8.0, -3.0),
+    "nav16_C1I1b2": (0.05, 0.5),
+    "nav16_C1I1v2": (-65.0, -40.0),
+    "nav16_C1I1k2": (-15.0, -7.0),
     "AXNa": (0.1, 10.0),
     "gkdrsoma": (0.0, 0.02),
     "gkdrdend": (0.0, 0.02),
@@ -110,7 +121,6 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "gkv2": (0.0, 0.1),
     "gkv2axon": (0.0, 0.1),
     "gkv2scale": (0.0, 2.0),
-    "scale_Na_conduct": (1.0, 30.0),
     "icangbar": (0.0, 0.2),
     "kd_deactivation_tau_scale": (0.25, 4.0),
     "nat_fast_inactivation_tau_scale": (0.5, 2.0),
@@ -123,7 +133,7 @@ CONDUCTANCE = (
     "soma_caLH", "soma_caT", "soma_km", "mykca_init", "soma_kca",
     "persist", "AXNa", "gkdrsoma", "gkdrdend", "soma_kap", "axon_kap", "basal_kap",
     "soma_kad", "gna", "axongkdr", "gnadend", "gkdrapical", "gkv2soma",
-    "gkv2", "gkv2axon", "gkv2scale", "scale_Na_conduct", "icangbar",
+    "gkv2", "gkv2axon", "gkv2scale", "icangbar",
 )
 PASSIVE = (
     "RmSoma", "RaSoma", "RmTuft", "RaTuft", "DistHalfRm", "DistHalfRa",
@@ -132,7 +142,8 @@ PASSIVE = (
 )
 KINETIC = (
     "kd_deactivation_tau_scale", "nat_fast_inactivation_tau_scale",
-    "nat_slow_recovery_tau_scale", "h_tau_scale",
+    "nat_slow_recovery_tau_scale", "h_tau_scale", "nav16_C1O1v2",
+    "nav16_C1O1k2", "nav16_C1I1b2", "nav16_C1I1v2", "nav16_C1I1k2",
 )
 ALL_KEYS = PASSIVE + CONDUCTANCE + KINETIC
 

@@ -47,7 +47,7 @@ from channels_converted.channels_jaxley import (  # noqa: E402
     Kv2like,
     MyKca,
     Na3Dend,
-    Nav16AVGP,
+    Nav16A,
     Nax,
     enable_cal4_diffusion,
 )
@@ -97,6 +97,11 @@ class CombeParameters:
     gkdrdend: float = 0.0
     psoma: float = 0.00075
     persist: float = 0.00075
+    nav16_C1O1v2: float = -35.0
+    nav16_C1O1k2: float = -5.0
+    nav16_C1I1b2: float = 0.2
+    nav16_C1I1v2: float = -55.0
+    nav16_C1I1k2: float = -11.0
     slowsoma: float = 0.15
     slownotsoma: float = 0.1
     sinfsoma: float = 1.35
@@ -112,9 +117,9 @@ class CombeParameters:
     gkv2: float = 0.00198 * 10.0
     gkv2axon: float = 0.00198 * 10.0
     gkv2scale: float = 0.3
-    scale_Na_conduct: float = 14.0
+    scale_Na_conduct: float = 1.0
     distalv: float = 0.0
-    proximalv: float = 6.0
+    proximalv: float = -35.0
     icangbar: float = 0.06 * 0.75
     icand_can: float = 0.0
     gip3: float = 1.85
@@ -153,7 +158,6 @@ CONDUCTANCE_PARAMETER_KEYS = (
     "gkv2",
     "gkv2axon",
     "gkv2scale",
-    "scale_Na_conduct",
     "icangbar",
 )
 PASSIVE_PARAMETER_KEYS = (
@@ -175,6 +179,11 @@ KINETIC_PARAMETER_KEYS = (
     "nat_fast_inactivation_tau_scale",
     "nat_slow_recovery_tau_scale",
     "h_tau_scale",
+    "nav16_C1O1v2",
+    "nav16_C1O1k2",
+    "nav16_C1I1b2",
+    "nav16_C1I1v2",
+    "nav16_C1I1k2",
 )
 
 params = {
@@ -222,12 +231,16 @@ bounds = {
     "gkv2": [0.0, 0.1],
     "gkv2axon": [0.0, 0.1],
     "gkv2scale": [0.0, 2.0],
-    "scale_Na_conduct": [1.0, 30.0],
     "icangbar": [0.0, 0.2],
     "kd_deactivation_tau_scale": [0.25, 4.0],
     "nat_fast_inactivation_tau_scale": [0.5, 2.0],
     "nat_slow_recovery_tau_scale": [0.5, 2.0],
     "h_tau_scale": [0.5, 2.0],
+    "nav16_C1O1v2": [-50.0, -20.0],
+    "nav16_C1O1k2": [-8.0, -3.0],
+    "nav16_C1I1b2": [0.05, 0.5],
+    "nav16_C1I1v2": [-65.0, -40.0],
+    "nav16_C1I1k2": [-15.0, -7.0],
 }
 
 
@@ -437,7 +450,7 @@ HOC_CHANNEL_CLASSES = {
     "d3": D3,
     "cal4": Cal4,
     "icand": Icand,
-    "na16a_vgp": Nav16AVGP,
+    "na16a": Nav16A,
     "kd": Kd,
     "Kv2like": Kv2like,
     "h": H,
@@ -674,7 +687,7 @@ def insert_combe_channels(cell):
 
     for group in (cell.soma, cell.apical):
         group.insert(Icand("icand"))
-        group.insert(Nav16AVGP("na16a_vgp"))
+        group.insert(Nav16A("na16a"))
         group.insert(Kd("kd"))
         group.insert(Kv2like("Kv2like"))
         group.insert(H("h"))
@@ -787,21 +800,25 @@ def set_soma_channels(cell, p: CombeParameters = COMBE_PARAMS):
     soma = group_mask(cell, "soma")
     set_on(cell, soma, "icand_gbar", p.icangbar)
     set_on(cell, soma, "icand_can", p.icand_can)
-    set_on(cell, soma, "na16a_vgp_gbar", p.gna * p.scale_Na_conduct)
-    set_on(cell, soma, "na16a_vgp_dist", p.sinfsoma)
-    set_on(cell, soma, "na16a_vgp_persist", p.persist)
-    set_on(cell, soma, "na16a_vgp_slowdown", p.slowsoma)
-    set_on(cell, soma, "na16a_vgp_C1O1v2", p.proximalv)
+    set_on(cell, soma, "na16a_gbar", p.gna)
+    set_on(cell, soma, "na16a_dist", p.sinfsoma)
+    set_on(cell, soma, "na16a_persist", p.persist)
+    set_on(cell, soma, "na16a_slowdown", p.slowsoma)
+    set_on(cell, soma, "na16a_C1O1v2", p.nav16_C1O1v2)
+    set_on(cell, soma, "na16a_C1O1k2", p.nav16_C1O1k2)
+    set_on(cell, soma, "na16a_C1I1b2", p.nav16_C1I1b2)
+    set_on(cell, soma, "na16a_C1I1v2", p.nav16_C1I1v2)
+    set_on(cell, soma, "na16a_C1I1k2", p.nav16_C1I1k2)
     set_on(
         cell,
         soma,
-        "na16a_vgp_fast_inactivation_tau_scale",
+        "na16a_fast_inactivation_tau_scale",
         p.nat_fast_inactivation_tau_scale,
     )
     set_on(
         cell,
         soma,
-        "na16a_vgp_slow_recovery_tau_scale",
+        "na16a_slow_recovery_tau_scale",
         p.nat_slow_recovery_tau_scale,
     )
     set_on(cell, soma, "kd_gbar", p.gkdrsoma)
@@ -862,21 +879,25 @@ def set_apical_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_on(cell, apical, "kap_gkabar", np.where(capped_h_dist > 100.0, 0.0, p.soma_kap * (1.0 + capped_h_dist / 100.0)))
     set_on(cell, apical, "kad_gkabar", np.where(capped_h_dist > 100.0, p.soma_kad * (1.0 + capped_h_dist / 100.0), 0.0))
     set_on(cell, apical, "Kv2like_gbar", np.where(capped_h_dist > 100.0, p.gkv2 * p.gkv2scale, p.gkv2))
-    set_on(cell, apical, "na16a_vgp_gbar", p.gnadend * p.scale_Na_conduct)
-    set_on(cell, apical, "na16a_vgp_persist", p.persist)
-    set_on(cell, apical, "na16a_vgp_slowdown", p.slownotsoma)
-    set_on(cell, apical, "na16a_vgp_dist", apical_na16a_dist(dist))
-    set_on(cell, apical, "na16a_vgp_C1O1v2", apical_na16a_c1o1v2(dist, p))
+    set_on(cell, apical, "na16a_gbar", p.gnadend)
+    set_on(cell, apical, "na16a_persist", p.persist)
+    set_on(cell, apical, "na16a_slowdown", p.slownotsoma)
+    set_on(cell, apical, "na16a_dist", apical_na16a_dist(dist))
+    set_on(cell, apical, "na16a_C1O1v2", p.nav16_C1O1v2)
+    set_on(cell, apical, "na16a_C1O1k2", p.nav16_C1O1k2)
+    set_on(cell, apical, "na16a_C1I1b2", p.nav16_C1I1b2)
+    set_on(cell, apical, "na16a_C1I1v2", p.nav16_C1I1v2)
+    set_on(cell, apical, "na16a_C1I1k2", p.nav16_C1I1k2)
     set_on(
         cell,
         apical,
-        "na16a_vgp_fast_inactivation_tau_scale",
+        "na16a_fast_inactivation_tau_scale",
         p.nat_fast_inactivation_tau_scale,
     )
     set_on(
         cell,
         apical,
-        "na16a_vgp_slow_recovery_tau_scale",
+        "na16a_slow_recovery_tau_scale",
         p.nat_slow_recovery_tau_scale,
     )
     set_on(cell, apical, "kd_gbar", p.gkdrapical)
@@ -1220,10 +1241,8 @@ def _conductance_fit_profiles(cell, p, update_mode):
         basal_dist = _profile_distances(cell.basal, update_mode)
         return (
             _fit_profile(cell.soma, "icand_gbar", p["icangbar"], "icangbar"),
-            _fit_profile(cell.soma, "na16a_vgp_gbar",
-                         p["gna"] * p["scale_Na_conduct"],
-                         "gna", "scale_Na_conduct"),
-            _fit_profile(cell.soma, "na16a_vgp_persist", p["persist"], "persist"),
+            _fit_profile(cell.soma, "na16a_gbar", p["gna"], "gna"),
+            _fit_profile(cell.soma, "na16a_persist", p["persist"], "persist"),
             _fit_profile(cell.soma, "kd_gbar", p["gkdrsoma"], "gkdrsoma"),
             _fit_profile(cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"),
             _fit_profile(cell.soma, "h_gbar", p["soma_hbar"], "soma_hbar"),
@@ -1259,10 +1278,8 @@ def _conductance_fit_profiles(cell, p, update_mode):
                          jnp.where(apical_dist > 100.0,
                                    p["gkv2"] * p["gkv2scale"], p["gkv2"]),
                          "gkv2", "gkv2scale"),
-            _fit_profile(cell.apical, "na16a_vgp_gbar",
-                         p["gnadend"] * p["scale_Na_conduct"],
-                         "gnadend", "scale_Na_conduct"),
-            _fit_profile(cell.apical, "na16a_vgp_persist", p["persist"], "persist"),
+            _fit_profile(cell.apical, "na16a_gbar", p["gnadend"], "gnadend"),
+            _fit_profile(cell.apical, "na16a_persist", p["persist"], "persist"),
             _fit_profile(cell.apical, "kd_gbar", p["gkdrapical"], "gkdrapical"),
             _fit_profile(cell.apical, "km_gbar", p["soma_km"], "soma_km"),
             _fit_profile(cell.apical, "kir_gbar",
@@ -1290,14 +1307,8 @@ def _conductance_fit_profiles(cell, p, update_mode):
 
     return (
         _fit_profile(cell.soma, "icand_gbar", p["icangbar"], "icangbar"),
-        _fit_profile(
-            cell.soma,
-            "na16a_vgp_gbar",
-            p["gna"] * p["scale_Na_conduct"],
-            "gna",
-            "scale_Na_conduct",
-        ),
-        _fit_profile(cell.soma, "na16a_vgp_persist", p["persist"], "persist"),
+        _fit_profile(cell.soma, "na16a_gbar", p["gna"], "gna"),
+        _fit_profile(cell.soma, "na16a_persist", p["persist"], "persist"),
         _fit_profile(cell.soma, "kd_gbar", p["gkdrsoma"], "gkdrsoma"),
         _fit_profile(
             cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"
@@ -1400,14 +1411,8 @@ def _conductance_fit_profiles(cell, p, update_mode):
             "gkv2",
             "gkv2scale",
         ),
-        _fit_profile(
-            cell.apical,
-            "na16a_vgp_gbar",
-            p["gnadend"] * p["scale_Na_conduct"],
-            "gnadend",
-            "scale_Na_conduct",
-        ),
-        _fit_profile(cell.apical, "na16a_vgp_persist", p["persist"], "persist"),
+        _fit_profile(cell.apical, "na16a_gbar", p["gnadend"], "gnadend"),
+        _fit_profile(cell.apical, "na16a_persist", p["persist"], "persist"),
         _fit_profile(cell.apical, "kd_gbar", p["gkdrapical"], "gkdrapical"),
         _fit_profile(cell.apical, "km_gbar", p["soma_km"], "soma_km"),
         _fit_profile(
@@ -1483,13 +1488,13 @@ def _kinetic_fit_profiles(cell, p):
         ),
         _fit_profile(
             cell.soma,
-            "na16a_vgp_fast_inactivation_tau_scale",
+            "na16a_fast_inactivation_tau_scale",
             p["nat_fast_inactivation_tau_scale"],
             "nat_fast_inactivation_tau_scale",
         ),
         _fit_profile(
             cell.apical,
-            "na16a_vgp_fast_inactivation_tau_scale",
+            "na16a_fast_inactivation_tau_scale",
             p["nat_fast_inactivation_tau_scale"],
             "nat_fast_inactivation_tau_scale",
         ),
@@ -1507,16 +1512,26 @@ def _kinetic_fit_profiles(cell, p):
         ),
         _fit_profile(
             cell.soma,
-            "na16a_vgp_slow_recovery_tau_scale",
+            "na16a_slow_recovery_tau_scale",
             p["nat_slow_recovery_tau_scale"],
             "nat_slow_recovery_tau_scale",
         ),
         _fit_profile(
             cell.apical,
-            "na16a_vgp_slow_recovery_tau_scale",
+            "na16a_slow_recovery_tau_scale",
             p["nat_slow_recovery_tau_scale"],
             "nat_slow_recovery_tau_scale",
         ),
+        _fit_profile(cell.soma, "na16a_C1O1v2", p["nav16_C1O1v2"], "nav16_C1O1v2"),
+        _fit_profile(cell.apical, "na16a_C1O1v2", p["nav16_C1O1v2"], "nav16_C1O1v2"),
+        _fit_profile(cell.soma, "na16a_C1O1k2", p["nav16_C1O1k2"], "nav16_C1O1k2"),
+        _fit_profile(cell.apical, "na16a_C1O1k2", p["nav16_C1O1k2"], "nav16_C1O1k2"),
+        _fit_profile(cell.soma, "na16a_C1I1b2", p["nav16_C1I1b2"], "nav16_C1I1b2"),
+        _fit_profile(cell.apical, "na16a_C1I1b2", p["nav16_C1I1b2"], "nav16_C1I1b2"),
+        _fit_profile(cell.soma, "na16a_C1I1v2", p["nav16_C1I1v2"], "nav16_C1I1v2"),
+        _fit_profile(cell.apical, "na16a_C1I1v2", p["nav16_C1I1v2"], "nav16_C1I1v2"),
+        _fit_profile(cell.soma, "na16a_C1I1k2", p["nav16_C1I1k2"], "nav16_C1I1k2"),
+        _fit_profile(cell.apical, "na16a_C1I1k2", p["nav16_C1I1k2"], "nav16_C1I1k2"),
         _fit_profile(
             cell.soma,
             "h_tau_scale",

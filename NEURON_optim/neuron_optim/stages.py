@@ -26,7 +26,6 @@ from .parameters import (
     PASSIVE,
     ParameterSpace,
     complete_parameter_mapping,
-    local_normalized_bounds,
     make_parameter_space,
     passive_model_values,
 )
@@ -72,7 +71,7 @@ def _build_objective_context(traces: list[Trace], stage: str,
                              options: dict[str, Any]) -> ObjectiveContext:
     return build_objective_context(
         traces,
-        stage="depolarizing" if stage in {"depolarizing", "stage3"} else "hyper",
+        stage="depolarizing" if stage == "depolarizing" else "hyper",
         threshold_mV=float(options.get("threshold_mV", -20.0)),
         refractory_ms=float(options.get("refractory_ms", 2.0)),
         prominence_mV=float(options.get("prominence_mV", 5.0)),
@@ -164,10 +163,7 @@ def _json_default(value):
 
 
 def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
-    section_name = (
-        "stage1" if stage in {"passive", "hyper"}
-        else "stage3" if stage == "stage3" else "stage2"
-    )
+    section_name = "stage1" if stage in {"passive", "hyper"} else "stage2"
     section = dict(raw[section_name])
     if stage in {"passive", "hyper"}:
         return {"sigma_mV": float(section.get("sigma_hyper_mV", 1.0)),
@@ -466,8 +462,7 @@ def _study_manifest(config: RunConfig, stage: str, seed: int, space: ParameterSp
                     fixed_values: dict[str, float] | None = None) -> None:
     section_name = (
         "passive" if stage == "passive" else
-        "stage1" if stage == "hyper" else
-        "stage3" if stage == "stage3" else "stage2"
+        "stage1" if stage == "hyper" else "stage2"
     )
     section = config.section(section_name)
     payload = {
@@ -500,8 +495,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
         space = make_parameter_space(include=PASSIVE) if stage == "passive" else config.parameters
     section_name = (
         "passive" if stage == "passive" else
-        "stage1" if stage == "hyper" else
-        "stage3" if stage == "stage3" else "stage2"
+        "stage1" if stage == "hyper" else "stage2"
     )
     section = config.section(section_name)
     simulation_traces = _load_traces(config, stage)
@@ -613,7 +607,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                                         space=space, top_k=top_k,
                                         population_indices=top_indices,
                                         dpi=int(plotting.get("dpi", 120)))
-                        if stage in {"depolarizing", "stage3"}:
+                        if stage == "depolarizing":
                             plot_depolarizing_step_generation(
                                 output_dir=run_dir / "plots", generation=generation,
                                 traces=fitness_traces, population=plot_population,
@@ -763,50 +757,6 @@ def run_depolarizing_stage(config: RunConfig, output_root: Path,
     _run_studies(config, _stage2_tasks(config, output_root, basins))
 
 
-def _best_stage2_results(output_root: Path) -> list[tuple[str, dict]]:
-    stage2_dir = output_root / "stage2_depolarizing"
-    if not stage2_dir.exists():
-        raise FileNotFoundError(stage2_dir)
-    selected = []
-    for basin_dir in sorted(stage2_dir.glob("b*")):
-        candidates = []
-        for result_path in sorted(basin_dir.glob("seed_*/best_parameters.json")):
-            payload = json.loads(result_path.read_text(encoding="utf-8"))
-            candidates.append((float(payload["loss"]), payload))
-        if candidates:
-            selected.append((basin_dir.name, min(candidates, key=lambda item: item[0])[1]))
-    if not selected:
-        raise FileNotFoundError(stage2_dir / "b*/seed_*/best_parameters.json")
-    return selected
-
-
-def run_stage3(config: RunConfig, output_root: Path) -> None:
-    """Expand depolarizing fits while keeping Stage 2 parameters local."""
-    stage3_dir = output_root / "stage3_depolarizing"
-    stage2_names = config.stage_parameter_names("stage2")
-    half_width = float(config.section("stage3").get(
-        "local_normalized_half_width", 0.15
-    ))
-
-    tasks = []
-    for basin_id, stage2_result in _best_stage2_results(output_root):
-        complete = dict(DEFAULTS)
-        complete.update(stage2_result.get("complete_physical_by_name", {}))
-        complete.update(stage2_result.get("physical_by_name", {}))
-        lower, upper = local_normalized_bounds(complete, stage2_names, half_width)
-        space = config.stage_parameter_space(
-            "stage3", lower_overrides=lower, upper_overrides=upper
-        )
-        initial = space.normalize([complete[key] for key in space.keys])
-        for seed in config.section("stage3").get("seeds", [0]):
-            seed = int(seed)
-            tasks.append((config, "stage3", seed,
-                          stage3_dir / basin_id / f"seed_{seed:03d}",
-                          initial, basin_id, space, complete))
-    _run_studies(config, tasks)
-
-
 def run_pipeline(config: RunConfig, output_root: Path) -> None:
     run_hyper_stage(config, output_root)
     run_depolarizing_stage(config, output_root)
-    run_stage3(config, output_root)

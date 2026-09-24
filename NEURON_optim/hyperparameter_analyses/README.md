@@ -2,12 +2,11 @@
 
 `analyze_importance.py` reconstructs an in-memory Optuna study from the
 evaluated CMA-ES populations saved by the optimizer. It analyzes the model
-parameters for all three stages:
+parameters for the calibration stages:
 
 - Stage 0: passive-only calibration;
 - Stage 1: full-model hyperpolarizing calibration;
-- Stage 2: AP-core depolarizing calibration across basins and seeds;
-- Stage 3: expanded active-current calibration from the best Stage 2 result per basin.
+- Stage 2: complete active-current depolarizing calibration across basins and seeds.
 
 The main importance score is Optuna fANOVA, following the approach in the
 [Optuna visualization tutorial](https://optuna.readthedocs.io/en/stable/tutorial/10_key_features/005_visualization.html).
@@ -50,7 +49,7 @@ analyze every finite candidate when memory and runtime permit.
 Use `--contour-top-k N` to change the number of parameters in the pairwise
 contour grid. The contour axes use physical calibrated units, while color shows
 log-scaled loss relative to the best candidate. Since all pairwise combinations
-would be unwieldy for the 44-parameter full model, the default focuses on the
+would be unwieldy for the 48-parameter full model, the default focuses on the
 most important varying parameters.
 
 The Stage 2 result is a pooled analysis across basin/seed studies. Basin and

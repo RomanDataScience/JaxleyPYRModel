@@ -122,9 +122,14 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
             if group == "soma":
                 assignments = {
                     "icand": {"gbar": values["icangbar"]},
-                    "na16a_vgp": {
-                        "gbar": values["gna"] * values["scale_Na_conduct"],
+                    "na16a": {
+                        "gbar": values["gna"],
                         "persist": values["persist"],
+                        "C1O1v2": values["nav16_C1O1v2"],
+                        "C1O1k2": values["nav16_C1O1k2"],
+                        "C1I1b2": values["nav16_C1I1b2"],
+                        "C1I1v2": values["nav16_C1I1v2"],
+                        "C1I1k2": values["nav16_C1I1k2"],
                     },
                     "kd": {"gbar": values["gkdrsoma"]},
                     "Kv2like": {"gbar": values["gkv2soma"]},
@@ -167,9 +172,14 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                     "kap": {"gkabar": values["soma_kap"] * (1.0 + distance / 100.0)},
                     "kad": {"gkabar": values["soma_kad"] * (1.0 + distance / 100.0)},
                     "Kv2like": {"gbar": values["gkv2"] * (values["gkv2scale"] if distance > 100.0 else 1.0)},
-                    "na16a_vgp": {
-                        "gbar": values["gnadend"] * values["scale_Na_conduct"],
+                    "na16a": {
+                        "gbar": values["gnadend"],
                         "persist": values["persist"],
+                        "C1O1v2": values["nav16_C1O1v2"],
+                        "C1O1k2": values["nav16_C1O1k2"],
+                        "C1I1b2": values["nav16_C1I1b2"],
+                        "C1I1v2": values["nav16_C1I1v2"],
+                        "C1I1k2": values["nav16_C1I1k2"],
                     },
                     "kd": {"gbar": values["gkdrapical"]},
                     "km": {"gbar": values["soma_km"]},
@@ -183,8 +193,8 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
             # the historical compiled mechanisms they simply remain at one.
             for mechanism, attr, key in (
                 ("kd", "deactivation_tau_scale", "kd_deactivation_tau_scale"),
-                ("na16a_vgp", "fast_inactivation_tau_scale", "nat_fast_inactivation_tau_scale"),
-                ("na16a_vgp", "slow_recovery_tau_scale", "nat_slow_recovery_tau_scale"),
+                ("na16a", "fast_inactivation_tau_scale", "nat_fast_inactivation_tau_scale"),
+                ("na16a", "slow_recovery_tau_scale", "nat_slow_recovery_tau_scale"),
                 ("nax", "fast_inactivation_tau_scale", "nat_fast_inactivation_tau_scale"),
                 ("na3dend", "fast_inactivation_tau_scale", "nat_fast_inactivation_tau_scale"),
                 ("h", "tau_scale", "h_tau_scale"),

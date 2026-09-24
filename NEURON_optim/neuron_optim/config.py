@@ -139,7 +139,7 @@ class RunConfig:
             errors.append("runtime.study_workers must be >= 1")
         if self.backend not in {"neuron", "jaxley"}:
             errors.append("runtime.backend must be either 'neuron' or 'jaxley'")
-        for name in ("passive", "stage1", "stage2", "stage3"):
+        for name in ("passive", "stage1", "stage2"):
             section = self.section(name)
             if int(section.get("generations", 0)) < 1:
                 errors.append(f"{name}.generations must be >= 1")
@@ -149,24 +149,11 @@ class RunConfig:
                 errors.append(f"{name}.seeds must not be empty")
             if int(section.get("checkpoint_every", 1)) < 1:
                 errors.append(f"{name}.checkpoint_every must be >= 1")
-            if name in {"stage2", "stage3"}:
+            if name == "stage2":
                 try:
                     self.stage_parameter_names(name)
                 except Exception as exc:
                     errors.append(str(exc))
-        try:
-            stage2_names = set(self.stage_parameter_names("stage2"))
-            stage3_names = set(self.stage_parameter_names("stage3"))
-            missing = sorted(stage2_names - stage3_names)
-            if missing:
-                errors.append(
-                    f"stage3.parameter_names must retain Stage 2 parameters: {missing}"
-                )
-            half_width = float(self.section("stage3").get("local_normalized_half_width", 0.15))
-            if not 0.0 <= half_width < 0.5:
-                errors.append("stage3.local_normalized_half_width must be in [0, 0.5)")
-        except Exception as exc:
-            errors.append(str(exc))
         if int(self.raw.get("plotting", {}).get("every", 1)) < 1:
             errors.append("plotting.every must be >= 1")
         if not self.data_root.exists():

@@ -5,12 +5,11 @@ model. The checked-in configurations select the repository's NEURON backend;
 the Jaxley backend remains available with `runtime.backend: jaxley`.
 
 The checked-in hyperpolarizing settings use 3 seeds, 100 generations, 20
-offspring, and 1 process worker for the passive and stage-1 searches. Stage 2
-retains 10 seeds, 200 generations, and 30 offspring for the AP-core subset.
-Stage 3 expands the active-current subset while constraining Stage 2
-parameters to local normalized bounds.
+offspring, and 1 process worker for the passive and stage-1 searches. The
+depolarizing Stage 2 retains 10 seeds, 200 generations, and 30 offspring and
+optimizes the complete active-current parameter set in one simulation stage.
 
-See [STAGES.md](STAGES.md) for the complete Stage 0 → Stage 1 → Stage 2 → Stage 3
+See [STAGES.md](STAGES.md) for the complete Stage 0 → Stage 1 → Stage 2
 solution handoff.
 
 For Optuna-style importance analysis of the calibrated parameters in each
@@ -107,15 +106,6 @@ conda run --name Jaxley \
   --output-dir NEURON_optim/runs/example
 ```
 
-Run Stage 3 from the best Stage 2 result for each basin:
-
-```bash
-conda run --name Jaxley \
-  combe-neuron-optim run-stage3 \
-  --config NEURON_optim/configs/depolarizing.yaml \
-  --output-dir NEURON_optim/runs/example
-```
-
 The checked-in configs use one candidate worker; `--workers` can override this
 for process-parallel runs. Independent seeds/basins can additionally be
 parallelized with `runtime.study_workers`; when that value is greater than one,
@@ -143,7 +133,7 @@ checkpointed generation. Set `plotting.every` to a value greater than one to
 render every Nth generation (the final generation is always rendered when
 plotting is enabled). Stage 2 writes one directory per basin and seed with
 its perturbed initial point, checkpoint, generation history, simulation
-archives, plots, and final objective breakdown. Stage 3 writes one study per
-selected Stage 2 basin and applies `stage3.local_normalized_half_width` to the
-Stage 2 parameter subset. Set `plotting.enabled: false`
+archives, plots, and final objective breakdown. All active-current parameters
+are optimized in these Stage 2 studies; there is no subsequent Stage 3
+optimization. Set `plotting.enabled: false`
 when running a diagnostic search without figures.

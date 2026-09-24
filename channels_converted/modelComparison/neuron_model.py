@@ -173,10 +173,9 @@ def build_combe_neuron_model(
             h.xopen("lib/vector-distance.hoc")
             h.xopen("cell_setup_pc2b_CCh_driven.hoc")
 
-            # Use the voltage-gated persistent Nav1.6 variant. The swap keeps
-            # the original HOC spatial profile for dist/slowdown and replaces
-            # only the mechanism implementation used by the optimizer.
-            _replace_nav16a_with_vgp()
+            # Keep the regular Nav1.6 mechanism inserted by the Combe HOC
+            # setup. The voltage-gated persistent variant is intentionally not
+            # used by the calibration model.
 
             # The original Combe setup inserts the legacy ``nap`` mechanism
             # with zero conductance. Persistent sodium is already represented

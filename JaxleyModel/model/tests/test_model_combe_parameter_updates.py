@@ -82,7 +82,7 @@ EXPECTED_TARGETS = {
     ),
     "mykca_init": (("mykca_gkbar", "soma"), ("mykca_gkbar", "apical")),
     "soma_kca": (("kca_gbar", "soma"), ("kca_gbar", "apical")),
-    "persist": (("na16a_vgp_persist", "soma"), ("na16a_vgp_persist", "apical")),
+    "persist": (("na16a_persist", "soma"), ("na16a_persist", "apical")),
     "AXNa": (("nax_gbar", "axon"),),
     "gkdrsoma": (("kd_gbar", "soma"),),
     "gkdrdend": (("kd_gbar", "basal"),),
@@ -90,18 +90,14 @@ EXPECTED_TARGETS = {
     "axon_kap": (("kap_gkabar", "axon"),),
     "basal_kap": (("kap_gkabar", "basal"),),
     "soma_kad": (("kad_gkabar", "apical"),),
-    "gna": (("na16a_vgp_gbar", "soma"), ("nax_gbar", "axon")),
+    "gna": (("na16a_gbar", "soma"), ("nax_gbar", "axon")),
     "axongkdr": (("kd_gbar", "axon"),),
-    "gnadend": (("na16a_vgp_gbar", "apical"), ("na3dend_gbar", "basal")),
+    "gnadend": (("na16a_gbar", "apical"), ("na3dend_gbar", "basal")),
     "gkdrapical": (("kd_gbar", "apical"),),
     "gkv2soma": (("Kv2like_gbar", "soma"),),
     "gkv2": (("Kv2like_gbar", "apical"), ("Kv2like_gbar", "basal")),
     "gkv2axon": (("Kv2like_gbar", "axon"),),
     "gkv2scale": (("Kv2like_gbar", "apical"), ("Kv2like_gbar", "basal")),
-    "scale_Na_conduct": (
-        ("na16a_vgp_gbar", "soma"),
-        ("na16a_vgp_gbar", "apical"),
-    ),
     "icangbar": (("icand_gbar", "soma"), ("icand_gbar", "apical")),
     "kd_deactivation_tau_scale": (
         ("kd_deactivation_tau_scale", "soma"),
@@ -110,15 +106,20 @@ EXPECTED_TARGETS = {
         ("kd_deactivation_tau_scale", "basal"),
     ),
     "nat_fast_inactivation_tau_scale": (
-        ("na16a_vgp_fast_inactivation_tau_scale", "soma"),
-        ("na16a_vgp_fast_inactivation_tau_scale", "apical"),
+        ("na16a_fast_inactivation_tau_scale", "soma"),
+        ("na16a_fast_inactivation_tau_scale", "apical"),
         ("nax_fast_inactivation_tau_scale", "axon"),
         ("na3dend_fast_inactivation_tau_scale", "basal"),
     ),
     "nat_slow_recovery_tau_scale": (
-        ("na16a_vgp_slow_recovery_tau_scale", "soma"),
-        ("na16a_vgp_slow_recovery_tau_scale", "apical"),
+        ("na16a_slow_recovery_tau_scale", "soma"),
+        ("na16a_slow_recovery_tau_scale", "apical"),
     ),
+    "nav16_C1O1v2": (("na16a_C1O1v2", "soma"), ("na16a_C1O1v2", "apical")),
+    "nav16_C1O1k2": (("na16a_C1O1k2", "soma"), ("na16a_C1O1k2", "apical")),
+    "nav16_C1I1b2": (("na16a_C1I1b2", "soma"), ("na16a_C1I1b2", "apical")),
+    "nav16_C1I1v2": (("na16a_C1I1v2", "soma"), ("na16a_C1I1v2", "apical")),
+    "nav16_C1I1k2": (("na16a_C1I1k2", "soma"), ("na16a_C1I1k2", "apical")),
     "h_tau_scale": (
         ("h_tau_scale", "soma"),
         ("h_tau_scale", "apical"),
@@ -180,9 +181,14 @@ def test_reference_values_are_bitwise_identity(hoc_cell):
     updates = set_fitted_parameters(hoc_cell, keys, values)
 
     assert updates
-    assert "na16a_vgp_dist" not in {update["key"] for update in updates}
-    assert "na16a_vgp_C1O1v2" not in {update["key"] for update in updates}
+    assert "na16a_dist" not in {update["key"] for update in updates}
+    assert "na16a_C1O1v2" in {update["key"] for update in updates}
     for update in updates:
+        # The regular Nav16 window parameters intentionally replace the old
+        # HOC voltage profile, so their fitted defaults need not equal the
+        # imported HOC baseline.
+        if update["key"].startswith("na16a_C1"):
+            continue
         assert np.array_equal(np.asarray(update["val"]), _baseline(hoc_cell, update))
 
 
@@ -320,23 +326,18 @@ def test_joint_passive_update_uses_hoc_endpoint_rules_on_frozen_grid(hoc_cell):
     )
 
 
-def test_coupled_and_zero_reference_rules(hoc_cell):
+def test_fixed_scale_and_zero_reference_rules(hoc_cell):
     gna = COMBE_PARAMS.gna * 1.2
-    na_scale = COMBE_PARAMS.scale_Na_conduct * 0.9
-    updates = set_fitted_parameters(
-        hoc_cell,
-        ("gna", "scale_Na_conduct"),
-        jnp.asarray([gna, na_scale]),
-    )
+    updates = set_fitted_parameters(hoc_cell, ("gna",), jnp.asarray([gna]))
     soma_na = next(
         update
         for update in updates
-        if update["key"] == "na16a_vgp_gbar"
+        if update["key"] == "na16a_gbar"
         and _group_for_update(hoc_cell, update) == "soma"
     )
     np.testing.assert_allclose(
         np.asarray(soma_na["val"]),
-        gna * na_scale,
+        gna,
         rtol=1e-12,
         atol=1e-14,
     )

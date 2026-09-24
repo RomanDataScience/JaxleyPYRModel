@@ -40,7 +40,7 @@ from model_Combe import Combe2023  # noqa: E402
 RESULTS_DIR = Path(__file__).resolve().parent / "diagnostics"
 
 SOMA_STATES = (
-    "na16a_vgp_O1",
+    "na16a_O1",
     "kd_m",
     "kd_h",
     "Kv2like_m",
@@ -99,7 +99,7 @@ def segment_current_snapshot(seg, site: str) -> dict[str, float]:
     values["leak"] = safe_get(seg, "g_pas") * (float(seg.v) - safe_get(seg, "e_pas"))
 
     if site == "soma":
-        na16a = seg.na16a_vgp
+        na16a = seg.na16a
         kd = seg.kd
         kv2 = seg.Kv2like
         hchan = seg.h
@@ -125,7 +125,7 @@ def segment_current_snapshot(seg, site: str) -> dict[str, float]:
                 "cat": safe_get(cat, "ica"),
                 "car": safe_get(car, "ica"),
                 "icand": safe_get(icand, "gbar") * safe_get(icand, "Po") * (float(seg.v) - safe_get(icand, "erev")),
-                "na16a_vgp_O1": safe_get(na16a, "O1"),
+                "na16a_O1": safe_get(na16a, "O1"),
                 "kd_m": safe_get(kd, "m"),
                 "kd_h": safe_get(kd, "h"),
                 "Kv2like_m": safe_get(kv2, "m"),
@@ -242,7 +242,7 @@ def jaxley_currents(cell, rec_index: int, recs: dict[tuple[int, str], np.ndarray
         return recs[(rec_index, name)]
 
     if site == "soma":
-        values["na16a"] = node_value(cell, rec_index, "na16a_vgp_gbar") * state("na16a_vgp_O1") * (v - node_value(cell, rec_index, "eNa"))
+        values["na16a"] = node_value(cell, rec_index, "na16a_gbar") * state("na16a_O1") * (v - node_value(cell, rec_index, "eNa"))
         values["kd"] = node_value(cell, rec_index, "kd_gbar") * state("kd_m") * state("kd_h") * (v - node_value(cell, rec_index, "eK"))
         values["Kv2like"] = (
             node_value(cell, rec_index, "Kv2like_gbar")
