@@ -34,6 +34,9 @@ class Nav16A(Channel):
             f"{prefix}_O1I1b2": 5.0,
             f"{prefix}_O1I1v2": 10.0,
             f"{prefix}_O1I1k2": -12.0,
+            f"{prefix}_I1O1b1": 0.05,
+            f"{prefix}_I1O1v1": -40.0,
+            f"{prefix}_I1O1k1": -10.0,
             f"{prefix}_I1C1b1": 0.2,
             f"{prefix}_I1C1v1": -65.0,
             f"{prefix}_I1C1k1": 10.0,
@@ -48,9 +51,12 @@ class Nav16A(Channel):
             f"{prefix}_I2I1k1": 12.0,
             f"{prefix}_dist": 0.0,
             f"{prefix}_slowdown": 0.2,
+            # Retained as no-op compatibility parameters for the existing
+            # Combe parameter schema. They are not present in the new MOD
+            # RANGE list and do not affect the converted kinetics.
             f"{prefix}_persist": 0.0,
-            f"{prefix}_persist_vhalf": -40.0,
-            f"{prefix}_persist_k": 0.6,
+            f"{prefix}_persist_vhalf": -56.0,
+            f"{prefix}_persist_k": -0.6,
             f"{prefix}_fast_inactivation_tau_scale": 1.0,
             f"{prefix}_slow_recovery_tau_scale": 1.0,
             "eNa": 50.0,
@@ -110,7 +116,12 @@ class Nav16A(Channel):
         }
 
     def rates2(self, v, b, vv, k):
-        return b / (1.0 + safe_exp((v - vv) / k))
+        arg = (v - vv) / k
+        return jnp.where(
+            arg < -50.0,
+            b,
+            jnp.where(arg > 50.0, 0.0, b / (1.0 + safe_exp(arg))),
+        )
 
     def rate_matrix(self, v, params):
         C1O1, O1C1, O1I1, I1O1, I1C1, C1I1, I1I2, I2I1 = self.rates(v, params)
@@ -126,8 +137,6 @@ class Nav16A(Channel):
     def rates(self, v, params):
         prefix = channel_prefix(self)
         q10 = 3.0 ** ((params["celsius"] - 20.0) / 10.0)
-        fast_scale = params[f"{prefix}_fast_inactivation_tau_scale"]
-        slow_scale = params[f"{prefix}_slow_recovery_tau_scale"]
         C1O1 = q10 * self.rates2(v, params[f"{prefix}_C1O1b2"], params[f"{prefix}_C1O1v2"], params[f"{prefix}_C1O1k2"])
         O1C1 = q10 * (
             self.rates2(v, params[f"{prefix}_O1C1b1"], params[f"{prefix}_O1C1v1"], params[f"{prefix}_O1C1k1"])
@@ -136,28 +145,29 @@ class Nav16A(Channel):
         O1I1 = 0.5 * q10 * (
             self.rates2(v, params[f"{prefix}_O1I1b1"], params[f"{prefix}_O1I1v1"], params[f"{prefix}_O1I1k1"])
             + self.rates2(v, params[f"{prefix}_O1I1b2"], params[f"{prefix}_O1I1v2"], params[f"{prefix}_O1I1k2"])
-        ) / fast_scale
-        persist_arg = (
-            v - params[f"{prefix}_persist_vhalf"]
-        ) / params[f"{prefix}_persist_k"]
-        persist_gate = 1.0 / (1.0 + safe_exp(persist_arg))
-        I1O1 = params[f"{prefix}_persist"] * persist_gate * O1I1
+        )
+        I1O1 = q10 * self.rates2(
+            v,
+            params[f"{prefix}_I1O1b1"],
+            params[f"{prefix}_I1O1v1"],
+            params[f"{prefix}_I1O1k1"],
+        )
         I1C1 = q10 * self.rates2(
             v,
             params[f"{prefix}_I1C1b1"],
             params[f"{prefix}_I1C1v1"],
             params[f"{prefix}_I1C1k1"],
-        ) / fast_scale
+        )
         C1I1 = q10 * self.rates2(
             v,
             params[f"{prefix}_C1I1b2"],
             params[f"{prefix}_C1I1v2"],
             params[f"{prefix}_C1I1k2"],
-        ) / fast_scale
+        )
         I1I2 = params[f"{prefix}_slowdown"] * params[f"{prefix}_dist"] * q10 * self.rates2(
             v, params[f"{prefix}_I1I2b2"], params[f"{prefix}_I1I2v2"], params[f"{prefix}_I1I2k2"]
-        ) / slow_scale
+        )
         I2I1 = params[f"{prefix}_slowdown"] * q10 * self.rates2(
             v, params[f"{prefix}_I2I1b1"], params[f"{prefix}_I2I1v1"], params[f"{prefix}_I2I1k1"]
-        ) / slow_scale
+        )
         return C1O1, O1C1, O1I1, I1O1, I1C1, C1I1, I1I2, I2I1
