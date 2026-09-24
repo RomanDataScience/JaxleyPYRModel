@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import numpy as np
 
 from .data import Trace
 from .objective import SimulationOutput
+
+
+# ``JaxleyModel`` and ``channels_converted`` live beside the NEURON_optim
+# package rather than inside the installed optimizer distribution. Add the
+# repository root before importing the model so the console entry point works
+# when launched from ``NEURON_optim`` or another working directory.
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPOSITORY_ROOT))
 
 
 def _linear_play_interval_current(current: np.ndarray) -> np.ndarray:
