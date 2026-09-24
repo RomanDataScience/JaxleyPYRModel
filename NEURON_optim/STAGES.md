@@ -164,7 +164,7 @@ this stage.
 | `gna` | Main somatic Nav1.6 conductance and the base axonal sodium conductance | Spike threshold, upstroke strength, spike amplitude, and excitability |
 | `gnadend` | Dendritic Nav1.6/Na3 conductance scale | Dendritic recruitment, back-propagation, and support for prolonged depolarization |
 | `AXNa` | Axonal sodium conductance multiplier | Axonal spike initiation and reliable propagation into the soma |
-| `persist` | Nav1.6 `I1 → O1` recovery rate, producing persistent channel availability | Sustained inward sodium current, plateau height, extra spikes, and depolarization-block risk; bounded to 0–0.02 |
+| `persist` | Nav1.6 `I1 → O1` recovery rate, producing persistent channel availability | Sustained inward sodium current, plateau height, extra spikes, and depolarization-block risk; bounded to 0.0015–0.0030 |
 | `nav16_C1O1v2`, `nav16_C1O1k2` | Regular Nav1.6 `C1 → O1` activation voltage and slope | Moves and sharpens the sodium window near −50/−55 mV |
 | `nav16_C1I1b2`, `nav16_C1I1v2`, `nav16_C1I1k2` | Regular Nav1.6 closed-state inactivation branch | Controls loss of available/open channels during strong depolarization |
 | `nav16_O1I1b2`, `nav16_O1I1v2`, `nav16_O1I1k2` | Regular Nav1.6 open-state inactivation branch | Directly controls fast sodium-current shutdown during the spike |
