@@ -20,8 +20,8 @@ The parameter dimensions are:
 | Stage | Free parameters | What is free |
 |---|---:|---|
 | Stage 0 | 12 | Passive membrane and cable parameters |
-| Stage 1 | 48 | All 12 passive parameters plus all 36 active parameters |
-| Stage 2 | 36 active parameters | Sodium, potassium, calcium, H, Kir, CAN, and kinetic parameters |
+| Stage 1 | 51 | All 12 passive parameters plus all 39 active parameters |
+| Stage 2 | 39 active parameters | Sodium, potassium, calcium, H, Kir, CAN, and kinetic parameters |
 
 The optimizer uses the same parameter catalog for NEURON and Jaxley. A
 parameter name describes a shared model control, although the corresponding
@@ -71,8 +71,8 @@ Each Stage 1 seed then runs an independent full-model CMA-ES search against the
 hyperpolarizing objective. The Stage 1 studies do not start from the same exact
 point because their passive perturbations are seed-dependent.
 
-Stage 1 uses the complete 48-dimensional parameter space. The passive
-parameters listed above remain free, and all 36 active parameters are also
+Stage 1 uses the complete 51-dimensional parameter space. The passive
+parameters listed above remain free, and all 39 active parameters are also
 free, although they begin at their configured defaults. Consequently, Stage 1
 can use active conductances to improve a hyperpolarizing trace; its active
 parameter estimates should therefore be treated as provisional rather than as
@@ -167,6 +167,7 @@ this stage.
 | `persist` | Nav1.6 `I1 → O1` recovery rate, producing persistent channel availability | Sustained inward sodium current, plateau height, extra spikes, and depolarization-block risk; bounded to 0–0.02 |
 | `nav16_C1O1v2`, `nav16_C1O1k2` | Regular Nav1.6 `C1 → O1` activation voltage and slope | Moves and sharpens the sodium window near −50/−55 mV |
 | `nav16_C1I1b2`, `nav16_C1I1v2`, `nav16_C1I1k2` | Regular Nav1.6 closed-state inactivation branch | Controls loss of available/open channels during strong depolarization |
+| `nav16_O1I1b2`, `nav16_O1I1v2`, `nav16_O1I1k2` | Regular Nav1.6 open-state inactivation branch | Directly controls fast sodium-current shutdown during the spike |
 | `nat_fast_inactivation_tau_scale` | Nav1.6 and related sodium fast-inactivation time scale | Spike width, sodium current termination, and recovery between spikes |
 | `nat_slow_recovery_tau_scale` | Nav1.6 slow `I1 ↔ I2` pathway time scale | Slow recovery/adaptation and the ability to sustain or terminate repetitive firing |
 | `gkv2soma`, `gkv2`, `gkv2axon`, `gkv2scale` | Kv2-like delayed-rectifier potassium conductances and their dendritic scale | Repolarization, interspike voltage, firing rate, and suppression of an excessive plateau |

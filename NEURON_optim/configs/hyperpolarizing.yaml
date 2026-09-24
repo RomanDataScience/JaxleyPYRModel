@@ -67,6 +67,9 @@ stage2:
     - nav16_C1I1b2
     - nav16_C1I1v2
     - nav16_C1I1k2
+    - nav16_O1I1b2
+    - nav16_O1I1v2
+    - nav16_O1I1k2
     - nat_fast_inactivation_tau_scale
     - nat_slow_recovery_tau_scale
     - gkv2soma

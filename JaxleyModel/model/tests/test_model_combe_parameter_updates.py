@@ -120,6 +120,9 @@ EXPECTED_TARGETS = {
     "nav16_C1I1b2": (("na16a_C1I1b2", "soma"), ("na16a_C1I1b2", "apical")),
     "nav16_C1I1v2": (("na16a_C1I1v2", "soma"), ("na16a_C1I1v2", "apical")),
     "nav16_C1I1k2": (("na16a_C1I1k2", "soma"), ("na16a_C1I1k2", "apical")),
+    "nav16_O1I1b2": (("na16a_O1I1b2", "soma"), ("na16a_O1I1b2", "apical")),
+    "nav16_O1I1v2": (("na16a_O1I1v2", "soma"), ("na16a_O1I1v2", "apical")),
+    "nav16_O1I1k2": (("na16a_O1I1k2", "soma"), ("na16a_O1I1k2", "apical")),
     "h_tau_scale": (
         ("h_tau_scale", "soma"),
         ("h_tau_scale", "apical"),
@@ -187,7 +190,7 @@ def test_reference_values_are_bitwise_identity(hoc_cell):
         # The regular Nav16 window parameters intentionally replace the old
         # HOC voltage profile, so their fitted defaults need not equal the
         # imported HOC baseline.
-        if update["key"].startswith("na16a_C1"):
+        if update["key"].startswith(("na16a_C1", "na16a_O1I1")):
             continue
         assert np.array_equal(np.asarray(update["val"]), _baseline(hoc_cell, update))
 

@@ -12,10 +12,10 @@ from neuron_optim.parameters import (
 )
 
 
-def test_default_parameter_space_is_bounded_and_48_dimensional():
+def test_default_parameter_space_is_bounded_and_51_dimensional():
     space = make_parameter_space()
-    assert len(ALL_KEYS) == 48
-    assert len(space.keys) == 48
+    assert len(ALL_KEYS) == 51
+    assert len(space.keys) == 51
     assert np.all(space.lower < space.upper)
     normalized = space.normalize(space.reference)
     assert np.all((normalized >= 0.0) & (normalized <= 1.0))
@@ -35,7 +35,7 @@ def test_passive_model_mapping_disables_active_currents():
 
 def test_local_bounds_and_complete_mapping_keep_fixed_parameters():
     space = make_parameter_space(include=("gna", "persist"))
-    centers = {"gna": 0.035, "persist": 0.00075}
+    centers = {"gna": 0.08, "persist": 0.00225}
     lower, upper = local_normalized_bounds(centers, space.keys, 0.15)
     local = make_parameter_space(
         include=space.keys, lower_overrides=lower, upper_overrides=upper
