@@ -76,6 +76,22 @@ conda run --name Jaxley \
   --output-dir NEURON_optim/runs/passive_check
 ```
 
+To compare NEURON and Jaxley on the first configured hyperpolarizing and
+depolarizing traces with the shared default parameter mapping:
+
+```bash
+conda run --name Jaxley \
+  python -m neuron_optim.cli compare-backends \
+  --config NEURON_optim/configs/hyperpolarizing.yaml \
+  --output NEURON_optim/runs/backend_parity.json
+```
+
+The report includes full-trace and pulse-window voltage RMSE/MAE/max-error
+metrics, along with the replayed pre-pulse and pulse current medians. The
+comparison command also forces a clean rebuild of the private patched MOD
+library before loading NEURON, so stale compiled mechanisms cannot affect the
+diagnostic.
+
 To run the passive pre-calibration by itself:
 
 ```bash

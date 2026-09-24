@@ -36,6 +36,49 @@ def _linear_play_interval_current(current: np.ndarray) -> np.ndarray:
     return np.concatenate((interval_average, current[-1:]))
 
 
+def _init_states_with_param_state(cell, param_state, *, delta_t: float) -> None:
+    """Initialize Jaxley channel states using a functional parameter state.
+
+    ``Module.data_set`` returns updates for ``integrate`` without mutating the
+    module's pandas-backed parameter table.  Jaxley's public ``init_states``
+    currently has no ``param_state`` argument and therefore otherwise
+    initializes channels from the model's reference parameters.  That is a
+    behavioral mismatch for every non-reference candidate (and, for the HOC
+    morphology, even for the optimizer defaults, whose fitted profiles differ
+    from the imported HOC profiles).
+
+    Apply the functional updates just long enough for ``init_states`` to see
+    them, then restore the module table.  The actual integration still uses
+    the original functional state, so this does not turn candidate evaluation
+    into a mutation of the reusable model.
+    """
+    if not param_state:
+        cell.init_states(delta_t=delta_t)
+        return
+
+    backups = []
+    base = cell.base
+    for update in param_state:
+        key = update["key"]
+        if key in base.nodes.columns:
+            data = base.nodes
+        elif key in base.edges.columns:
+            data = base.edges
+        else:  # pragma: no cover - data_set should reject this earlier
+            raise KeyError(f"Parameter-state key not found in Jaxley model: {key}")
+
+        indices = np.asarray(update["indices"], dtype=int).reshape(-1)
+        values = np.asarray(update["val"])
+        backups.append((data, key, indices, data.loc[indices, key].to_numpy(copy=True)))
+        data.loc[indices, key] = values
+
+    try:
+        cell.init_states(delta_t=delta_t)
+    finally:
+        for data, key, indices, values in reversed(backups):
+            data.loc[indices, key] = values
+
+
 class JaxleySimulator:
     """Simulate Combe traces with the repository's Jaxley model.
 
@@ -45,7 +88,9 @@ class JaxleySimulator:
     """
 
     def __init__(self, *, d_lambda: float = 0.3, quiet: bool = True,
-                 morphology_source: str = "hoc", reuse_model: bool = True):
+                 morphology_source: str = "hoc", reuse_model: bool = True,
+                 solver: str = "bwd_euler",
+                 voltage_solver: str = "jaxley.dhs.cpu"):
         del quiet  # Jaxley has no equivalent simulator verbosity switch here.
         try:
             import jax.numpy as jnp
@@ -69,6 +114,8 @@ class JaxleySimulator:
         self._supported_keys = frozenset(SUPPORTED_FIT_PARAMETER_KEYS)
         self._update_mode = NEURON_UPDATE_MODE
         self.reuse_model = bool(reuse_model)
+        self.solver = str(solver)
+        self.voltage_solver = str(voltage_solver)
         self._cell = None
         if morphology_source not in {"swc", "hoc"}:
             raise ValueError("morphology_source must be either 'swc' or 'hoc'")
@@ -103,9 +150,12 @@ class JaxleySimulator:
         for trace in traces:
             if trace.time_ms.size < 2:
                 raise ValueError("Trace has fewer than two samples")
-            dt = float(np.median(np.diff(trace.time_ms)))
+            time_diffs = np.diff(np.asarray(trace.time_ms, dtype=float))
+            dt = float(np.median(time_diffs))
             if dt <= 0.0 or not np.isfinite(dt):
                 raise ValueError("Trace time step must be finite and positive")
+            if not np.allclose(time_diffs, dt, rtol=0.0, atol=1e-12):
+                raise ValueError("Jaxley requires a uniformly sampled trace")
             time = np.asarray(trace.time_ms - trace.time_ms[0], dtype=float)
             current = _linear_play_interval_current(trace.current_nA)
             cell.delete_stimuli()
@@ -118,9 +168,15 @@ class JaxleySimulator:
                        if v_init_mode == "observed_first_sample"
                        else float(values["Epas"]))
             cell.set("v", initial)
-            cell.init_states()
+            _init_states_with_param_state(cell, param_state, delta_t=dt)
             voltage = np.asarray(
-                self.jx.integrate(cell, param_state=param_state, delta_t=dt)[0],
+                self.jx.integrate(
+                    cell,
+                    param_state=param_state,
+                    delta_t=dt,
+                    solver=self.solver,
+                    voltage_solver=self.voltage_solver,
+                )[0],
                 dtype=float,
             )
             n = min(time.size, voltage.size)

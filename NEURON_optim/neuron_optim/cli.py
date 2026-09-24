@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from .config import load_config
+from .parity import compare_first_pulses
 from .stages import (
     load_basins,
     make_basins,
@@ -43,6 +44,13 @@ def main(argv: list[str] | None = None) -> int:
     current.add_argument("--config", required=True)
     current.add_argument("--output-dir", type=Path, default=Path("runs"))
 
+    parity = sub.add_parser(
+        "compare-backends",
+        help="compare NEURON and Jaxley on the first hyper/depolarizing traces",
+    )
+    parity.add_argument("--config", required=True)
+    parity.add_argument("--output", type=Path, default=Path("runs/backend_parity.json"))
+
     basins = sub.add_parser("make-basins")
     basins.add_argument("--config", required=True)
     basins.add_argument("--stage1-run", type=Path, required=True)
@@ -76,6 +84,18 @@ def main(argv: list[str] | None = None) -> int:
         for error in errors:
             print(f"ERROR: {error}")
         return 2
+    if args.command == "compare-backends":
+        report = compare_first_pulses(config, args.output.resolve())
+        for comparison in report["comparisons"]:
+            pulse = comparison["pulse_window"]
+            print(
+                f"{comparison['protocol']} {comparison['trace']}: "
+                f"pulse RMSE={pulse['rmse_mV']:.6g} mV, "
+                f"MAE={pulse['mae_mV']:.6g} mV, "
+                f"max_abs={pulse['max_abs_mV']:.6g} mV"
+            )
+        print(f"Wrote backend parity report: {args.output.resolve()}")
+        return 0
     output = args.output_dir.resolve()
     if args.command == "check-current":
         report = validate_current_replay(config, output / "stage0_passive" / "current_replay.json")

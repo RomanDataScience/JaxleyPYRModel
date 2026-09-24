@@ -36,7 +36,11 @@ class Cal4(Pump):
             f"{prefix}_shell_depth": 0.1,
         }
         self.channel_states = {
-            "i_Ca": 1e-8,
+            # cal4.mod initializes the calcium current to zero.  The small
+            # nonzero value used by Jaxley's generic calcium pumps injects a
+            # spurious Faraday drive and makes CaCon_i decay even when no
+            # calcium channel is present.
+            "i_Ca": 0.0,
             "CaCon_i": 50e-6,
             f"{prefix}_ho": 0.0,
         }

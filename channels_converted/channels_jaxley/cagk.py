@@ -1,4 +1,4 @@
-from .common import Channel, FARADAY_KC, R, channel_prefix, gate_update, safe_exp, state_or_param
+from .common import Channel, FARADAY_KC, MOD_R_CAGK, channel_prefix, gate_update, safe_exp, state_or_param
 
 
 class MyKca(Channel):
@@ -40,7 +40,7 @@ class MyKca(Channel):
         return {f"{prefix}_o": oinf}
 
     def exp1(self, k, d, v, params):
-        return k * safe_exp(-2.0 * d * FARADAY_KC * v / R / (273.15 + params["celsius"]))
+        return k * safe_exp(-2.0 * d * FARADAY_KC * v / MOD_R_CAGK / (273.15 + params["celsius"]))
 
     def rates(self, v, cai, params):
         prefix = channel_prefix(self)
@@ -52,4 +52,3 @@ class MyKca(Channel):
         )
         tau = 1.0 / (alpha + beta)
         return alpha * tau, tau
-

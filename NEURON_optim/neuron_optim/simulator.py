@@ -20,15 +20,16 @@ class NeuronUnavailable(RuntimeError):
 
 
 def make_simulator(backend: str, *, d_lambda: float = 0.3, quiet: bool = True,
-                   morphology_source: str = "hoc"):
+                   morphology_source: str = "hoc", **backend_options):
     """Construct the configured simulator without importing both backends."""
     normalized = str(backend).lower()
     if normalized == "neuron":
-        return NeuronSimulator(d_lambda=d_lambda, quiet=quiet)
+        return NeuronSimulator(d_lambda=d_lambda, quiet=quiet, **backend_options)
     if normalized == "jaxley":
         from .jaxley_simulator import JaxleySimulator
         return JaxleySimulator(d_lambda=d_lambda, quiet=quiet,
-                               morphology_source=morphology_source)
+                               morphology_source=morphology_source,
+                               **backend_options)
     raise ValueError(f"Unsupported simulation backend: {backend}")
 
 
@@ -215,11 +216,13 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
 class NeuronSimulator:
     def __init__(self, *, d_lambda: float = 0.3, quiet: bool = True,
                  combe_dir: Path | None = None, mod_dir: Path | None = None,
-                 reuse_model: bool = True):
+                 reuse_model: bool = True, force_recompile: bool = False):
         self.d_lambda = d_lambda
         self.quiet = quiet
         self.combe_dir = combe_dir or ensure_combe_source()
-        self.mod_dir = mod_dir or ensure_patched_mod_dir()
+        self.mod_dir = mod_dir or ensure_patched_mod_dir(
+            force_recompile=force_recompile
+        )
         self.reuse_model = bool(reuse_model)
         self._h = None
         self._soma = None
@@ -253,11 +256,20 @@ class NeuronSimulator:
         h, soma = self._model()
         apply_parameters(soma, values, h)
         h.CVode().active(0)
+        # Match Jaxley's fixed-step backward-Euler voltage update.  NEURON's
+        # default is currently zero, but set it explicitly so a user/site
+        # configuration cannot silently select a different fixed-step scheme.
+        h.secondorder = 0
         outputs = []
         for trace in traces:
             if trace.time_ms.size < 2:
                 raise ValueError("Trace has fewer than two samples")
-            dt = float(np.median(np.diff(trace.time_ms)))
+            time_diffs = np.diff(np.asarray(trace.time_ms, dtype=float))
+            dt = float(np.median(time_diffs))
+            if dt <= 0.0 or not np.isfinite(dt):
+                raise ValueError("Trace time step must be finite and positive")
+            if not np.allclose(time_diffs, dt, rtol=0.0, atol=1e-12):
+                raise ValueError("NEURON requires a uniformly sampled trace")
             time = np.asarray(trace.time_ms - trace.time_ms[0], dtype=float)
             current = np.asarray(trace.current_nA, dtype=float)
             h.dt = dt

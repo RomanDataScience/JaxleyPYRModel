@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 
-from .common import Channel, FARADAY, R, channel_prefix, gate_update, safe_exp
+from .common import Channel, MOD_FARADAY, MOD_R, channel_prefix, gate_update, safe_exp
 
 
 class Kap(Channel):
@@ -59,9 +59,9 @@ class Kap(Channel):
         prefix = channel_prefix(self)
         celsius = params["celsius"]
         zeta_n = self._zeta_n(v, params)
-        alpn = safe_exp(1e-3 * zeta_n * (v - params[f"{prefix}_vhalfn"]) * FARADAY / (R * (273.16 + celsius)))
-        betn = safe_exp(1e-3 * zeta_n * params[f"{prefix}_gmn"] * (v - params[f"{prefix}_vhalfn"]) * FARADAY / (R * (273.16 + celsius)))
-        alpl = safe_exp(1e-3 * params[f"{prefix}_zetal"] * (v - params[f"{prefix}_vhalfl"]) * FARADAY / (R * (273.16 + celsius)))
+        alpn = safe_exp(1e-3 * zeta_n * (v - params[f"{prefix}_vhalfn"]) * MOD_FARADAY / (MOD_R * (273.16 + celsius)))
+        betn = safe_exp(1e-3 * zeta_n * params[f"{prefix}_gmn"] * (v - params[f"{prefix}_vhalfn"]) * MOD_FARADAY / (MOD_R * (273.16 + celsius)))
+        alpl = safe_exp(1e-3 * params[f"{prefix}_zetal"] * (v - params[f"{prefix}_vhalfl"]) * MOD_FARADAY / (MOD_R * (273.16 + celsius)))
         qt = params[f"{prefix}_q10"] ** ((celsius - 24.0) / 10.0)
         ninf = 1.0 / (1.0 + alpn)
         taun = betn / (qt * params[f"{prefix}_a0n"] * (1.0 + alpn))

@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 
-from .common import FARADAY, R, channel_prefix, gate_update, safe_exp, sigmoid_arg
+from .common import MOD_FARADAY, MOD_R, channel_prefix, gate_update, safe_exp, sigmoid_arg
 from .nax import Nax
 
 
@@ -55,20 +55,19 @@ class Na3Dend(Nax):
         prefix = channel_prefix(self)
         minf, mtau, hinf, htau = super().rates(v, params)
         c = sigmoid_arg((v - params[f"{prefix}_vvh"]) / params[f"{prefix}_vvs"])
-        arg_s = 1e-3 * params[f"{prefix}_zetas"] * (v - params[f"{prefix}_vhalfs"]) * FARADAY / (
-            R * (273.16 + params["celsius"])
+        arg_s = 1e-3 * params[f"{prefix}_zetas"] * (v - params[f"{prefix}_vhalfs"]) * MOD_FARADAY / (
+            MOD_R * (273.16 + params["celsius"])
         )
         arg_bs = (
             1e-3
             * params[f"{prefix}_zetas"]
             * params[f"{prefix}_gms"]
             * (v - params[f"{prefix}_vhalfs"])
-            * FARADAY
-            / (R * (273.16 + params["celsius"]))
+            * MOD_FARADAY
+            / (MOD_R * (273.16 + params["celsius"]))
         )
         alps = safe_exp(arg_s)
         bets = safe_exp(arg_bs)
         sinf = c + params[f"{prefix}_ar2"] * (1.0 - c)
         taus = jnp.maximum(bets / (params[f"{prefix}_a0s"] * (1.0 + alps)), params[f"{prefix}_smax"])
         return minf, mtau, hinf, htau, sinf, taus
-

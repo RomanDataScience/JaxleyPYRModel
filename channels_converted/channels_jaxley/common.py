@@ -2,9 +2,18 @@ import jax.numpy as jnp
 from jaxley.channels import Channel
 
 
+# Keep the physical constants used by the converted channels available for
+# mechanisms that were written from SI equations.  The MOD files in this
+# repository, however, contain literal historical constants in several rate
+# equations.  Those equations must use their MOD literals for backend parity;
+# a modern CODATA replacement is numerically different at the 1e-6 level.
 FARADAY = 96485.33212
 FARADAY_KC = 96.48533212
 R = 8.314462618
+MOD_FARADAY = 9.648e4
+MOD_FARADAY_KC = 96.48
+MOD_R = 8.315
+MOD_R_CAGK = 8.313424
 EPS = 1e-12
 
 
@@ -71,4 +80,3 @@ def state_or_param(states, params, key, default):
 
 def channel_prefix(channel):
     return channel._name
-

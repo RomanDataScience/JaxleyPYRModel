@@ -39,6 +39,11 @@ class Icand(Channel):
         prefix = channel_prefix(self)
         alpha = 0.0057 * safe_exp(0.0060 * -60.0)
         beta = 0.033 * safe_exp(-0.019 * -60.0)
-        alpha2 = alpha / (1.0 + params[f"{prefix}_Kd"] / jnp.maximum(cai, 1e-12))
+        # The NEURON mechanism initializes ``can`` from calcium.  With its
+        # default ``can=0`` this makes alpha2, Po_inf, and therefore Po exactly
+        # zero.  A positive numerical floor would silently reactivate the
+        # channel in Jaxley (the old value was ~4.4e-13).
+        cai = jnp.maximum(cai, 0.0)
+        alpha2 = alpha * cai / (cai + params[f"{prefix}_Kd"])
         tau = 1.0 / (alpha2 + beta)
         return alpha2 / (alpha2 + beta), jnp.maximum(tau, params[f"{prefix}_taumin"])

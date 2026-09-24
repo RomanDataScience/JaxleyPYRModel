@@ -51,7 +51,7 @@ def _patch_sources(source: Path, target: Path) -> None:
         (target / name).write_text(text, encoding="utf-8")
 
 
-def ensure_patched_mod_dir() -> Path:
+def ensure_patched_mod_dir(*, force_recompile: bool = False) -> Path:
     root = _repo_root()
     source = root / "channels_converted" / "mod"
     target = root / ".cache" / "neuron_optim_mod"
@@ -65,7 +65,8 @@ def ensure_patched_mod_dir() -> Path:
         compiled = list(target.glob("*/special"))
         source_mods = list(source.glob("*.mod"))
         if (
-            compiled
+            not force_recompile
+            and compiled
             and source_mods
             and max(path.stat().st_mtime for path in source_mods)
             <= max(path.stat().st_mtime for path in compiled)
@@ -73,6 +74,12 @@ def ensure_patched_mod_dir() -> Path:
             return target
         for path in target.glob("*.mod"):
             path.unlink()
+        if force_recompile:
+            # Only remove generated compiler directories.  The copied MOD
+            # sources and the build lock are recreated/retained below.
+            for generated in target.iterdir():
+                if generated.is_dir():
+                    shutil.rmtree(generated)
         _patch_sources(source, target)
         try:
             subprocess.run(["nrnivmodl"], cwd=target, check=True,
