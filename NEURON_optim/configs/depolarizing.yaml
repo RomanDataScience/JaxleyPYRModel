@@ -33,6 +33,7 @@ passive:
   edge_timing_weight: 0.1
   sigma_edge_ms: 10.0
   edge_missing_penalty: 4.0
+  voltage_offset_huber_delta: 3.0
 
 plotting:
   enabled: true
@@ -55,6 +56,7 @@ stage2:
   edge_timing_weight: 0.25
   sigma_edge_ms: 10.0
   edge_missing_penalty: 4.0
+  voltage_offset_huber_delta: 3.0
   sigma_trajectory_mV: 2.0
   sigma_spike_mV: 2.0
   sigma_plateau_mV: 2.0

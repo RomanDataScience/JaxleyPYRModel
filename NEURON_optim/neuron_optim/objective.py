@@ -151,6 +151,15 @@ def _kernel_loss(a: np.ndarray, b: np.ndarray, sigma_mV: float,
     return float(np.sum(weights * values) / np.sum(weights))
 
 
+def _huber_offset_loss(error_mV: float, sigma_mV: float,
+                       delta: float = 3.0) -> float:
+    """Unsaturated dimensionless Huber loss for absolute voltage offsets."""
+    if sigma_mV <= 0.0 or delta <= 0.0:
+        return 1.0e6
+    z = abs(float(error_mV)) / float(sigma_mV)
+    return 0.5 * z * z if z <= delta else delta * (z - 0.5 * delta)
+
+
 def _spike_height_loss(a: np.ndarray, b: np.ndarray, sigma_mV: float) -> float:
     """Compare spike heights with an unsaturated, robust loss.
 
@@ -285,6 +294,7 @@ def hyperpolarizing_objective(
     deflection_weight: float = 2.0, sigma_deflection_mV: float = 1.0,
     delta_v_weight: float = 1.0, voltage_offset_weight: float = 1.0,
     sigma_offset_mV: float = 1.0,
+    voltage_offset_huber_delta: float = 3.0,
     edge_timing_weight: float = 1.0, sigma_edge_ms: float = 5.0,
     edge_missing_penalty: float = 4.0,
     threshold_mV: float = -20.0, refractory_ms: float = 2.0,
@@ -356,10 +366,9 @@ def hyperpolarizing_objective(
             + float(deflection_weight) * deflection_loss
         ) / (sum(weights.values()) + float(deflection_weight))
         experimental_baseline = float(np.median(trace.voltage_mV[features.pre_mask]))
-        voltage_offset_loss = _kernel_loss(
-            np.asarray([simulated_baseline]),
-            np.asarray([experimental_baseline]),
-            sigma_offset_mV,
+        voltage_offset_error = simulated_baseline - experimental_baseline
+        voltage_offset_loss = _huber_offset_loss(
+            voltage_offset_error, sigma_offset_mV, voltage_offset_huber_delta
         )
         losses["delta_v"] = delta_v_loss
         losses["voltage_offset"] = voltage_offset_loss
@@ -391,7 +400,7 @@ def hyperpolarizing_objective(
                                   "voltage_offset_mV": {
                                       "experimental": experimental_baseline,
                                       "simulated": simulated_baseline,
-                                      "error": simulated_baseline - experimental_baseline,
+                                      "error": voltage_offset_error,
                                       "loss": voltage_offset_loss,
                                   },
                                   "edge_timing": edge_details,

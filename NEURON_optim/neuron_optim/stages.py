@@ -179,6 +179,7 @@ def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
                 "delta_v_weight": float(section.get("delta_v_weight", 1.0)),
                 "voltage_offset_weight": float(section.get("voltage_offset_weight", 1.0)),
                 "sigma_offset_mV": float(section.get("sigma_offset_mV", 1.0)),
+                "voltage_offset_huber_delta": float(section.get("voltage_offset_huber_delta", 3.0)),
                 "edge_timing_weight": float(section.get("edge_timing_weight", 1.0)),
                 "sigma_edge_ms": float(section.get("sigma_edge_ms", 5.0)),
                 "edge_missing_penalty": float(section.get("edge_missing_penalty", 4.0)),
