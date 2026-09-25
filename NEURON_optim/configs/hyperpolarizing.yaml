@@ -30,6 +30,9 @@ passive:
   checkpoint_every: 1
   sigma0: 0.15
   parent_fraction: 0.5
+  edge_timing_weight: 1.0
+  sigma_edge_ms: 5.0
+  edge_missing_penalty: 4.0
 
 plotting:
   enabled: true
@@ -44,6 +47,9 @@ stage1:
   checkpoint_every: 1
   sigma0: 0.15
   parent_fraction: 0.5
+  edge_timing_weight: 1.0
+  sigma_edge_ms: 5.0
+  edge_missing_penalty: 4.0
   sigma_hyper_mV: 1.0
   region_weights: {pre: 1.0, step: 4.0, recovery: 3.0}
   deflection_weight: 2.0

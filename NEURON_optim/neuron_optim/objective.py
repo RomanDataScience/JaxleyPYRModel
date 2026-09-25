@@ -181,6 +181,55 @@ def _interp_voltage(time_ms: np.ndarray, voltage_mV: np.ndarray,
     return np.interp(target_time, time_ms, voltage_mV)
 
 
+def _edge_crossing_times(trace: Trace, voltage: np.ndarray) -> np.ndarray:
+    """Return normalized 10/50/90% onset and recovery crossing times."""
+    time = np.asarray(trace.time_ms, dtype=float)
+    voltage = np.asarray(voltage, dtype=float)
+    pre = time <= trace.epoch_start_ms
+    step = (time >= trace.epoch_start_ms) & (time <= trace.epoch_stop_ms)
+    baseline = float(np.median(voltage[pre]))
+    steady = float(np.median(voltage[step]))
+    levels = baseline + np.array((0.1, 0.5, 0.9)) * (steady - baseline)
+
+    def crossing(start_ms, targets, direction):
+        indices = np.flatnonzero(time >= start_ms)
+        if indices.size and indices[0] > 0:
+            indices = np.insert(indices, 0, indices[0] - 1)
+        result = []
+        for target in targets:
+            found = np.nan
+            for left, right in zip(indices[:-1], indices[1:]):
+                if right != left + 1:
+                    continue
+                a, b = voltage[left], voltage[right]
+                crossed = (a <= target <= b) if direction > 0 else (a >= target >= b)
+                if crossed and b != a:
+                    found = time[left] + (target - a) * (time[right] - time[left]) / (b - a)
+                    break
+            result.append(found)
+        return result
+
+    onset = crossing(trace.epoch_start_ms, levels, -1)
+    # Recovery is reported in the order 90%, 50%, 10% of the original
+    # deflection remaining, i.e. the voltage moves back toward baseline.
+    recovery_levels = baseline + np.array((0.9, 0.5, 0.1)) * (steady - baseline)
+    recovery = crossing(trace.epoch_stop_ms, recovery_levels, 1)
+    return np.asarray((*onset, *recovery), dtype=float)
+
+
+def _edge_timing_loss(trace: Trace, simulated: np.ndarray, sigma_ms: float,
+                      missing_penalty: float) -> tuple[float, dict]:
+    experimental = _edge_crossing_times(trace, trace.voltage_mV)
+    actual = _edge_crossing_times(trace, simulated)
+    valid = np.isfinite(experimental) & np.isfinite(actual)
+    loss = float(np.mean(((actual[valid] - experimental[valid]) / sigma_ms) ** 2)) if valid.any() else 0.0
+    missing = int(np.count_nonzero(~valid))
+    loss += missing_penalty * missing / experimental.size
+    return loss, {"experimental_ms": experimental.tolist(),
+                  "simulated_ms": actual.tolist(), "missing": missing,
+                  "loss": loss}
+
+
 def _region_mask(trace: Trace, region: str) -> np.ndarray:
     if region == "pre":
         return trace.time_ms <= trace.epoch_start_ms
@@ -217,6 +266,8 @@ def hyperpolarizing_objective(
     deflection_weight: float = 2.0, sigma_deflection_mV: float = 1.0,
     delta_v_weight: float = 1.0, voltage_offset_weight: float = 1.0,
     sigma_offset_mV: float = 1.0,
+    edge_timing_weight: float = 1.0, sigma_edge_ms: float = 5.0,
+    edge_missing_penalty: float = 4.0,
     threshold_mV: float = -20.0, refractory_ms: float = 2.0,
     prominence_mV: float = 5.0, max_spike_width_ms: float = 10.0,
     spike_penalty: float = 1.0e4,
@@ -293,12 +344,18 @@ def hyperpolarizing_objective(
         )
         losses["delta_v"] = delta_v_loss
         losses["voltage_offset"] = voltage_offset_loss
-        component_weight_total = float(delta_v_weight) + float(voltage_offset_weight)
+        edge_loss, edge_details = _edge_timing_loss(
+            trace, simulated, sigma_edge_ms, edge_missing_penalty
+        )
+        losses["edge_timing"] = edge_loss
+        component_weight_total = (float(delta_v_weight) + float(voltage_offset_weight)
+                                  + float(edge_timing_weight))
         if component_weight_total <= 0.0:
             raise ValueError("delta_v_weight + voltage_offset_weight must be positive")
         total = (
             float(delta_v_weight) * delta_v_loss
             + float(voltage_offset_weight) * voltage_offset_loss
+            + float(edge_timing_weight) * edge_loss
         ) / component_weight_total
         penalized = bool(in_step or axon_in_step)
         if penalized:
@@ -318,6 +375,7 @@ def hyperpolarizing_objective(
                                       "error": simulated_baseline - experimental_baseline,
                                       "loss": voltage_offset_loss,
                                   },
+                                  "edge_timing": edge_details,
                                   "component_weights": {
                                       "delta_v": float(delta_v_weight),
                                       "voltage_offset": float(voltage_offset_weight),

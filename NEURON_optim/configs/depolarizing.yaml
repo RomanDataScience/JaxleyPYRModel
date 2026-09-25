@@ -30,6 +30,9 @@ passive:
   checkpoint_every: 1
   sigma0: 0.15
   parent_fraction: 0.5
+  edge_timing_weight: 1.0
+  sigma_edge_ms: 5.0
+  edge_missing_penalty: 4.0
 
 plotting:
   enabled: true
@@ -49,6 +52,9 @@ stage2:
   population_size: 30
   sigma0: 0.15
   parent_fraction: 0.5
+  edge_timing_weight: 1.0
+  sigma_edge_ms: 5.0
+  edge_missing_penalty: 4.0
   sigma_trajectory_mV: 2.0
   sigma_spike_mV: 2.0
   sigma_plateau_mV: 2.0
