@@ -19,3 +19,4 @@ logs/
 *.zip
 .cache*
 arm64
+.pytest_cache
