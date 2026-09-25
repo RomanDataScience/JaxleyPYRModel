@@ -56,7 +56,7 @@ class ObjectiveContext:
 def build_objective_context(
     traces: Iterable[Trace], *, stage: str,
     threshold_mV: float = -20.0, refractory_ms: float = 2.0,
-    prominence_mV: float = 5.0,
+    prominence_mV: float = 5.0, max_spike_width_ms: float = 10.0,
 ) -> ObjectiveContext:
     """Precompute experimental features once for a study."""
     trace_tuple = tuple(traces)
@@ -76,6 +76,7 @@ def build_objective_context(
                           threshold_mV=threshold_mV,
                           refractory_ms=refractory_ms,
                           prominence_mV=prominence_mV,
+                          max_spike_width_ms=max_spike_width_ms,
                           dt_ms=dt)
         ) if stage == "depolarizing" else ()
         terminal_count = max(1, int(round(20.0 / dt)))
@@ -102,12 +103,16 @@ def detect_spikes(time_ms: np.ndarray, voltage_mV: np.ndarray, *,
                   threshold_mV: float = -20.0,
                   refractory_ms: float = 2.0,
                   prominence_mV: float = 5.0,
+                  max_spike_width_ms: float = 10.0,
                   dt_ms: float | None = None) -> list[Spike]:
     time = np.asarray(time_ms, dtype=float)
     voltage = np.asarray(voltage_mV, dtype=float)
+    if max_spike_width_ms <= 0.0:
+        raise ValueError("max_spike_width_ms must be positive")
     crossings = np.flatnonzero((voltage[:-1] < threshold_mV) &
                                (voltage[1:] >= threshold_mV))
     dt = float(np.median(np.diff(time))) if dt_ms is None else float(dt_ms)
+    max_width_samples = max(1, int(np.ceil(max_spike_width_ms / dt)))
     result: list[Spike] = []
     for index in crossings:
         if result and time[index] - result[-1].threshold_ms < refractory_ms:
@@ -119,6 +124,15 @@ def detect_spikes(time_ms: np.ndarray, voltage_mV: np.ndarray, *,
             continue
         fraction = (threshold_mV - voltage[index]) / max(voltage[index + 1] - voltage[index], 1e-12)
         threshold_time = time[index] + np.clip(fraction, 0.0, 1.0) * (time[index + 1] - time[index])
+        width_end = min(voltage.size, index + 1 + max_width_samples)
+        falling = np.flatnonzero(voltage[index + 1:width_end] < threshold_mV)
+        if falling.size == 0:
+            # A sustained depolarized plateau crosses threshold but is not an
+            # action potential unless it repolarizes within the width limit.
+            continue
+        falling_index = index + 1 + int(falling[0])
+        if time[falling_index] - threshold_time > max_spike_width_ms:
+            continue
         result.append(Spike(float(threshold_time), float(time[peak_index]), float(voltage[peak_index])))
     return result
 
@@ -198,7 +212,8 @@ def hyperpolarizing_objective(
     delta_v_weight: float = 1.0, voltage_offset_weight: float = 1.0,
     sigma_offset_mV: float = 1.0,
     threshold_mV: float = -20.0, refractory_ms: float = 2.0,
-    prominence_mV: float = 5.0, spike_penalty: float = 1.0e4,
+    prominence_mV: float = 5.0, max_spike_width_ms: float = 10.0,
+    spike_penalty: float = 1.0e4,
     context: ObjectiveContext | None = None,
     include_details: bool = True,
 ) -> ObjectiveResult:
@@ -215,6 +230,7 @@ def hyperpolarizing_objective(
         simulated = _interp(simulation, trace.time_ms)
         spikes = detect_spikes(trace.time_ms, simulated, threshold_mV=threshold_mV,
                                refractory_ms=refractory_ms, prominence_mV=prominence_mV,
+                               max_spike_width_ms=max_spike_width_ms,
                                dt_ms=features.dt_ms)
         experimental_centered = features.experimental_centered
         simulated_baseline = float(np.median(simulated[features.pre_mask]))
@@ -366,7 +382,8 @@ def depolarizing_objective(
     sigma_spike_height_mV: float = 5.0,
     weights: Mapping[str, float] | None = None,
     threshold_mV: float = -20.0, refractory_ms: float = 2.0,
-    prominence_mV: float = 5.0, spike_window_ms: float = 5.0,
+    prominence_mV: float = 5.0, max_spike_width_ms: float = 10.0,
+    spike_window_ms: float = 5.0,
     plateau_exclusion_ms: float = 3.0, unmatched_spike_penalty: float = 100.0,
     invalid_plateau_penalty: float = 100.0,
     extra_spike_penalty: float = 1.0e4,
@@ -392,6 +409,7 @@ def depolarizing_objective(
                       if trace.epoch_start_ms <= s.peak_ms <= trace.epoch_stop_ms]
         sim_spikes_all = detect_spikes(trace.time_ms, sim, threshold_mV=threshold_mV,
                                        refractory_ms=refractory_ms, prominence_mV=prominence_mV,
+                                       max_spike_width_ms=max_spike_width_ms,
                                        dt_ms=features.dt_ms)
         sim_spikes = [s for s in sim_spikes_all if trace.epoch_start_ms <= s.peak_ms <= trace.epoch_stop_ms]
         allowed_start = trace.epoch_start_ms - 50.0

@@ -61,6 +61,7 @@ stage2:
   threshold_mV: -20.0
   refractory_ms: 2.0
   prominence_mV: 5.0
+  max_spike_width_ms: 10.0
   spike_window_ms: 5.0
   plateau_exclusion_ms: 3.0
   unmatched_spike_penalty: 100.0

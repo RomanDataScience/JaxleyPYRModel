@@ -76,6 +76,7 @@ def _build_objective_context(traces: list[Trace], stage: str,
         threshold_mV=float(options.get("threshold_mV", -20.0)),
         refractory_ms=float(options.get("refractory_ms", 2.0)),
         prominence_mV=float(options.get("prominence_mV", 5.0)),
+        max_spike_width_ms=float(options.get("max_spike_width_ms", 10.0)),
     )
 
 
@@ -177,6 +178,7 @@ def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
                 "threshold_mV": float(section.get("threshold_mV", -20.0)),
                 "refractory_ms": float(section.get("refractory_ms", 2.0)),
                 "prominence_mV": float(section.get("prominence_mV", 5.0)),
+                "max_spike_width_ms": float(section.get("max_spike_width_ms", 10.0)),
                 "spike_penalty": float(section.get("hyper_spike_penalty", 1.0e4))}
     return {"sigma_trajectory_mV": float(section.get("sigma_trajectory_mV", 2.0)),
             "sigma_spike_mV": float(section.get("sigma_spike_mV", 2.0)),
@@ -190,6 +192,7 @@ def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
             "threshold_mV": float(section.get("threshold_mV", -20.0)),
             "refractory_ms": float(section.get("refractory_ms", 2.0)),
             "prominence_mV": float(section.get("prominence_mV", 5.0)),
+            "max_spike_width_ms": float(section.get("max_spike_width_ms", 10.0)),
             "spike_window_ms": float(section.get("spike_window_ms", 5.0)),
             "plateau_exclusion_ms": float(section.get("plateau_exclusion_ms", 3.0)),
             "unmatched_spike_penalty": float(section.get("unmatched_spike_penalty", 100.0)),

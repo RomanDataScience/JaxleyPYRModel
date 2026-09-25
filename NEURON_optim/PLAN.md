@@ -206,8 +206,8 @@ candidate population.
 ### Hyperpolarizing spike penalty
 
 Stage 1 will include a hard spike constraint. A spike detector with a
-configurable voltage threshold, refractory period, and optional minimum
-prominence will be applied to the simulated representative hyperpolarizing
+configurable voltage threshold, refractory period, minimum prominence, and
+maximum threshold-crossing width will be applied to the simulated representative hyperpolarizing
 trace. If any
 spike is detected inside the hyperpolarizing stimulus interval
 `[step_onset, step_offset]`, the candidate will receive the configured finite
@@ -349,8 +349,9 @@ each ordinally matched spike, the implementation will:
 Unmatched experimental or simulated spikes will add a finite configured
 `unmatched_spike_penalty` to this component. The global, time-locked trajectory
 term remains active, so alignment for this local shape term does not hide
-incorrect spike timing. The detector threshold, refractory period, matching
-window, relative-time grid, and component weight will be configurable.
+incorrect spike timing. The detector threshold, refractory period, maximum
+spike width, matching window, relative-time grid, and component weight will be
+configurable.
 
 For matched spike pairs `p` and relative-time samples `tau` in the spike
 window `W_p`, the term is:

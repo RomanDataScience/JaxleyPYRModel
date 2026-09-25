@@ -149,6 +149,9 @@ weighted mean of these seven components:
 The firing-rate term compares the experimental and simulated spike counts within
 the depolarizing current step, converted to Hz using the step duration. Spike
 symmetry and height are evaluated for matched experimental and simulated spikes.
+The spike detector also requires each threshold crossing to repolarize within the
+configured `max_spike_width_ms`, so a sustained depolarized plateau is not counted
+as an action potential.
 Extra spikes outside the allowed timing window can trigger the configured large
 penalty.
 

@@ -27,6 +27,15 @@ def test_detect_spikes_finds_threshold_crossing():
     assert len(detect_spikes(time, voltage, prominence_mV=1.0)) == 1
 
 
+def test_detect_spikes_rejects_sustained_depolarized_plateau():
+    time = np.arange(0.0, 100.0, 0.1)
+    voltage = np.full(time.size, -70.0)
+    voltage[100:800] = -10.0
+    assert len(detect_spikes(
+        time, voltage, prominence_mV=1.0, max_spike_width_ms=10.0
+    )) == 0
+
+
 def test_hyper_exponential_loss_is_zero_for_matching_trace():
     observed = trace()
     simulated = SimulationOutput(observed.time_ms, observed.voltage_mV.copy())
