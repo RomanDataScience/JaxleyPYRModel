@@ -69,6 +69,20 @@ def test_hyperpolarizing_trace_selection_uses_configured_ordinal():
     assert config.hyperpolarizing_trace_names == ("third",)
 
 
+def test_stage_parameter_space_applies_configured_bounds():
+    config = RunConfig({
+        "parameters": {"include": ["gna", "AXNa", "nav16_O1I1b2"]},
+        "stage2": {
+            "parameter_names": ["gna", "AXNa", "nav16_O1I1b2"],
+            "lower_bounds": {"gna": 0.10, "AXNa": 4.0},
+            "upper_bounds": {"nav16_O1I1b2": 250.0},
+        },
+    }, Path("config.yaml"))
+    space = config.stage_parameter_space("stage2")
+    assert space.lower.tolist() == [0.10, 4.0, 1.0]
+    assert space.upper.tolist() == [0.2, 10.0, 250.0]
+
+
 def test_make_basins_scans_all_stage1_generations(tmp_path):
     config = RunConfig({
         "parameters": {"include": ["Epas"], "exclude": []},

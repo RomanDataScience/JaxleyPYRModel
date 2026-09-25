@@ -39,8 +39,10 @@ DEFAULTS: dict[str, float] = {
     # Keep Nav1.6 activation near the MOD/Jaxley channel default.  The old
     # -42 mV value leaves a measurable O1 population at the -64 mV resting
     # potential and drives the model away from rest under the baseline current.
-    "nav16_C1O1v2": -35.0,
-    "nav16_C1O1k2": -3.5,
+    # Stage-2 spike-height search center: sharper activation with less
+    # resting open probability than the former -35/-3.5 starting point.
+    "nav16_C1O1v2": -25.0,
+    "nav16_C1O1k2": -8.0,
     "nav16_I1O1b1": 0.005,
     "nav16_C1I1b2": 0.175,
     "nav16_C1I1v2": -51.5,
@@ -48,7 +50,7 @@ DEFAULTS: dict[str, float] = {
     "nav16_O1I1b2": 144.0,
     "nav16_O1I1v2": 2.5,
     "nav16_O1I1k2": -9.0,
-    "AXNa": 3.5,
+    "AXNa": 5.0,
     "gkdrsoma": 0.0,
     "gkdrdend": 0.0,
     "psoma": 0.00075,
@@ -58,15 +60,15 @@ DEFAULTS: dict[str, float] = {
     "soma_kap": 7.0 * 0.0005 * 4.0 * 2.75,
     "axon_kap": 7.0 * 0.0005 * 4.0 * 4.0,
     "basal_kap": 0.0025036,
-    "soma_kad": 7.0 * 0.0005 * 4.0 * 2.75,
-    "gna": 0.08,
+    "soma_kad": 0.0025,
+    "gna": 0.10,
     "axongkdr": 0.011,
     "gnadend": 0.015 * 1.5,
     "gkdrapical": 0.01 * 0.05,
-    "gkv2soma": 0.00264 * 5.0,
+    "gkv2soma": 0.006,
     "gkv2": 0.00198 * 10.0,
     "gkv2axon": 0.00198 * 10.0,
-    "gkv2scale": 0.3,
+    "gkv2scale": 0.2,
     # Kept as a fixed compatibility constant; it is not an optimization key.
     "scale_Na_conduct": 1.0,
     "distalv": 0.0,

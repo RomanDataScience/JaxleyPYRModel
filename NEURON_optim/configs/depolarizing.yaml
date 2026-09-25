@@ -44,6 +44,10 @@ stage1:
   checkpoint_every: 1
 
 stage2:
+  # Spike-height search policy: favor inward sodium drive and reduce the
+  # dominant outward conductances while keeping persistent Na moderate.
+  lower_bounds: {gna: 0.10, AXNa: 4.0, nav16_C1O1v2: -32.0, nav16_O1I1b2: 50.0}
+  upper_bounds: {gkv2soma: 0.05, gkv2scale: 0.8, gkdrsoma: 0.01, soma_kad: 0.10, nav16_C1O1v2: -20.0, nav16_C1O1k2: -5.0, nav16_O1I1b2: 250.0}
   parameter_names:
     - gna
     - gnadend

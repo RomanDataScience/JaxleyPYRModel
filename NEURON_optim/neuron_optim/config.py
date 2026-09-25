@@ -98,10 +98,21 @@ class RunConfig:
 
     def stage_parameter_space(self, stage: str, *, lower_overrides=None,
                               upper_overrides=None):
+        section = self.section(stage)
+        configured_lower = section.get("lower_bounds", {})
+        configured_upper = section.get("upper_bounds", {})
+        if not isinstance(configured_lower, dict):
+            raise ValueError(f"{stage}.lower_bounds must be a mapping")
+        if not isinstance(configured_upper, dict):
+            raise ValueError(f"{stage}.upper_bounds must be a mapping")
+        lower = dict(configured_lower)
+        lower.update(lower_overrides or {})
+        upper = dict(configured_upper)
+        upper.update(upper_overrides or {})
         return make_parameter_space(
             include=self.stage_parameter_names(stage),
-            lower_overrides=lower_overrides,
-            upper_overrides=upper_overrides,
+            lower_overrides=lower,
+            upper_overrides=upper,
         )
 
     def section(self, name: str) -> dict[str, Any]:
@@ -151,7 +162,7 @@ class RunConfig:
                 errors.append(f"{name}.checkpoint_every must be >= 1")
             if name == "stage2":
                 try:
-                    self.stage_parameter_names(name)
+                    self.stage_parameter_space(name)
                 except Exception as exc:
                     errors.append(str(exc))
         if int(self.raw.get("plotting", {}).get("every", 1)) < 1:
