@@ -82,7 +82,7 @@ DEFAULTS: dict[str, float] = {
 
 BOUNDS: dict[str, tuple[float, float]] = {
     "RmSoma": (20_000.0, 200_000.0),
-    "RaSoma": (20.0, 150.0),
+    "RaSoma": (30.0, 200.0),
     "RmTuft": (10_000.0, 150_000.0),
     "RaTuft": (20.0, 150.0),
     "DistHalfRm": (20.0, 500.0),
