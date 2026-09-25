@@ -21,9 +21,17 @@ def main() -> None:
     parser.add_argument("--potassium-scale", type=float, default=1.0)
     parser.add_argument("--rm-soma-scale", type=float, default=1.0)
     parser.add_argument("--ra-soma-scale", type=float, default=1.0)
+    parser.add_argument("--ra-soma-value", type=float)
+    parser.add_argument("--rm-soma-value", type=float)
+    parser.add_argument("--cm-soma-value", type=float)
     parser.add_argument("--gna-scale", type=float, default=1.0)
     parser.add_argument("--gnadend-scale", type=float, default=1.0)
+    parser.add_argument("--gkdrsoma-scale", type=float, default=1.0)
+    parser.add_argument("--soma-kap-scale", type=float, default=1.0)
+    parser.add_argument("--gkv2soma-scale", type=float, default=1.0)
     parser.add_argument("--region", choices=("soma", "axon"), default="soma")
+    parser.add_argument("--hillock", action="store_true")
+    parser.add_argument("--ais-proximal-scale", type=float, default=1.0)
     args = parser.parse_args()
 
     import jax.numpy as jnp
@@ -36,7 +44,15 @@ def main() -> None:
 
     config = load_config(args.config)
     with args.candidate.open() as handle:
-        values = json.load(handle)["physical_by_name"]
+        candidate_data = json.load(handle)
+    if isinstance(candidate_data, list):
+        candidate_data = candidate_data[0]
+    if "physical_by_name" in candidate_data:
+        values = dict(candidate_data["physical_by_name"])
+    else:
+        manifest = args.candidate.parents[2] / "manifest.json"
+        parameter_keys = json.load(manifest.open())["parameter_keys"]
+        values = dict(zip(parameter_keys, candidate_data["physical"]))
     potassium_keys = (
         "gkdrsoma", "gkv2soma", "soma_kap", "soma_km", "soma_kca", "mykca_init",
         "axongkdr", "gkv2axon", "axon_kap",
@@ -47,6 +63,15 @@ def main() -> None:
     values["RaSoma"] *= args.ra_soma_scale
     values["gna"] *= args.gna_scale
     values["gnadend"] *= args.gnadend_scale
+    values["gkdrsoma"] *= args.gkdrsoma_scale
+    values["soma_kap"] *= args.soma_kap_scale
+    values["gkv2soma"] *= args.gkv2soma_scale
+    if args.ra_soma_value is not None:
+        values["RaSoma"] = args.ra_soma_value
+    if args.rm_soma_value is not None:
+        values["RmSoma"] = args.rm_soma_value
+    if args.cm_soma_value is not None:
+        values["CmSoma"] = args.cm_soma_value
 
     traces = load_protocol_traces(
         config.data_root,
@@ -65,6 +90,30 @@ def main() -> None:
     param_state = set_fitted_parameters(
         cell, keys, jnp.asarray([values[key] for key in keys], dtype=jnp.float64)
     )
+
+    axon_indices = np.asarray(cell.axon._nodes_in_view, dtype=int)
+    if args.hillock:
+        # Diagnostic tapered-hillock approximation: reshape only the first
+        # proximal axon compartments; the HOC topology remains unchanged.
+        radii = np.asarray(cell.nodes.loc[axon_indices, "radius"], dtype=float)
+        soma_radius = float(np.median(cell.nodes.loc[cell.soma._nodes_in_view, "radius"]))
+        taper_count = min(4, radii.size)
+        taper = np.linspace(soma_radius * 0.5, radii[taper_count - 1], taper_count)
+        cell.nodes.loc[axon_indices[:taper_count], "radius"] = taper
+        lengths = np.asarray(cell.nodes.loc[axon_indices[:taper_count], "length"], dtype=float)
+        cell.nodes.loc[axon_indices[:taper_count], "area"] = 2.0 * np.pi * taper * lengths
+    if args.ais_proximal_scale != 1.0:
+        proximal_count = max(1, axon_indices.size // 3)
+        proximal = axon_indices[:proximal_count]
+        for update in param_state:
+            if update["key"] == "nax_gbar":
+                indices = np.asarray(update["indices"], dtype=int)
+                values_array = np.asarray(update["val"], dtype=float).copy()
+                for index in proximal:
+                    matches = np.flatnonzero(indices == index)
+                    if matches.size:
+                        values_array[matches[0]] *= args.ais_proximal_scale
+                update["val"] = jnp.asarray(values_array, dtype=jnp.float64)
 
     # Jaxley normally aggregates mechanisms sharing i_K/i_Ca. Give every
     # soma mechanism a private current name for this diagnostic run. This does
@@ -119,8 +168,10 @@ def main() -> None:
     sim = result[:n]
     onset = float(trace.epoch_start_ms - trace.time_ms[0])
     first_window = (sim_time >= onset) & (sim_time <= onset + 20.0)
+    peak_index = np.flatnonzero(first_window)[np.argmax(sim[first_window, 0])]
     print(
-        f"first simulated peak={sim[first_window, 0].max():.4f} mV; "
+        f"first simulated peak={sim[first_window, 0].max():.4f} mV "
+        f"at {sim_time[peak_index]:.3f} ms; "
         f"first experimental peak={trace.voltage_mV[:n][first_window].max():.4f} mV"
     )
 
