@@ -81,7 +81,7 @@ DEFAULTS: dict[str, float] = {
 }
 
 BOUNDS: dict[str, tuple[float, float]] = {
-    "RmSoma": (50_000.0, 300_000.0),
+    "RmSoma": (20_000.0, 200_000.0),
     "RaSoma": (20.0, 150.0),
     "RmTuft": (10_000.0, 150_000.0),
     "RaTuft": (20.0, 150.0),
@@ -90,7 +90,7 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "SlopeRm": (1.0, 80.0),
     "SlopeRa": (1.0, 80.0),
     "Epas": (-90.0, -50.0),
-    "CmSoma": (0.3, 5.0),
+    "CmSoma": (0.7, 1.5),
     "SpineFactorBasal": (1.0, 6.0),
     "SpineFactorTuft": (1.0, 6.0),
     "soma_hbar": (0.0, 0.0003),
