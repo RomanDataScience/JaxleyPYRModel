@@ -282,6 +282,10 @@ class NeuronSimulator:
             ivec.play(clamp._ref_amp, tvec, 1)
             recorded_t = h.Vector().record(h._ref_t)
             recorded_v = h.Vector().record(soma(0.5)._ref_v)
+            axon_section = next((sec for sec in h.allsec()
+                                 if sec.name().split("[", 1)[0].lower() == "axon"), None)
+            recorded_axon_v = (h.Vector().record(axon_section(0.5)._ref_v)
+                               if axon_section is not None else None)
             initial = float(trace.voltage_mV[0]) if v_init_mode == "observed_first_sample" else float(values["Epas"])
             h.finitialize(initial)
             h.fcurrent()
@@ -291,9 +295,11 @@ class NeuronSimulator:
             # earlier SimulationOutput.
             out_t = np.asarray(recorded_t, dtype=float).copy()
             out_v = np.asarray(recorded_v, dtype=float).copy()
+            out_axon_v = (np.asarray(recorded_axon_v, dtype=float).copy()
+                          if recorded_axon_v is not None else None)
             if out_t.size < 2 or not np.isfinite(out_v).all():
                 raise RuntimeError("NEURON returned an invalid voltage trace")
-            outputs.append(SimulationOutput(out_t, out_v))
+            outputs.append(SimulationOutput(out_t, out_v, out_axon_v))
             try:
                 ivec.play_remove()
             except AttributeError:

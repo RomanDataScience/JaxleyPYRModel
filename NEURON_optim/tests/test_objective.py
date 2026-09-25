@@ -84,12 +84,32 @@ def test_hyper_spike_penalty_overrides_voltage_loss():
     assert result.value == 1234.0
 
 
+def test_hyper_axonal_spike_uses_same_penalty():
+    observed = trace()
+    axon = observed.voltage_mV.copy()
+    axon[1050:1053] = [-10.0, 30.0, -10.0]
+    simulated = SimulationOutput(observed.time_ms, observed.voltage_mV.copy(), axon)
+    result = hyperpolarizing_objective([observed], [simulated], prominence_mV=1.0,
+                                       spike_penalty=1234.0)
+    assert result.value == 1234.0
+
+
 def test_depolarizing_extra_spikes_penalty():
     observed = trace("depolarizing_step")
     voltage = observed.voltage_mV.copy()
     for center in (2500, 2600):
         voltage[center:center + 3] = [-10.0, 30.0, -10.0]
     simulated = SimulationOutput(observed.time_ms, voltage)
+    result = depolarizing_objective([observed], [simulated], prominence_mV=1.0,
+                                    extra_spike_penalty=4321.0)
+    assert result.value == 4321.0
+
+
+def test_depolarizing_axonal_spike_outside_step_uses_same_penalty():
+    observed = trace("depolarizing_step")
+    axon = observed.voltage_mV.copy()
+    axon[200:203] = [-10.0, 30.0, -10.0]
+    simulated = SimulationOutput(observed.time_ms, observed.voltage_mV.copy(), axon)
     result = depolarizing_objective([observed], [simulated], prominence_mV=1.0,
                                     extra_spike_penalty=4321.0)
     assert result.value == 4321.0

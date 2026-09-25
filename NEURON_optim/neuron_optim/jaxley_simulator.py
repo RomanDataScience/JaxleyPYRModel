@@ -164,23 +164,27 @@ class JaxleySimulator:
                 self.jnp.asarray(current, dtype=self.jnp.float64)
             )
             cell.soma.branch(0).loc(0.5).record()
+            cell.axon.branch(0).loc(0.5).record()
             initial = (float(trace.voltage_mV[0])
                        if v_init_mode == "observed_first_sample"
                        else float(values["Epas"]))
             cell.set("v", initial)
             _init_states_with_param_state(cell, param_state, delta_t=dt)
-            voltage = np.asarray(
+            recordings = np.asarray(
                 self.jx.integrate(
                     cell,
                     param_state=param_state,
                     delta_t=dt,
                     solver=self.solver,
                     voltage_solver=self.voltage_solver,
-                )[0],
+                ),
                 dtype=float,
             )
-            n = min(time.size, voltage.size)
-            if n < 2 or not np.isfinite(voltage[:n]).all():
+            if recordings.ndim != 2 or recordings.shape[0] < 2:
+                raise RuntimeError("Jaxley returned invalid voltage recordings")
+            voltage, axon_voltage = recordings[0], recordings[1]
+            n = min(time.size, voltage.size, axon_voltage.size)
+            if n < 2 or not np.isfinite(voltage[:n]).all() or not np.isfinite(axon_voltage[:n]).all():
                 raise RuntimeError("Jaxley returned an invalid voltage trace")
-            outputs.append(SimulationOutput(time[:n], voltage[:n]))
+            outputs.append(SimulationOutput(time[:n], voltage[:n], axon_voltage[:n]))
         return outputs

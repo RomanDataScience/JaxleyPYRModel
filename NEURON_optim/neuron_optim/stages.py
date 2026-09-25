@@ -55,7 +55,9 @@ def _init_worker(stage: str, simulation_traces: list[Trace], fitness_traces: lis
 def _simulation_payload(simulations) -> list[dict[str, np.ndarray]]:
     """Convert simulator outputs to a small, pickle/NPZ-friendly payload."""
     return [{"time_ms": np.asarray(simulation.time_ms, dtype=float),
-             "voltage_mV": np.asarray(simulation.voltage_mV, dtype=float)}
+             "voltage_mV": np.asarray(simulation.voltage_mV, dtype=float),
+             "axon_voltage_mV": (None if simulation.axon_voltage_mV is None else
+                                  np.asarray(simulation.axon_voltage_mV, dtype=float))}
             for simulation in simulations]
 
 
@@ -64,7 +66,9 @@ def _payload_to_simulations(payload: list[dict[str, np.ndarray]] | None):
         return None
     from .objective import SimulationOutput
     return [SimulationOutput(np.asarray(item["time_ms"], dtype=float),
-                             np.asarray(item["voltage_mV"], dtype=float))
+                             np.asarray(item["voltage_mV"], dtype=float),
+                             None if item.get("axon_voltage_mV") is None else
+                             np.asarray(item["axon_voltage_mV"], dtype=float))
             for item in payload]
 
 
@@ -457,6 +461,8 @@ def _save_generation_simulations(run_dir: Path, generation: int,
         for trace_index, simulation in enumerate(candidate):
             payload[f"candidate_{candidate_index:04d}_trace_{trace_index:04d}_time_ms"] = simulation["time_ms"]
             payload[f"candidate_{candidate_index:04d}_trace_{trace_index:04d}_voltage_mV"] = simulation["voltage_mV"]
+            if simulation.get("axon_voltage_mV") is not None:
+                payload[f"candidate_{candidate_index:04d}_trace_{trace_index:04d}_axon_voltage_mV"] = simulation["axon_voltage_mV"]
     np.savez_compressed(run_dir / f"simulations_generation_{generation:04d}.npz", **payload)
 
 

@@ -21,6 +21,7 @@ class Spike:
 class SimulationOutput:
     time_ms: np.ndarray
     voltage_mV: np.ndarray
+    axon_voltage_mV: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -175,6 +176,11 @@ def _interp(sim: SimulationOutput, target_time: np.ndarray) -> np.ndarray:
     return np.interp(target_time, sim.time_ms, sim.voltage_mV)
 
 
+def _interp_voltage(time_ms: np.ndarray, voltage_mV: np.ndarray,
+                    target_time: np.ndarray) -> np.ndarray:
+    return np.interp(target_time, time_ms, voltage_mV)
+
+
 def _region_mask(trace: Trace, region: str) -> np.ndarray:
     if region == "pre":
         return trace.time_ms <= trace.epoch_start_ms
@@ -237,6 +243,17 @@ def hyperpolarizing_objective(
         simulated_centered = simulated - simulated_baseline
         in_step = [spike for spike in spikes
                    if trace.epoch_start_ms <= spike.peak_ms <= trace.epoch_stop_ms]
+        axon_spikes = []
+        if simulation.axon_voltage_mV is not None:
+            axon = _interp_voltage(simulation.time_ms, simulation.axon_voltage_mV,
+                                   trace.time_ms)
+            axon_spikes = detect_spikes(
+                trace.time_ms, axon, threshold_mV=threshold_mV,
+                refractory_ms=refractory_ms, prominence_mV=prominence_mV,
+                max_spike_width_ms=max_spike_width_ms, dt_ms=features.dt_ms,
+            )
+        axon_in_step = [spike for spike in axon_spikes
+                        if trace.epoch_start_ms <= spike.peak_ms <= trace.epoch_stop_ms]
         losses: dict[str, float] = {}
         # The trajectory terms compare baseline-centered voltage (Delta_V),
         # while a separate term scores the absolute pre-pulse voltage offset.
@@ -283,7 +300,7 @@ def hyperpolarizing_objective(
             float(delta_v_weight) * delta_v_loss
             + float(voltage_offset_weight) * voltage_offset_loss
         ) / component_weight_total
-        penalized = bool(in_step)
+        penalized = bool(in_step or axon_in_step)
         if penalized:
             total = float(spike_penalty)
         values.append(total)
@@ -307,6 +324,7 @@ def hyperpolarizing_objective(
                                   },
                                   "spikes_ms": [s.peak_ms for s in spikes],
                                   "in_step_spikes_ms": [s.peak_ms for s in in_step],
+                                  "axon_in_step_spikes_ms": [s.peak_ms for s in axon_in_step],
                                   "penalized": penalized})
     details = {"traces": trace_details, "penalty": spike_penalty} if include_details else {}
     return ObjectiveResult(float(np.mean(values)), details)
@@ -415,6 +433,18 @@ def depolarizing_objective(
         allowed_start = trace.epoch_start_ms - 50.0
         allowed_stop = trace.epoch_stop_ms + 50.0
         outside = [s for s in sim_spikes_all if s.peak_ms < allowed_start or s.peak_ms > allowed_stop]
+        axon_outside = []
+        if simulation.axon_voltage_mV is not None:
+            axon = _interp_voltage(simulation.time_ms, simulation.axon_voltage_mV,
+                                   trace.time_ms)
+            axon_spikes = detect_spikes(
+                trace.time_ms, axon, threshold_mV=threshold_mV,
+                refractory_ms=refractory_ms, prominence_mV=prominence_mV,
+                max_spike_width_ms=max_spike_width_ms, dt_ms=features.dt_ms,
+            )
+            axon_outside = [s for s in axon_spikes
+                            if s.peak_ms < trace.epoch_start_ms or
+                            s.peak_ms > trace.epoch_stop_ms]
 
         l_trajectory = _kernel_loss(
             sim, trace.voltage_mV, sigma_trajectory_mV, features.trajectory_weights
@@ -470,7 +500,7 @@ def depolarizing_objective(
                       "return_baseline": l_return,
                       "firing_rate": l_firing_rate}
         total = sum(component_weights[key] * components[key] for key in components) / sum(component_weights.values())
-        penalized = len(outside) > 1
+        penalized = len(outside) > 1 or bool(axon_outside)
         if penalized:
             total = float(extra_spike_penalty)
         totals.append(total)
@@ -483,6 +513,7 @@ def depolarizing_objective(
                                     "loss": l_firing_rate,
                                 },
                                 "spike_symmetry": symmetry_details,
+                                "axon_outside_spikes_ms": [s.peak_ms for s in axon_outside],
                                 "spike_height_mV": {
                                     "experimental": experimental_heights,
                                     "simulated": simulated_heights,
