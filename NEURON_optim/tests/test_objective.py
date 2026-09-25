@@ -115,6 +115,23 @@ def test_depolarizing_axonal_spike_outside_step_uses_same_penalty():
     assert result.value == 4321.0
 
 
+def test_depolarizing_bursting_train_uses_extra_spike_penalty():
+    observed = trace("depolarizing_step")
+    observed_voltage = observed.voltage_mV.copy()
+    for center in (600, 800, 1000):
+        observed_voltage[center:center + 3] = [-10.0, 30.0, -10.0]
+    observed = Trace(observed.cell, observed.trace, observed.protocol,
+                     observed.time_ms, observed_voltage, observed.current_nA,
+                     observed.epoch_start_ms, observed.epoch_stop_ms)
+    simulated_voltage = observed_voltage.copy()
+    for center in (600, 650, 1000):
+        simulated_voltage[center:center + 3] = [-10.0, 30.0, -10.0]
+    simulated = SimulationOutput(observed.time_ms, simulated_voltage)
+    result = depolarizing_objective([observed], [simulated], prominence_mV=1.0,
+                                    extra_spike_penalty=4321.0)
+    assert result.value == 4321.0
+
+
 def test_depolarizing_firing_rate_match_is_zero():
     observed = trace("depolarizing_step")
     voltage = observed.voltage_mV.copy()

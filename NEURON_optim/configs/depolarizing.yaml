@@ -73,4 +73,6 @@ stage2:
   unmatched_spike_penalty: 100.0
   invalid_plateau_penalty: 100.0
   depolarizing_extra_spike_penalty: 10000.0
+  burst_isi_fraction: 0.5
+  max_isi_cv: 0.25
   return_alpha: 0.7

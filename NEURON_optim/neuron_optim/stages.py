@@ -205,6 +205,8 @@ def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
             "unmatched_spike_penalty": float(section.get("unmatched_spike_penalty", 100.0)),
             "invalid_plateau_penalty": float(section.get("invalid_plateau_penalty", 100.0)),
             "extra_spike_penalty": float(section.get("depolarizing_extra_spike_penalty", 1.0e4)),
+            "burst_isi_fraction": float(section.get("burst_isi_fraction", 0.5)),
+            "max_isi_cv": float(section.get("max_isi_cv", 0.25)),
             "return_alpha": float(section.get("return_alpha", 0.7))}
 
 

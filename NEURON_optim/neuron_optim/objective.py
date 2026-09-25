@@ -230,6 +230,25 @@ def _edge_timing_loss(trace: Trace, simulated: np.ndarray, sigma_ms: float,
                   "loss": loss}
 
 
+def _irregular_train(sim_spikes: list[Spike], exp_spikes: list[Spike],
+                     *, burst_isi_fraction: float,
+                     max_isi_cv: float) -> tuple[bool, dict]:
+    sim_isi = np.diff([spike.peak_ms for spike in sim_spikes])
+    exp_isi = np.diff([spike.peak_ms for spike in exp_spikes])
+    if sim_isi.size == 0 or exp_isi.size == 0:
+        return False, {"simulated_isi_ms": sim_isi.tolist(), "cv": 0.0,
+                       "burst": False, "irregular": False}
+    reference = float(np.median(exp_isi))
+    burst_limit = burst_isi_fraction * reference
+    cv = float(np.std(sim_isi) / max(np.mean(sim_isi), 1e-12))
+    burst = bool(np.any(sim_isi < burst_limit))
+    irregular = bool(sim_isi.size >= 2 and cv > max_isi_cv)
+    return burst or irregular, {"simulated_isi_ms": sim_isi.tolist(),
+                                "experimental_isi_ms": exp_isi.tolist(),
+                                "burst_limit_ms": burst_limit, "cv": cv,
+                                "burst": burst, "irregular": irregular}
+
+
 def _region_mask(trace: Trace, region: str) -> np.ndarray:
     if region == "pre":
         return trace.time_ms <= trace.epoch_start_ms
@@ -463,6 +482,7 @@ def depolarizing_objective(
     plateau_exclusion_ms: float = 3.0, unmatched_spike_penalty: float = 100.0,
     invalid_plateau_penalty: float = 100.0,
     extra_spike_penalty: float = 1.0e4,
+    burst_isi_fraction: float = 0.5, max_isi_cv: float = 0.25,
     return_alpha: float = 0.7,
     context: ObjectiveContext | None = None,
     include_details: bool = True,
@@ -491,6 +511,10 @@ def depolarizing_objective(
         allowed_start = trace.epoch_start_ms - 50.0
         allowed_stop = trace.epoch_stop_ms + 50.0
         outside = [s for s in sim_spikes_all if s.peak_ms < allowed_start or s.peak_ms > allowed_stop]
+        irregular_train, regularity_details = _irregular_train(
+            sim_spikes, exp_spikes,
+            burst_isi_fraction=burst_isi_fraction, max_isi_cv=max_isi_cv,
+        )
         axon_outside = []
         if simulation.axon_voltage_mV is not None:
             axon = _interp_voltage(simulation.time_ms, simulation.axon_voltage_mV,
@@ -558,7 +582,7 @@ def depolarizing_objective(
                       "return_baseline": l_return,
                       "firing_rate": l_firing_rate}
         total = sum(component_weights[key] * components[key] for key in components) / sum(component_weights.values())
-        penalized = len(outside) > 1 or bool(axon_outside)
+        penalized = (len(outside) > 1 or bool(axon_outside) or irregular_train)
         if penalized:
             total = float(extra_spike_penalty)
         totals.append(total)
@@ -572,6 +596,7 @@ def depolarizing_objective(
                                 },
                                 "spike_symmetry": symmetry_details,
                                 "axon_outside_spikes_ms": [s.peak_ms for s in axon_outside],
+                                "firing_regularity": regularity_details,
                                 "spike_height_mV": {
                                     "experimental": experimental_heights,
                                     "simulated": simulated_heights,
