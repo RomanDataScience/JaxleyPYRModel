@@ -39,10 +39,8 @@ DEFAULTS: dict[str, float] = {
     # Keep Nav1.6 activation near the MOD/Jaxley channel default.  The old
     # -42 mV value leaves a measurable O1 population at the -64 mV resting
     # potential and drives the model away from rest under the baseline current.
-    # Stage-2 spike-height search center: sharper activation with less
-    # resting open probability than the former -35/-3.5 starting point.
-    "nav16_C1O1v2": -25.0,
-    "nav16_C1O1k2": -8.0,
+    "nav16_C1O1v2": -35.0,
+    "nav16_C1O1k2": -3.5,
     "nav16_I1O1b1": 0.005,
     "nav16_C1I1b2": 0.175,
     "nav16_C1I1v2": -51.5,
@@ -50,7 +48,7 @@ DEFAULTS: dict[str, float] = {
     "nav16_O1I1b2": 144.0,
     "nav16_O1I1v2": 2.5,
     "nav16_O1I1k2": -9.0,
-    "AXNa": 5.0,
+    "AXNa": 3.5,
     "gkdrsoma": 0.0,
     "gkdrdend": 0.0,
     "psoma": 0.00075,
@@ -60,15 +58,15 @@ DEFAULTS: dict[str, float] = {
     "soma_kap": 7.0 * 0.0005 * 4.0 * 2.75,
     "axon_kap": 7.0 * 0.0005 * 4.0 * 4.0,
     "basal_kap": 0.0025036,
-    "soma_kad": 0.0025,
-    "gna": 0.10,
+    "soma_kad": 7.0 * 0.0005 * 4.0 * 2.75,
+    "gna": 0.08,
     "axongkdr": 0.011,
     "gnadend": 0.015 * 1.5,
     "gkdrapical": 0.01 * 0.05,
-    "gkv2soma": 0.006,
+    "gkv2soma": 0.00264 * 5.0,
     "gkv2": 0.00198 * 10.0,
     "gkv2axon": 0.00198 * 10.0,
-    "gkv2scale": 0.2,
+    "gkv2scale": 0.3,
     # Kept as a fixed compatibility constant; it is not an optimization key.
     "scale_Na_conduct": 1.0,
     "distalv": 0.0,
@@ -239,6 +237,49 @@ def local_normalized_bounds(
             raise ValueError(f"Local bounds collapsed for parameter: {key}")
         lower[key] = global_lower + low_normalized * (global_upper - global_lower)
         upper[key] = global_lower + high_normalized * (global_upper - global_lower)
+    return lower, upper
+
+
+def local_relative_bounds(
+    centers: Mapping[str, float], keys: Sequence[str], relative_width: float,
+    lower_limits: Mapping[str, float] | None = None,
+    upper_limits: Mapping[str, float] | None = None,
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Return physical bounds at ``±relative_width`` around calibrated values.
+
+    The intervals are clipped to the supplied global limits (or ``BOUNDS``).
+    A zero-valued calibrated parameter would otherwise produce a collapsed
+    interval, so it receives the same relative width of the largest available
+    limit and remains optimizable.
+    """
+    if not np.isfinite(relative_width) or relative_width <= 0.0:
+        raise ValueError("Relative local-bound width must be positive.")
+    lower_limits = dict(lower_limits or {})
+    upper_limits = dict(upper_limits or {})
+    unknown_limits = (set(lower_limits) | set(upper_limits)) - set(keys)
+    if unknown_limits:
+        raise ValueError(f"Local-bound limits contain unknown parameters: {sorted(unknown_limits)}")
+    lower: dict[str, float] = {}
+    upper: dict[str, float] = {}
+    for key in keys:
+        if key not in centers:
+            raise KeyError(f"Missing center value for local bound: {key}")
+        global_lower, global_upper = BOUNDS[key]
+        limit_lower = float(lower_limits.get(key, global_lower))
+        limit_upper = float(upper_limits.get(key, global_upper))
+        if not np.isfinite(limit_lower) or not np.isfinite(limit_upper) or limit_lower >= limit_upper:
+            raise ValueError(f"Invalid local-bound limits for parameter: {key}")
+        center = float(centers[key])
+        if not np.isfinite(center):
+            raise ValueError(f"Non-finite center value for local bound: {key}")
+        center = float(np.clip(center, limit_lower, limit_upper))
+        width = relative_width * abs(center)
+        if width == 0.0:
+            width = relative_width * max(abs(limit_lower), abs(limit_upper), np.finfo(float).eps)
+        lower[key] = max(limit_lower, center - width)
+        upper[key] = min(limit_upper, center + width)
+        if lower[key] >= upper[key]:
+            raise ValueError(f"Local bounds collapsed for parameter: {key}")
     return lower, upper
 
 

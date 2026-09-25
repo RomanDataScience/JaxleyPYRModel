@@ -26,6 +26,7 @@ from .parameters import (
     PASSIVE,
     ParameterSpace,
     complete_parameter_mapping,
+    local_relative_bounds,
     make_parameter_space,
     passive_model_values,
 )
@@ -733,11 +734,24 @@ def _basin_physical_values(config: RunConfig, basin: dict) -> dict[str, float]:
 def _stage2_tasks(config: RunConfig, output_root: Path,
                   basins: list[dict]) -> list[tuple]:
     stage2_dir = output_root / "stage2_depolarizing"
-    space = config.stage_parameter_space("stage2")
+    global_space = config.stage_parameter_space("stage2")
+    global_lower = dict(zip(global_space.keys, global_space.lower, strict=True))
+    global_upper = dict(zip(global_space.keys, global_space.upper, strict=True))
     tasks = []
     for basin in basins:
-        fixed_values = _basin_physical_values(config, basin)
-        mean = space.normalize([fixed_values[key] for key in space.keys])
+        calibrated_values = _basin_physical_values(config, basin)
+        centers = {
+            key: float(np.clip(calibrated_values[key], global_lower[key], global_upper[key]))
+            for key in global_space.keys
+        }
+        local_lower, local_upper = local_relative_bounds(
+            centers, global_space.keys, relative_width=0.15,
+            lower_limits=global_lower, upper_limits=global_upper,
+        )
+        space = config.stage_parameter_space(
+            "stage2", lower_overrides=local_lower, upper_overrides=local_upper
+        )
+        mean = space.normalize([centers[key] for key in space.keys])
         for seed in config.section("stage2").get("seeds", list(range(10))):
             seed = int(seed)
             rng = np.random.default_rng(
@@ -746,7 +760,7 @@ def _stage2_tasks(config: RunConfig, output_root: Path,
             initial = np.clip(mean + rng.uniform(-0.15, 0.15, size=mean.size), 0.0, 1.0)
             tasks.append((config, "depolarizing", seed,
                           stage2_dir / basin["basin_id"] / f"seed_{seed:03d}",
-                          initial, basin["basin_id"], space, fixed_values))
+                          initial, basin["basin_id"], space, None))
     return tasks
 
 

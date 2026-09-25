@@ -8,6 +8,7 @@ from neuron_optim.stages import (
     _payload_to_simulations,
     _save_generation_simulations,
     _simulation_payload,
+    _stage2_tasks,
     make_basins,
 )
 
@@ -81,6 +82,28 @@ def test_stage_parameter_space_applies_configured_bounds():
     space = config.stage_parameter_space("stage2")
     assert space.lower.tolist() == [0.10, 4.0, 1.0]
     assert space.upper.tolist() == [0.2, 10.0, 250.0]
+
+
+def test_stage2_keeps_all_parameters_variable_in_local_basin_space(tmp_path):
+    config = RunConfig({
+        "stage2": {"seeds": [0]},
+    }, Path("config.yaml"))
+    basin = {
+        "basin_id": "b000",
+        "physical": config.parameters.reference.tolist(),
+    }
+
+    tasks = _stage2_tasks(config, tmp_path, [basin])
+
+    assert len(tasks) == 1
+    _, _, _, _, _, _, space, fixed_values = tasks[0]
+    assert len(space.keys) == 51
+    assert "nav16_I1O1b1" in space.keys
+    assert fixed_values is None
+    index = space.keys.index("nav16_I1O1b1")
+    np.testing.assert_allclose(
+        [space.lower[index], space.upper[index]], [0.00425, 0.00575]
+    )
 
 
 def test_make_basins_scans_all_stage1_generations(tmp_path):

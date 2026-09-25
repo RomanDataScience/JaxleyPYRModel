@@ -7,6 +7,7 @@ from neuron_optim.parameters import (
     PASSIVE,
     complete_parameter_mapping,
     local_normalized_bounds,
+    local_relative_bounds,
     make_parameter_space,
     passive_model_values,
 )
@@ -47,3 +48,19 @@ def test_local_bounds_and_complete_mapping_keep_fixed_parameters():
     assert mapping["gna"] == centers["gna"]
     assert mapping["nav16_I1O1b1"] == centers["nav16_I1O1b1"]
     assert np.all(local.lower < local.upper)
+
+
+def test_local_relative_bounds_keep_zero_centers_variable():
+    lower, upper = local_relative_bounds(
+        {"gkdrsoma": 0.0, "nav16_C1O1v2": -25.0},
+        ("gkdrsoma", "nav16_C1O1v2"),
+        0.15,
+        lower_limits={"gkdrsoma": 0.0, "nav16_C1O1v2": -32.0},
+        upper_limits={"gkdrsoma": 0.01, "nav16_C1O1v2": -20.0},
+    )
+    assert lower["gkdrsoma"] == 0.0
+    assert upper["gkdrsoma"] > 0.0
+    np.testing.assert_allclose(
+        [lower["nav16_C1O1v2"], upper["nav16_C1O1v2"]],
+        [-28.75, -21.25],
+    )

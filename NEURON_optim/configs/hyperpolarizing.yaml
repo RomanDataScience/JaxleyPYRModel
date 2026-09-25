@@ -57,49 +57,6 @@ stage1:
   hyper_spike_penalty: 10000.0
 
 stage2:
-  # Spike-height search policy: favor inward sodium drive and reduce the
-  # dominant outward conductances while keeping persistent Na moderate.
-  lower_bounds: {gna: 0.10, AXNa: 4.0, nav16_C1O1v2: -32.0, nav16_O1I1b2: 50.0}
-  upper_bounds: {gkv2soma: 0.05, gkv2scale: 0.8, gkdrsoma: 0.01, soma_kad: 0.10, nav16_C1O1v2: -20.0, nav16_C1O1k2: -5.0, nav16_O1I1b2: 250.0}
-  parameter_names:
-    - gna
-    - gnadend
-    - AXNa
-    - nav16_C1O1v2
-    - nav16_C1O1k2
-    - nav16_C1I1b2
-    - nav16_C1I1v2
-    - nav16_C1I1k2
-    - nav16_O1I1b2
-    - nav16_O1I1v2
-    - nav16_O1I1k2
-    - nat_fast_inactivation_tau_scale
-    - nat_slow_recovery_tau_scale
-    - gkv2soma
-    - gkv2
-    - gkv2axon
-    - gkv2scale
-    - soma_kap
-    - axon_kap
-    - basal_kap
-    - soma_kad
-    - gkdrsoma
-    - axongkdr
-    - gkdrapical
-    - kd_deactivation_tau_scale
-    - soma_kca
-    - mykca_init
-    - soma_km
-    - gkdrdend
-    - soma_caL
-    - soma_car
-    - gsomacar
-    - soma_caLH
-    - soma_caT
-    - icangbar
-    - soma_hbar
-    - KirGbar
-    - h_tau_scale
   seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
   generations: 200
   population_size: 30
