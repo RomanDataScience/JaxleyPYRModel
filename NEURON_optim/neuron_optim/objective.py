@@ -136,6 +136,27 @@ def _kernel_loss(a: np.ndarray, b: np.ndarray, sigma_mV: float,
     return float(np.sum(weights * values) / np.sum(weights))
 
 
+def _spike_height_loss(a: np.ndarray, b: np.ndarray, sigma_mV: float) -> float:
+    """Compare spike heights with an unsaturated, robust loss.
+
+    Spike-height errors can be much larger than ``sigma_mV`` while a candidate
+    is still far from the experimental amplitude.  The bounded kernel loss is
+    therefore unsuitable here because it rounds all sufficiently large errors
+    to the same value.  This Huber loss keeps ``sigma_mV`` as the error scale,
+    is quadratic for small errors, and grows linearly for large errors.
+    """
+    if sigma_mV <= 0 or a.size == 0 or a.shape != b.shape:
+        return 1.0e6
+    normalized_error = np.abs((a - b) / sigma_mV)
+    delta = 3.0
+    values = np.where(
+        normalized_error <= delta,
+        0.5 * normalized_error ** 2,
+        delta * normalized_error - 0.5 * delta ** 2,
+    )
+    return float(np.mean(values))
+
+
 def _interp(sim: SimulationOutput, target_time: np.ndarray) -> np.ndarray:
     return np.interp(target_time, sim.time_ms, sim.voltage_mV)
 
@@ -397,7 +418,7 @@ def depolarizing_objective(
             float(spike.peak_mV - simulated_baseline)
             for spike in sim_spikes[:height_pairs]
         ]
-        l_height = (_kernel_loss(
+        l_height = (_spike_height_loss(
             np.asarray(simulated_heights), np.asarray(experimental_heights),
             sigma_spike_height_mV,
         ) if height_pairs else 0.0)

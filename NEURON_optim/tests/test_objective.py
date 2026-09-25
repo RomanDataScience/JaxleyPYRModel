@@ -3,6 +3,7 @@ import numpy as np
 from neuron_optim.data import Trace
 from neuron_optim.objective import (
     SimulationOutput,
+    _spike_height_loss,
     build_objective_context,
     depolarizing_objective,
     detect_spikes,
@@ -158,6 +159,17 @@ def test_depolarizing_spike_height_penalizes_amplitude_mismatch():
     assert height["experimental"] == [105.0]
     assert height["simulated"] == [90.0]
     assert height["loss"] > 0.0
+
+
+def test_spike_height_loss_does_not_saturate_for_large_errors():
+    moderate_error = _spike_height_loss(
+        np.asarray([90.0]), np.asarray([105.0]), sigma_mV=5.0
+    )
+    large_error = _spike_height_loss(
+        np.asarray([50.0]), np.asarray([105.0]), sigma_mV=5.0
+    )
+    assert large_error > moderate_error
+    assert large_error > 1.0
 
 
 def test_precomputed_objective_context_preserves_loss():
