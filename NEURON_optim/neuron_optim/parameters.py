@@ -66,7 +66,8 @@ DEFAULTS: dict[str, float] = {
     "soma_kad": 7.0 * 0.0005 * 4.0 * 2.75,
     "gna": 0.08,
     # Somatic Nav1.2-like transient Na (na12): nax kinetics shifted by
-    # na12_shift mV, separate from the Nav1.6 persistent component.
+    # na12_shift mV, separate from the Nav1.6 persistent component. The
+    # Combe port in model_Combe.py defaults to 0 (the HOC model has no na12).
     "gna12": 0.03,
     "na12_shift": 5.0,
     "axongkdr": 0.011,

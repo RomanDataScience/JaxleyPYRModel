@@ -122,8 +122,10 @@ class CombeParameters:
     soma_kad: float = 7.0 * 0.0005 * 4.0 * 2.75
     gna: float = 0.08
     # Somatic Nav1.2-like transient Na (na12): nax kinetics shifted by
-    # na12_shift mV, separate from the Nav1.6 persistent component.
-    gna12: float = 0.03
+    # na12_shift mV, separate from the Nav1.6 persistent component. Off by
+    # default so the port matches the Combe HOC model, which has no na12;
+    # NEURON_optim supplies its own default when fitting.
+    gna12: float = 0.0
     na12_shift: float = 5.0
     axongkdr: float = 0.011
     gnadend: float = 0.015 * 1.5

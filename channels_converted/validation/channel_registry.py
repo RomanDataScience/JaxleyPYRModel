@@ -18,6 +18,7 @@ from channels_converted.channels_jaxley import (
     Km,
     Kv2like,
     MyKca,
+    Na12,
     Na3Dend,
     Nav16A,
     Nax,
@@ -181,6 +182,14 @@ CHANNELS: dict[str, ChannelSpec] = {
         jaxley_class=Na3Dend,
         states=(StateSpec("m"), StateSpec("h"), StateSpec("s")),
         current=CurrentSpec(neuron_name="ina", neuron_source="formula"),
+    ),
+    "na12": ChannelSpec(
+        key="na12",
+        mechanism="na12",
+        jaxley_class=Na12,
+        states=(StateSpec("m"), StateSpec("h")),
+        current=CurrentSpec(neuron_name="ina", neuron_source="formula"),
+        note="nax kinetics with a RANGE voltage shift sh (somatic Nav1.2-like).",
     ),
     "na16a": ChannelSpec(
         key="na16a",

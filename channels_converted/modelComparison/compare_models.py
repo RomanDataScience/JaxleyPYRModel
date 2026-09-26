@@ -20,7 +20,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from channels_converted.modelComparison.jaxley_model import run_jaxley_step  # noqa: E402
+from channels_converted.modelComparison.jaxley_model import (  # noqa: E402
+    combe_kinetic_scales,
+    run_jaxley_step,
+)
 from channels_converted.modelComparison.neuron_model import run_neuron_step  # noqa: E402
 from channels_converted.modelComparison.protocol import StepProtocol  # noqa: E402
 
@@ -98,6 +101,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--jaxley-d-lambda", type=float, default=0.1)
     parser.add_argument("--output-dir", type=Path, default=RESULTS_DIR)
     parser.add_argument(
+        "--gna12",
+        type=float,
+        default=0.0,
+        help="Somatic na12 conductance (S/cm2) in both models; 0 leaves na12 off (Combe HOC).",
+    )
+    parser.add_argument("--na12-shift", type=float, default=5.0, help="na12 voltage shift sh (mV).")
+    parser.add_argument(
         "--verbose-neuron",
         action="store_true",
         help="Show the HOC setup output instead of silencing it.",
@@ -120,12 +130,18 @@ def main() -> None:
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    na12 = None
+    if args.gna12 > 0.0:
+        na12 = {"gbar": args.gna12, "sh": args.na12_shift}
+    # NEURON runs the patched mechanisms with the Jaxley port's kinetic scales.
     neuron_trace = run_neuron_step(
         protocol,
         quiet=not args.verbose_neuron,
         d_lambda=args.jaxley_d_lambda,
+        na12=na12,
+        kinetic_scales=combe_kinetic_scales(),
     )
-    jaxley_trace = run_jaxley_step(protocol, d_lambda=args.jaxley_d_lambda)
+    jaxley_trace = run_jaxley_step(protocol, d_lambda=args.jaxley_d_lambda, na12=na12)
     metrics = voltage_metrics(neuron_trace, jaxley_trace)
 
     neuron_path = output_dir / "neuron_step.npz"

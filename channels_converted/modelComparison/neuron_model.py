@@ -190,13 +190,42 @@ def build_combe_neuron_model(
     return h.soma[0]
 
 
+def _patched_mod_dir() -> Path:
+    neuron_optim_dir = str(REPO_ROOT / "NEURON_optim")
+    if neuron_optim_dir not in sys.path:
+        sys.path.insert(0, neuron_optim_dir)
+    from neuron_optim.mechanisms import ensure_patched_mod_dir
+
+    return ensure_patched_mod_dir()
+
+
 def run_neuron_step(
     protocol: StepProtocol,
     *,
     quiet: bool = True,
     d_lambda: float | None = None,
+    na12: dict[str, float] | None = None,
+    kinetic_scales: dict[tuple[str, str], float] | None = None,
 ) -> dict[str, np.ndarray]:
-    soma = build_combe_neuron_model(quiet=quiet, d_lambda=d_lambda)
+    # The kinetic scales exist only in NEURON_optim's patched MOD copies.
+    mod_dir = _patched_mod_dir() if kinetic_scales is not None else None
+    soma = build_combe_neuron_model(quiet=quiet, d_lambda=d_lambda, mod_dir=mod_dir)
+    if na12 is not None:
+        # The Combe HOC setup has no na12; insert it in the soma for comparisons
+        # against the Jaxley port with the same channel switched on.
+        for sec in h.allsec():
+            if sec.name().split("[", 1)[0].lower() != "soma":
+                continue
+            sec.insert("na12")
+            for seg in sec:
+                for attr, value in na12.items():
+                    setattr(seg.na12, attr, float(value))
+    if kinetic_scales is not None:
+        for sec in h.allsec():
+            for seg in sec:
+                for (mechanism, attr), value in kinetic_scales.items():
+                    if hasattr(seg, mechanism):
+                        setattr(getattr(seg, mechanism), attr, float(value))
 
     cvode = h.CVode()
     cvode.active(0)
