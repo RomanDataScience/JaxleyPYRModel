@@ -82,6 +82,10 @@ class CombeParameters:
     KirGbar: float = 0.00020307 * 5.0
     Epas: float = -71.9879
     CmSoma: float = 1.0
+    # 0 preserves the original abrupt soma-to-axon junction; 1 reaches the
+    # full diagnostic hillock taper over the first four axon compartments.
+    AxonHillockTaper: float = 0.0
+    AxonProximalRadiusScale: float = 1.0
     SpineFactorBasal: float = 3.5
     SpineFactorTuft: float = 3.5
     soma_caL: float = 0.00006
@@ -990,7 +994,8 @@ EXACT_HOC_UPDATE_MODE = "exact_hoc_frozen_grid"
 RULE_UPDATE_MODE = "rule_based_final_centers"
 NEURON_UPDATE_MODE = "neuron_gold_standard_final_centers"
 SUPPORTED_FIT_PARAMETER_KEYS = frozenset(
-    (*CONDUCTANCE_PARAMETER_KEYS, *PASSIVE_PARAMETER_KEYS, *KINETIC_PARAMETER_KEYS)
+    (*CONDUCTANCE_PARAMETER_KEYS, *PASSIVE_PARAMETER_KEYS, *KINETIC_PARAMETER_KEYS,
+     "AxonHillockTaper", "AxonProximalRadiusScale")
 )
 
 
@@ -1653,8 +1658,32 @@ def set_fitted_parameters(cell, keys, values, state=None):
 
     reference = _reference_parameters(cell)
     p = _fit_values(keys, values, reference)
-    update_mode = _parameter_update_mode(cell)
     selected_keys = frozenset(keys)
+    if {"AxonHillockTaper", "AxonProximalRadiusScale"} & selected_keys:
+        axon_indices = np.asarray(cell.axon._nodes_in_view, dtype=int)
+        if (not hasattr(cell, "_combe_base_axon_radii")
+                or getattr(cell, "_combe_base_axon_radii", None) is None
+                or getattr(cell, "_combe_base_soma_radius", None) is None):
+            cell._combe_base_axon_radii = np.asarray(
+                cell.nodes.loc[axon_indices, "radius"], dtype=float
+            )
+            cell._combe_base_soma_radius = float(np.median(
+                cell.nodes.loc[cell.soma._nodes_in_view, "radius"]
+            ))
+        base = np.asarray(cell._combe_base_axon_radii, dtype=float)
+        count = min(4, base.size)
+        taper = float(np.clip(p["AxonHillockTaper"], 0.0, 1.0))
+        target = np.linspace(
+            cell._combe_base_soma_radius * 0.5,
+            base[count - 1], count,
+        )
+        radii = base.copy()
+        radii[:count] = (1.0 - taper) * base[:count] + taper * target
+        radii[:count] *= float(p.get("AxonProximalRadiusScale", 1.0))
+        cell.nodes.loc[axon_indices, "radius"] = radii
+        lengths = np.asarray(cell.nodes.loc[axon_indices, "length"], dtype=float)
+        cell.nodes.loc[axon_indices, "area"] = 2.0 * np.pi * radii * lengths
+    update_mode = _parameter_update_mode(cell)
     state = set_fitted_passive_parameters(
         cell,
         p,

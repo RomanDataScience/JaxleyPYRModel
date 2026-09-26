@@ -90,4 +90,6 @@ stage2:
   unmatched_spike_penalty: 100.0
   invalid_plateau_penalty: 100.0
   depolarizing_extra_spike_penalty: 10000.0
+  require_axon_soma_count_match: true
+  axon_soma_count_tolerance: 0
   return_alpha: 0.7

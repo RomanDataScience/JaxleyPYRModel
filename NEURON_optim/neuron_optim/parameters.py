@@ -26,6 +26,8 @@ DEFAULTS: dict[str, float] = {
     "KirGbar": 0.00020307 * 5.0,
     "Epas": -71.9879,
     "CmSoma": 1.0,
+    "AxonHillockTaper": 0.0,
+    "AxonProximalRadiusScale": 1.0,
     "SpineFactorBasal": 3.5,
     "SpineFactorTuft": 3.5,
     "soma_caL": 0.00006,
@@ -91,6 +93,8 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "SlopeRa": (1.0, 80.0),
     "Epas": (-90.0, -50.0),
     "CmSoma": (0.7, 1.5),
+    "AxonHillockTaper": (0.0, 1.0),
+    "AxonProximalRadiusScale": (0.8, 2.0),
     "SpineFactorBasal": (1.0, 6.0),
     "SpineFactorTuft": (1.0, 6.0),
     "soma_hbar": (0.0, 0.0003),
@@ -155,7 +159,8 @@ KINETIC = (
     "nav16_C1O1k2", "nav16_I1O1b1", "nav16_C1I1b2", "nav16_C1I1v2", "nav16_C1I1k2",
     "nav16_O1I1b2", "nav16_O1I1v2", "nav16_O1I1k2",
 )
-ALL_KEYS = PASSIVE + CONDUCTANCE + KINETIC
+GEOMETRY = ("AxonHillockTaper", "AxonProximalRadiusScale")
+ALL_KEYS = PASSIVE + CONDUCTANCE + GEOMETRY + KINETIC
 
 
 @dataclass(frozen=True)

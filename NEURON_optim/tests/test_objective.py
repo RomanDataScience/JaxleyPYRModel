@@ -115,6 +115,22 @@ def test_depolarizing_axonal_spike_outside_step_uses_same_penalty():
     assert result.value == 4321.0
 
 
+def test_depolarizing_requires_matching_axon_and_soma_counts():
+    observed = trace("depolarizing_step")
+    soma = observed.voltage_mV.copy()
+    soma[600:603] = [-10.0, 30.0, -10.0]
+    axon = soma.copy()
+    axon[800:803] = [-10.0, 30.0, -10.0]
+    result = depolarizing_objective(
+        [observed], [SimulationOutput(observed.time_ms, soma, axon)],
+        prominence_mV=1.0, extra_spike_penalty=4321.0,
+    )
+    assert result.value == 4321.0
+    transmission = result.details["traces"][0]["transmission"]
+    assert transmission["axon_count"] == 2
+    assert transmission["soma_count"] == 1
+
+
 def test_depolarizing_bursting_train_uses_extra_spike_penalty():
     observed = trace("depolarizing_step")
     observed_voltage = observed.voltage_mV.copy()

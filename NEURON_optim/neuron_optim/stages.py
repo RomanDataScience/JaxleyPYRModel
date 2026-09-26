@@ -208,6 +208,8 @@ def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
             "extra_spike_penalty": float(section.get("depolarizing_extra_spike_penalty", 1.0e4)),
             "burst_isi_fraction": float(section.get("burst_isi_fraction", 0.5)),
             "max_isi_cv": float(section.get("max_isi_cv", 0.25)),
+            "require_axon_soma_count_match": bool(section.get("require_axon_soma_count_match", True)),
+            "axon_soma_count_tolerance": int(section.get("axon_soma_count_tolerance", 0)),
             "return_alpha": float(section.get("return_alpha", 0.7))}
 
 
@@ -786,6 +788,32 @@ def run_depolarizing_stage(config: RunConfig, output_root: Path,
     _run_studies(config, _stage2_tasks(config, output_root, basins))
 
 
+def run_stage3_depolarizing_only(config: RunConfig, output_root: Path) -> None:
+    """Fit depolarization traces independently using global parameter bounds.
+
+    This deliberately does not read passive, hyperpolarizing, or basin files.
+    The optimizer still uses finite global bounds supplied by the parameter
+    catalog, which is required for a numerically safe calibration.
+    """
+    stage3_dir = output_root / "stage3_depolarizing"
+    space = config.stage_parameter_space("stage3")
+    section = config.section("stage3")
+    tasks = []
+    reference = dict(DEFAULTS)
+    mean = space.normalize([reference[key] for key in space.keys])
+    for seed in section.get("seeds", [0]):
+        seed = int(seed)
+        rng = np.random.default_rng(np.random.SeedSequence([seed, 0x53544147]))
+        initial = np.clip(mean + rng.uniform(-0.15, 0.15, size=mean.size), 0.0, 1.0)
+        tasks.append((config, "depolarizing", seed,
+                      stage3_dir / f"seed_{seed:03d}", initial, "stage3", space, None))
+    _run_studies(config, tasks)
+
+
 def run_pipeline(config: RunConfig, output_root: Path) -> None:
+    pipeline = str(config.raw.get("runtime", {}).get("pipeline", "full"))
+    if pipeline == "stage3_depolarizing_only":
+        run_stage3_depolarizing_only(config, output_root)
+        return
     run_hyper_stage(config, output_root)
     run_depolarizing_stage(config, output_root)

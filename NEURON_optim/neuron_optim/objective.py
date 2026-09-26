@@ -492,6 +492,8 @@ def depolarizing_objective(
     invalid_plateau_penalty: float = 100.0,
     extra_spike_penalty: float = 1.0e4,
     burst_isi_fraction: float = 0.5, max_isi_cv: float = 0.25,
+    require_axon_soma_count_match: bool = True,
+    axon_soma_count_tolerance: int = 0,
     return_alpha: float = 0.7,
     context: ObjectiveContext | None = None,
     include_details: bool = True,
@@ -525,6 +527,7 @@ def depolarizing_objective(
             burst_isi_fraction=burst_isi_fraction, max_isi_cv=max_isi_cv,
         )
         axon_outside = []
+        axon_spikes = []
         if simulation.axon_voltage_mV is not None:
             axon = _interp_voltage(simulation.time_ms, simulation.axon_voltage_mV,
                                    trace.time_ms)
@@ -536,6 +539,13 @@ def depolarizing_objective(
             axon_outside = [s for s in axon_spikes
                             if s.peak_ms < trace.epoch_start_ms or
                             s.peak_ms > trace.epoch_stop_ms]
+        axon_step_spikes = [s for s in axon_spikes
+                            if trace.epoch_start_ms <= s.peak_ms <= trace.epoch_stop_ms]
+        transmission_count_error = len(axon_step_spikes) - len(sim_spikes)
+        transmission_mismatch = (
+            require_axon_soma_count_match
+            and abs(transmission_count_error) > int(axon_soma_count_tolerance)
+        )
 
         l_trajectory = _kernel_loss(
             sim, trace.voltage_mV, sigma_trajectory_mV, features.trajectory_weights
@@ -591,7 +601,8 @@ def depolarizing_objective(
                       "return_baseline": l_return,
                       "firing_rate": l_firing_rate}
         total = sum(component_weights[key] * components[key] for key in components) / sum(component_weights.values())
-        penalized = (len(outside) > 1 or bool(axon_outside) or irregular_train)
+        penalized = (len(outside) > 1 or bool(axon_outside) or irregular_train
+                     or transmission_mismatch)
         if penalized:
             total = float(extra_spike_penalty)
         totals.append(total)
@@ -605,6 +616,14 @@ def depolarizing_objective(
                                 },
                                 "spike_symmetry": symmetry_details,
                                 "axon_outside_spikes_ms": [s.peak_ms for s in axon_outside],
+                                "transmission": {
+                                    "soma_spikes_ms": [s.peak_ms for s in sim_spikes],
+                                    "axon_spikes_ms": [s.peak_ms for s in axon_step_spikes],
+                                    "soma_count": len(sim_spikes),
+                                    "axon_count": len(axon_step_spikes),
+                                    "count_error_axon_minus_soma": transmission_count_error,
+                                    "mismatch": transmission_mismatch,
+                                },
                                 "firing_regularity": regularity_details,
                                 "spike_height_mV": {
                                     "experimental": experimental_heights,
