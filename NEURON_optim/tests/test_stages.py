@@ -72,16 +72,16 @@ def test_hyperpolarizing_trace_selection_uses_configured_ordinal():
 
 def test_stage_parameter_space_applies_configured_bounds():
     config = RunConfig({
-        "parameters": {"include": ["gna", "AXNa", "nav16_O1I1b2"]},
+        "parameters": {"include": ["gna", "gnaaxon", "nav16_O1I1b2"]},
         "stage2": {
-            "parameter_names": ["gna", "AXNa", "nav16_O1I1b2"],
-            "lower_bounds": {"gna": 0.10, "AXNa": 4.0},
+            "parameter_names": ["gna", "gnaaxon", "nav16_O1I1b2"],
+            "lower_bounds": {"gna": 0.10, "gnaaxon": 0.5},
             "upper_bounds": {"nav16_O1I1b2": 250.0},
         },
     }, Path("config.yaml"))
     space = config.stage_parameter_space("stage2")
-    assert space.lower.tolist() == [0.10, 4.0, 1.0]
-    assert space.upper.tolist() == [0.2, 10.0, 250.0]
+    assert space.lower.tolist() == [0.10, 0.5, 1.0]
+    assert space.upper.tolist() == [0.2, 2.0, 250.0]
 
 
 def test_stage2_keeps_all_parameters_variable_in_local_basin_space(tmp_path):
@@ -97,7 +97,7 @@ def test_stage2_keeps_all_parameters_variable_in_local_basin_space(tmp_path):
 
     assert len(tasks) == 1
     _, _, _, _, _, _, space, fixed_values = tasks[0]
-    assert len(space.keys) == 51
+    assert len(space.keys) == 54
     assert "nav16_I1O1b1" in space.keys
     assert fixed_values is None
     index = space.keys.index("nav16_I1O1b1")

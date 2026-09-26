@@ -116,7 +116,8 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                 sec.Ra = ra
                 seg.g_pas = spine / rm
                 seg.e_pas = values["Epas"]
-                seg.cm = values["CmSoma"] * spine
+                seg.cm = (values["CmSomaOnly"] if group == "soma"
+                          else values["CmSoma"] * spine)
             except (AttributeError, RuntimeError):
                 pass
 
@@ -148,7 +149,7 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                 }
             elif group == "axon":
                 assignments = {
-                    "nax": {"gbar": values["gna"] * values["AXNa"]},
+                    "nax": {"gbar": values["gnaaxon"]},
                     "kd": {"gbar": values["axongkdr"]},
                     "km": {"gbar": 3.0 * values["soma_km"]},
                     "kap": {"gkabar": values["axon_kap"]},

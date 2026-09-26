@@ -4,13 +4,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
+
+# ``JaxleyModel`` lives beside NEURON_optim, at the repository root.
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPOSITORY_ROOT))
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 from neuron_optim.config import load_config
 from neuron_optim.data import load_protocol_traces
+from neuron_optim.parameters import upgrade_legacy_values
 
 
 def main() -> None:
@@ -41,6 +48,7 @@ def main() -> None:
     import jax.numpy as jnp
     import jaxley as jx
     from JaxleyModel.model.model_Combe import (
+        NEURON_UPDATE_MODE,
         Combe2023,
         SUPPORTED_FIT_PARAMETER_KEYS,
         set_fitted_parameters,
@@ -54,9 +62,13 @@ def main() -> None:
     if "physical_by_name" in candidate_data:
         values = dict(candidate_data["physical_by_name"])
     else:
-        manifest = args.candidate.parents[2] / "manifest.json"
+        # best_so_far.json sits beside manifest.json; archived candidates
+        # sit a couple of directories below it.
+        manifest = next(parent / "manifest.json" for parent in args.candidate.resolve().parents
+                        if (parent / "manifest.json").exists())
         parameter_keys = json.load(manifest.open())["parameter_keys"]
         values = dict(zip(parameter_keys, candidate_data["physical"]))
+    values = upgrade_legacy_values(values)
     potassium_keys = (
         "gkdrsoma", "gkv2soma", "soma_kap", "soma_km", "soma_kca", "mykca_init",
         "axongkdr", "gkv2axon", "axon_kap",
@@ -75,21 +87,24 @@ def main() -> None:
     if args.rm_soma_value is not None:
         values["RmSoma"] = args.rm_soma_value
     if args.cm_soma_value is not None:
-        values["CmSoma"] = args.cm_soma_value
+        values["CmSomaOnly"] = args.cm_soma_value
 
     traces = load_protocol_traces(
         config.data_root,
         cell=config.cell,
         protocol="depolarizing_step",
         trace_names=("v75ctrl",),
-        pre_ms=0.0,
-        post_ms=0.0,
-        full_trial=False,
-        center_current=False,
+        # Same window as the optimizer's depolarizing stages (_load_traces).
+        pre_ms=config.simulation_pre_ms,
+        post_ms=config.simulation_post_ms,
+        full_trial=True,
     )
     trace = traces[0]
 
-    cell = Combe2023(morphology_source="hoc")
+    cell = Combe2023(d_lambda=config.d_lambda, morphology_source="hoc")
+    # Match JaxleySimulator: NEURON_optim final-compartment parameter rules
+    # rather than the frozen-HOC anchored profiles.
+    cell._combe_parameter_update_mode = NEURON_UPDATE_MODE
     keys = tuple(key for key in values if key in SUPPORTED_FIT_PARAMETER_KEYS)
     param_state = set_fitted_parameters(
         cell, keys, jnp.asarray([values[key] for key in keys], dtype=jnp.float64)
@@ -205,13 +220,13 @@ def main() -> None:
     )
     axial_current_nA = (axon_boundary - soma_boundary) * 1000.0 / ra_ohm
     boundary_drop = axon_boundary - soma_boundary
+    onset = float(trace.epoch_start_ms - trace.time_ms[0])
     upstroke = (sim_time >= onset) & (sim_time <= onset + 5.0)
     print(
         f"AIS boundary: max |axon(0)-soma(1)|={np.max(np.abs(boundary_drop[upstroke])):.4f} mV; "
         f"max estimated axial current={np.max(np.abs(axial_current_nA[upstroke])):.4f} nA; "
         f"first-axon-compartment R_axial={ra_ohm:.4g} ohm"
     )
-    onset = float(trace.epoch_start_ms - trace.time_ms[0])
     first_window = (sim_time >= onset) & (sim_time <= onset + 20.0)
     peak_index = np.flatnonzero(first_window)[np.argmax(sim[first_window, 0])]
     print(

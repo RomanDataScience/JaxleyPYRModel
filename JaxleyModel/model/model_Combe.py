@@ -82,6 +82,8 @@ class CombeParameters:
     KirGbar: float = 0.00020307 * 5.0
     Epas: float = -71.9879
     CmSoma: float = 1.0
+    # Soma-only membrane capacitance; ``CmSoma`` sets every other section.
+    CmSomaOnly: float = 1.0
     # 0 preserves the original abrupt soma-to-axon junction; 1 reaches the
     # full diagnostic hillock taper over the first four axon compartments.
     AxonHillockTaper: float = 0.0
@@ -96,7 +98,8 @@ class CombeParameters:
     soma_km: float = 0.0
     mykca_init: float = 0.0
     soma_kca: float = 0.0
-    AXNa: float = 3.5
+    # Axonal Nav conductance, independent of somatic ``gna`` (was gna * AXNa).
+    gnaaxon: float = 0.08 * 3.5
     gkdrsoma: float = 0.0
     gkdrdend: float = 0.0
     psoma: float = 0.00075
@@ -149,7 +152,7 @@ CONDUCTANCE_PARAMETER_KEYS = (
     "soma_km",
     "mykca_init",
     "soma_kca",
-    "AXNa",
+    "gnaaxon",
     "gkdrsoma",
     "gkdrdend",
     "soma_kap",
@@ -177,6 +180,7 @@ PASSIVE_PARAMETER_KEYS = (
     "SlopeRa",
     "Epas",
     "CmSoma",
+    "CmSomaOnly",
     "SpineFactorBasal",
     "SpineFactorTuft",
 )
@@ -213,6 +217,7 @@ bounds = {
     "SlopeRa": [1.0, 80.0],
     "Epas": [-90.0, -50.0],
     "CmSoma": [0.3, 5.0],
+    "CmSomaOnly": [0.1, 3.0],
     "SpineFactorBasal": [1.0, 6.0],
     "SpineFactorTuft": [1.0, 6.0],
     "soma_hbar": [0.0, 0.0003],
@@ -225,7 +230,7 @@ bounds = {
     "soma_km": [0.0, 0.01],
     "mykca_init": [0.0, 0.01],
     "soma_kca": [0.0, 0.01],
-    "AXNa": [0.1, 10.0],
+    "gnaaxon": [0.02, 2.0],
     "gkdrsoma": [0.0, 0.02],
     "gkdrdend": [0.0, 0.02],
     "soma_kap": [0.0, 0.2],
@@ -773,7 +778,8 @@ def set_passive_properties(cell, p: CombeParameters = COMBE_PARAMS):
     )
     axial[basal] = passive_sigmoid(0.0, p.RaSoma, p.RaTuft, p.DistHalfRa, p.SlopeRa)
 
-    capacitance[soma | axon] = p.CmSoma
+    capacitance[axon] = p.CmSoma
+    capacitance[soma] = p.CmSomaOnly
     g_leak[soma | axon] = 1.0 / passive_sigmoid(
         0.0, p.RmSoma, p.RmTuft, p.DistHalfRm, p.SlopeRm
     )
@@ -934,7 +940,7 @@ def set_apical_channels(cell, p: CombeParameters = COMBE_PARAMS):
 
 def set_axon_channels(cell, p: CombeParameters = COMBE_PARAMS):
     axon = group_mask(cell, "axon")
-    set_on(cell, axon, "nax_gbar", p.gna * p.AXNa)
+    set_on(cell, axon, "nax_gbar", p.gnaaxon)
     set_on(
         cell,
         axon,
@@ -1133,7 +1139,7 @@ def _passive_fit_profiles(cell, p, update_mode):
             apical_ra = ra(section_last_distance(cell.apical), apical=True)
 
         return (
-            _fit_profile(cell.soma, "capacitance", p["CmSoma"], "CmSoma"),
+            _fit_profile(cell.soma, "capacitance", p["CmSomaOnly"], "CmSomaOnly"),
             _fit_profile(cell.axon, "capacitance", p["CmSoma"], "CmSoma"),
             _fit_profile(
                 cell.basal,
@@ -1209,7 +1215,7 @@ def _passive_fit_profiles(cell, p, update_mode):
     rm_dependencies = ("RmSoma", "RmTuft", "DistHalfRm", "SlopeRm")
     ra_dependencies = ("RaSoma", "RaTuft", "DistHalfRa", "SlopeRa")
     return (
-        _fit_profile(cell.soma, "capacitance", p["CmSoma"], "CmSoma"),
+        _fit_profile(cell.soma, "capacitance", p["CmSomaOnly"], "CmSomaOnly"),
         _fit_profile(cell.axon, "capacitance", p["CmSoma"], "CmSoma"),
         _fit_profile(
             cell.basal,
@@ -1303,7 +1309,7 @@ def _conductance_fit_profiles(cell, p, update_mode):
             _fit_profile(cell.apical, "kir_gbar",
                          p["KirGbar"] * jnp.minimum(apical_dist / 100.0, 1.0),
                          "KirGbar"),
-            _fit_profile(cell.axon, "nax_gbar", p["gna"] * p["AXNa"], "gna", "AXNa"),
+            _fit_profile(cell.axon, "nax_gbar", p["gnaaxon"], "gnaaxon"),
             _fit_profile(cell.axon, "kd_gbar", p["axongkdr"], "axongkdr"),
             _fit_profile(cell.axon, "km_gbar", 3.0 * p["soma_km"], "soma_km"),
             _fit_profile(cell.axon, "kap_gkabar", p["axon_kap"], "axon_kap"),
@@ -1442,7 +1448,7 @@ def _conductance_fit_profiles(cell, p, update_mode):
             "KirGbar",
         ),
         _fit_profile(
-            cell.axon, "nax_gbar", p["gna"] * p["AXNa"], "gna", "AXNa"
+            cell.axon, "nax_gbar", p["gnaaxon"], "gnaaxon"
         ),
         _fit_profile(cell.axon, "kd_gbar", p["axongkdr"], "axongkdr"),
         _fit_profile(cell.axon, "km_gbar", 3.0 * p["soma_km"], "soma_km"),

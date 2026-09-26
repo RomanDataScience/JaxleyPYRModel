@@ -26,6 +26,8 @@ DEFAULTS: dict[str, float] = {
     "KirGbar": 0.00020307 * 5.0,
     "Epas": -71.9879,
     "CmSoma": 1.0,
+    # Soma-only membrane capacitance; ``CmSoma`` sets every other section.
+    "CmSomaOnly": 1.0,
     "AxonHillockTaper": 0.0,
     "AxonProximalRadiusScale": 1.0,
     "SpineFactorBasal": 3.5,
@@ -50,7 +52,8 @@ DEFAULTS: dict[str, float] = {
     "nav16_O1I1b2": 144.0,
     "nav16_O1I1v2": 2.5,
     "nav16_O1I1k2": -9.0,
-    "AXNa": 3.5,
+    # Axonal Nav conductance, independent of somatic ``gna`` (was gna * AXNa).
+    "gnaaxon": 0.08 * 3.5,
     "gkdrsoma": 0.0,
     "gkdrdend": 0.0,
     "psoma": 0.00075,
@@ -93,13 +96,15 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "SlopeRa": (1.0, 80.0),
     "Epas": (-90.0, -50.0),
     "CmSoma": (0.7, 1.5),
+    "CmSomaOnly": (0.1, 3.0),
     "AxonHillockTaper": (0.0, 1.0),
     "AxonProximalRadiusScale": (0.8, 2.0),
     "SpineFactorBasal": (1.0, 6.0),
     "SpineFactorTuft": (1.0, 6.0),
     "soma_hbar": (0.0, 0.0003),
     "KirGbar": (0.0, 0.005),
-    "soma_caL": (0.0, 0.0006),
+    # Applied as 0.1 * soma_caL at the soma, i.e. up to 1e-3 S/cm2.
+    "soma_caL": (0.0, 0.01),
     "soma_car": (0.0, 0.0003),
     "gsomacar": (0.0, 0.0008),
     "soma_caLH": (0.0, 0.001),
@@ -118,14 +123,14 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "nav16_O1I1b2": (1.0, 500.0),
     "nav16_O1I1v2": (-20.0, 40.0),
     "nav16_O1I1k2": (-25.0, -1.0),
-    "AXNa": (0.1, 10.0),
+    "gnaaxon": (0.02, 2.0),
     "gkdrsoma": (0.0, 0.02),
     "gkdrdend": (0.0, 0.02),
-    "soma_kap": (0.0, 0.2),
+    "soma_kap": (0.0, 0.1),
     "axon_kap": (0.0, 0.2),
     "basal_kap": (0.0, 0.05),
     "soma_kad": (0.0, 0.2),
-    # Nav16 total conductance also scales the persistent component directly.
+    # Somatic Nav16 conductance; also scales the persistent component directly.
     "gna": (0.02, 0.2),
     "axongkdr": (0.0, 0.05),
     "gnadend": (0.0, 0.1),
@@ -144,13 +149,13 @@ BOUNDS: dict[str, tuple[float, float]] = {
 CONDUCTANCE = (
     "soma_hbar", "KirGbar", "soma_caL", "soma_car", "gsomacar",
     "soma_caLH", "soma_caT", "soma_km", "mykca_init", "soma_kca",
-    "AXNa", "gkdrsoma", "gkdrdend", "soma_kap", "axon_kap", "basal_kap",
+    "gnaaxon", "gkdrsoma", "gkdrdend", "soma_kap", "axon_kap", "basal_kap",
     "soma_kad", "gna", "axongkdr", "gnadend", "gkdrapical", "gkv2soma",
     "gkv2", "gkv2axon", "gkv2scale", "icangbar",
 )
 PASSIVE = (
     "RmSoma", "RaSoma", "RmTuft", "RaTuft", "DistHalfRm", "DistHalfRa",
-    "SlopeRm", "SlopeRa", "Epas", "CmSoma", "SpineFactorBasal",
+    "SlopeRm", "SlopeRa", "Epas", "CmSoma", "CmSomaOnly", "SpineFactorBasal",
     "SpineFactorTuft",
 )
 KINETIC = (
@@ -286,6 +291,21 @@ def local_relative_bounds(
         if lower[key] >= upper[key]:
             raise ValueError(f"Local bounds collapsed for parameter: {key}")
     return lower, upper
+
+
+def upgrade_legacy_values(values: Mapping[str, float]) -> dict[str, float]:
+    """Map candidates saved before ``gnaaxon``/``CmSomaOnly`` onto the catalog.
+
+    Older runs scaled the axon Nav conductance as ``gna * AXNa`` and used
+    ``CmSoma`` for the soma as well as every other section.
+    """
+    upgraded = dict(values)
+    if "AXNa" in upgraded:
+        axna = float(upgraded.pop("AXNa"))
+        upgraded.setdefault("gnaaxon", float(upgraded.get("gna", DEFAULTS["gna"])) * axna)
+    if "CmSoma" in upgraded:
+        upgraded.setdefault("CmSomaOnly", float(upgraded["CmSoma"]))
+    return upgraded
 
 
 def complete_parameter_mapping(
