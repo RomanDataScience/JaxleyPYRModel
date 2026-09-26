@@ -758,6 +758,8 @@ def _stage2_tasks(config: RunConfig, output_root: Path,
     global_space = config.stage_parameter_space("stage2")
     global_lower = dict(zip(global_space.keys, global_space.lower, strict=True))
     global_upper = dict(zip(global_space.keys, global_space.upper, strict=True))
+    # Stage 2 searches ±local_relative_width around each stage-1 basin value.
+    relative_width = config.stage2_local_relative_width
     tasks = []
     for basin in basins:
         calibrated_values = _basin_physical_values(config, basin)
@@ -766,7 +768,7 @@ def _stage2_tasks(config: RunConfig, output_root: Path,
             for key in global_space.keys
         }
         local_lower, local_upper = local_relative_bounds(
-            centers, global_space.keys, relative_width=0.15,
+            centers, global_space.keys, relative_width=relative_width,
             lower_limits=global_lower, upper_limits=global_upper,
         )
         space = config.stage_parameter_space(

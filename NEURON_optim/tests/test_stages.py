@@ -102,6 +102,22 @@ def test_stage2_keeps_all_parameters_variable_in_local_basin_space(tmp_path):
     assert fixed_values is None
     index = space.keys.index("nav16_I1O1b1")
     np.testing.assert_allclose(
+        [space.lower[index], space.upper[index]], [0.00325, 0.00675]
+    )
+
+
+def test_stage2_local_relative_width_is_configurable(tmp_path):
+    config = RunConfig({
+        "stage2": {"seeds": [0], "local_relative_width": 0.15},
+    }, Path("config.yaml"))
+    basin = {
+        "basin_id": "b000",
+        "physical": config.parameters.reference.tolist(),
+    }
+
+    _, _, _, _, _, _, space, _ = _stage2_tasks(config, tmp_path, [basin])[0]
+    index = space.keys.index("nav16_I1O1b1")
+    np.testing.assert_allclose(
         [space.lower[index], space.upper[index]], [0.00425, 0.00575]
     )
 

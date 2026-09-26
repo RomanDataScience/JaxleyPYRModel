@@ -77,6 +77,11 @@ class RunConfig:
         return int(self.raw.get("runtime", {}).get("study_workers", 1))
 
     @property
+    def stage2_local_relative_width(self) -> float:
+        """Stage-2 search half-width, relative to each stage-1 basin value."""
+        return float(self.section("stage2").get("local_relative_width", 0.35))
+
+    @property
     def parameters(self):
         section = self.raw.get("parameters", {})
         return make_parameter_space(section.get("include"), section.get("exclude", ()))
@@ -173,6 +178,11 @@ class RunConfig:
                     self.stage_parameter_space(name)
                 except Exception as exc:
                     errors.append(str(exc))
+        try:
+            if not self.stage2_local_relative_width > 0.0:
+                errors.append("stage2.local_relative_width must be > 0")
+        except (TypeError, ValueError):
+            errors.append("stage2.local_relative_width must be a number")
         if int(self.raw.get("plotting", {}).get("every", 1)) < 1:
             errors.append("plotting.every must be >= 1")
         if not self.data_root.exists():
