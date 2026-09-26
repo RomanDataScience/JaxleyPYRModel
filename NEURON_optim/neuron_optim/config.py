@@ -150,7 +150,15 @@ class RunConfig:
             errors.append("runtime.study_workers must be >= 1")
         if self.backend not in {"neuron", "jaxley"}:
             errors.append("runtime.backend must be either 'neuron' or 'jaxley'")
-        for name in ("passive", "stage1", "stage2"):
+        pipeline = str(self.raw.get("runtime", {}).get("pipeline", "full"))
+        if pipeline not in {"full", "stage3_depolarizing_only"}:
+            errors.append(
+                "runtime.pipeline must be either 'full' or 'stage3_depolarizing_only'"
+            )
+        stages = ["passive", "stage1", "stage2"]
+        if pipeline == "stage3_depolarizing_only":
+            stages.append("stage3")
+        for name in stages:
             section = self.section(name)
             if int(section.get("generations", 0)) < 1:
                 errors.append(f"{name}.generations must be >= 1")
@@ -160,7 +168,7 @@ class RunConfig:
                 errors.append(f"{name}.seeds must not be empty")
             if int(section.get("checkpoint_every", 1)) < 1:
                 errors.append(f"{name}.checkpoint_every must be >= 1")
-            if name == "stage2":
+            if name in {"stage2", "stage3"}:
                 try:
                     self.stage_parameter_space(name)
                 except Exception as exc:

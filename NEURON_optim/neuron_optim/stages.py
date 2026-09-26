@@ -76,7 +76,7 @@ def _build_objective_context(traces: list[Trace], stage: str,
                              options: dict[str, Any]) -> ObjectiveContext:
     return build_objective_context(
         traces,
-        stage="depolarizing" if stage == "depolarizing" else "hyper",
+        stage="depolarizing" if stage in {"depolarizing", "stage3"} else "hyper",
         threshold_mV=float(options.get("threshold_mV", -20.0)),
         refractory_ms=float(options.get("refractory_ms", 2.0)),
         prominence_mV=float(options.get("prominence_mV", 5.0)),
@@ -211,6 +211,16 @@ def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
             "require_axon_soma_count_match": bool(section.get("require_axon_soma_count_match", True)),
             "axon_soma_count_tolerance": int(section.get("axon_soma_count_tolerance", 0)),
             "return_alpha": float(section.get("return_alpha", 0.7))}
+
+
+def _study_section_name(stage: str) -> str:
+    if stage == "passive":
+        return "passive"
+    if stage == "hyper":
+        return "stage1"
+    if stage == "stage3":
+        return "stage3"
+    return "stage2"
 
 
 def _config_with_workers(config: RunConfig, workers: int) -> RunConfig:
@@ -478,10 +488,7 @@ def _study_manifest(config: RunConfig, stage: str, seed: int, space: ParameterSp
                     run_dir: Path, basin_id: str | None = None,
                     initial_mean: np.ndarray | None = None,
                     fixed_values: dict[str, float] | None = None) -> None:
-    section_name = (
-        "passive" if stage == "passive" else
-        "stage1" if stage == "hyper" else "stage2"
-    )
+    section_name = _study_section_name(stage)
     section = config.section(section_name)
     payload = {
         "stage": stage, "model_mode": "passive_only" if stage == "passive" else "full",
@@ -511,10 +518,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
               fixed_values: dict[str, float] | None = None) -> dict[str, Any]:
     if space is None:
         space = make_parameter_space(include=PASSIVE) if stage == "passive" else config.parameters
-    section_name = (
-        "passive" if stage == "passive" else
-        "stage1" if stage == "hyper" else "stage2"
-    )
+    section_name = _study_section_name(stage)
     section = config.section(section_name)
     simulation_traces = _load_traces(config, stage)
     fitness_traces = _fitness_traces(config, stage, simulation_traces)
@@ -625,7 +629,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                                         space=space, top_k=top_k,
                                         population_indices=top_indices,
                                         dpi=int(plotting.get("dpi", 120)))
-                        if stage == "depolarizing":
+                        if stage in {"depolarizing", "stage3"}:
                             plot_depolarizing_step_generation(
                                 output_dir=run_dir / "plots", generation=generation,
                                 traces=fitness_traces, population=plot_population,
@@ -805,7 +809,7 @@ def run_stage3_depolarizing_only(config: RunConfig, output_root: Path) -> None:
         seed = int(seed)
         rng = np.random.default_rng(np.random.SeedSequence([seed, 0x53544147]))
         initial = np.clip(mean + rng.uniform(-0.15, 0.15, size=mean.size), 0.0, 1.0)
-        tasks.append((config, "depolarizing", seed,
+        tasks.append((config, "stage3", seed,
                       stage3_dir / f"seed_{seed:03d}", initial, "stage3", space, None))
     _run_studies(config, tasks)
 
