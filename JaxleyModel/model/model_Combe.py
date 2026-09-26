@@ -46,6 +46,7 @@ from channels_converted.channels_jaxley import (  # noqa: E402
     Km,
     Kv2like,
     MyKca,
+    Na12,
     Na3Dend,
     Nav16A,
     Nax,
@@ -120,6 +121,10 @@ class CombeParameters:
     basal_kap: float = 0.0025036
     soma_kad: float = 7.0 * 0.0005 * 4.0 * 2.75
     gna: float = 0.08
+    # Somatic Nav1.2-like transient Na (na12): nax kinetics shifted by
+    # na12_shift mV, separate from the Nav1.6 persistent component.
+    gna12: float = 0.03
+    na12_shift: float = 5.0
     axongkdr: float = 0.011
     gnadend: float = 0.015 * 1.5
     gkdrapical: float = 0.01 * 0.05
@@ -160,6 +165,7 @@ CONDUCTANCE_PARAMETER_KEYS = (
     "basal_kap",
     "soma_kad",
     "gna",
+    "gna12",
     "axongkdr",
     "gnadend",
     "gkdrapical",
@@ -198,6 +204,7 @@ KINETIC_PARAMETER_KEYS = (
     "nav16_O1I1b2",
     "nav16_O1I1v2",
     "nav16_O1I1k2",
+    "na12_shift",
 )
 
 params = {
@@ -238,6 +245,8 @@ bounds = {
     "basal_kap": [0.0, 0.05],
     "soma_kad": [0.0, 0.2],
     "gna": [0.02, 0.2],
+    "gna12": [0.0, 0.2],
+    "na12_shift": [0.0, 15.0],
     "axongkdr": [0.0, 0.05],
     "gnadend": [0.0, 0.1],
     "gkdrapical": [0.0, 0.01],
@@ -714,6 +723,7 @@ def insert_combe_channels(cell):
         group.insert(Kca("kca"))
         group.insert(MyKca("mykca"))
 
+    cell.soma.insert(Na12("na12"))
     cell.soma.insert(Cal("cal"))
     cell.soma.insert(Cat("cat"))
     cell.soma.insert(Car("car"))
@@ -820,6 +830,9 @@ def set_soma_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_on(cell, soma, "icand_gbar", p.icangbar)
     set_on(cell, soma, "icand_can", p.icand_can)
     set_on(cell, soma, "na16a_gbar", p.gna)
+    set_on(cell, soma, "na12_gbar", p.gna12)
+    set_on(cell, soma, "na12_sh", p.na12_shift)
+    set_on(cell, soma, "na12_fast_inactivation_tau_scale", p.nat_fast_inactivation_tau_scale)
     set_on(cell, soma, "na16a_dist", p.sinfsoma)
     set_on(cell, soma, "na16a_slowdown", p.slowsoma)
     set_on(cell, soma, "na16a_C1O1v2", p.nav16_C1O1v2)
@@ -1268,6 +1281,7 @@ def _conductance_fit_profiles(cell, p, update_mode):
         return (
             _fit_profile(cell.soma, "icand_gbar", p["icangbar"], "icangbar"),
             _fit_profile(cell.soma, "na16a_gbar", p["gna"], "gna"),
+            _fit_profile(cell.soma, "na12_gbar", p["gna12"], "gna12"),
             _fit_profile(cell.soma, "kd_gbar", p["gkdrsoma"], "gkdrsoma"),
             _fit_profile(cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"),
             _fit_profile(cell.soma, "h_gbar", p["soma_hbar"], "soma_hbar"),
@@ -1332,6 +1346,7 @@ def _conductance_fit_profiles(cell, p, update_mode):
     return (
         _fit_profile(cell.soma, "icand_gbar", p["icangbar"], "icangbar"),
         _fit_profile(cell.soma, "na16a_gbar", p["gna"], "gna"),
+        _fit_profile(cell.soma, "na12_gbar", p["gna12"], "gna12"),
         _fit_profile(cell.soma, "kd_gbar", p["gkdrsoma"], "gkdrsoma"),
         _fit_profile(
             cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"
@@ -1544,6 +1559,13 @@ def _kinetic_fit_profiles(cell, p):
             p["nat_slow_recovery_tau_scale"],
             "nat_slow_recovery_tau_scale",
         ),
+        _fit_profile(
+            cell.soma,
+            "na12_fast_inactivation_tau_scale",
+            p["nat_fast_inactivation_tau_scale"],
+            "nat_fast_inactivation_tau_scale",
+        ),
+        _fit_profile(cell.soma, "na12_sh", p["na12_shift"], "na12_shift"),
         _fit_profile(cell.soma, "na16a_C1O1v2", p["nav16_C1O1v2"], "nav16_C1O1v2"),
         _fit_profile(cell.apical, "na16a_C1O1v2", p["nav16_C1O1v2"], "nav16_C1O1v2"),
         _fit_profile(cell.soma, "na16a_C1O1k2", p["nav16_C1O1k2"], "nav16_C1O1k2"),

@@ -2,6 +2,7 @@ import numpy as np
 from pathlib import Path
 
 from neuron_optim.config import RunConfig
+from neuron_optim.parameters import BOUNDS
 from neuron_optim.data import Trace, crop_trace
 from neuron_optim.objective import SimulationOutput
 from neuron_optim.stages import (
@@ -97,13 +98,30 @@ def test_stage2_keeps_all_parameters_variable_in_local_basin_space(tmp_path):
 
     assert len(tasks) == 1
     _, _, _, _, _, _, space, fixed_values = tasks[0]
-    assert len(space.keys) == 54
+    assert len(space.keys) == 56
     assert "nav16_I1O1b1" in space.keys
     assert fixed_values is None
     index = space.keys.index("nav16_I1O1b1")
     np.testing.assert_allclose(
         [space.lower[index], space.upper[index]], [0.00325, 0.00675]
     )
+
+
+def test_stage2_global_bound_parameters_ignore_the_local_window(tmp_path):
+    config = RunConfig({
+        "stage2": {"seeds": [0], "global_bound_parameters": ["soma_km"]},
+    }, Path("config.yaml"))
+    basin = {
+        "basin_id": "b000",
+        "physical": config.parameters.reference.tolist(),
+    }
+
+    _, _, _, _, _, _, space, _ = _stage2_tasks(config, tmp_path, [basin])[0]
+    km = space.keys.index("soma_km")
+    assert [space.lower[km], space.upper[km]] == list(BOUNDS["soma_km"])
+    # Parameters not listed keep the local window (default gna12 = 0.03).
+    na12 = space.keys.index("gna12")
+    np.testing.assert_allclose([space.lower[na12], space.upper[na12]], [0.0195, 0.0405])
 
 
 def test_stage2_local_relative_width_is_configurable(tmp_path):

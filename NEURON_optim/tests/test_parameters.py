@@ -13,10 +13,10 @@ from neuron_optim.parameters import (
 )
 
 
-def test_default_parameter_space_is_bounded_and_54_dimensional():
+def test_default_parameter_space_is_bounded_and_56_dimensional():
     space = make_parameter_space()
-    assert len(ALL_KEYS) == 54
-    assert len(space.keys) == 54
+    assert len(ALL_KEYS) == 56
+    assert len(space.keys) == 56
     assert np.all(space.lower < space.upper)
     normalized = space.normalize(space.reference)
     assert np.all((normalized >= 0.0) & (normalized <= 1.0))
@@ -64,3 +64,16 @@ def test_local_relative_bounds_keep_zero_centers_variable():
         [lower["nav16_C1O1v2"], upper["nav16_C1O1v2"]],
         [-28.75, -21.25],
     )
+
+
+def test_nav16_patch_scales_every_intended_rate(tmp_path):
+    from neuron_optim.mechanisms import _patch_sources, _repo_root
+
+    _patch_sources(_repo_root() / "channels_converted" / "mod", tmp_path)
+    text = (tmp_path / "Nav16_a.mod").read_text()
+    for rate in ("I1C1_a", "C1I1_a"):
+        line = next(line for line in text.splitlines() if line.strip().startswith(f"{rate} ="))
+        assert line.rstrip().endswith("/ fast_inactivation_tau_scale")
+    for rate in ("I1I2_a", "I2I1_a"):
+        line = next(line for line in text.splitlines() if line.strip().startswith(f"{rate} ="))
+        assert line.rstrip().endswith("/ slow_recovery_tau_scale")

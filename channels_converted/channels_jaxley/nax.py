@@ -61,7 +61,10 @@ class Nax(Channel):
         minf = a / (a + b)
         a = trap0(v, params[f"{prefix}_thi1"], params[f"{prefix}_Rd"], params[f"{prefix}_qd"])
         b = trap0(-v, -params[f"{prefix}_thi2"], params[f"{prefix}_Rg"], params[f"{prefix}_qg"])
-        htau = jnp.maximum(1.0 / (a + b) / qt, params[f"{prefix}_hmin"])
-        htau = htau * params[f"{prefix}_fast_inactivation_tau_scale"]
+        # Scale before the hmin floor, as the patched NEURON nax/na3dend do.
+        htau = jnp.maximum(
+            1.0 / (a + b) / qt * params[f"{prefix}_fast_inactivation_tau_scale"],
+            params[f"{prefix}_hmin"],
+        )
         hinf = sigmoid_arg((v - params[f"{prefix}_thinf"]) / params[f"{prefix}_qinf"])
         return minf, mtau, hinf, htau

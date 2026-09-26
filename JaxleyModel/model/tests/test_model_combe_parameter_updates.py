@@ -90,6 +90,7 @@ EXPECTED_TARGETS = {
     "basal_kap": (("kap_gkabar", "basal"),),
     "soma_kad": (("kad_gkabar", "apical"),),
     "gna": (("na16a_gbar", "soma"),),
+    "gna12": (("na12_gbar", "soma"),),
     "axongkdr": (("kd_gbar", "axon"),),
     "gnadend": (("na16a_gbar", "apical"), ("na3dend_gbar", "basal")),
     "gkdrapical": (("kd_gbar", "apical"),),
@@ -107,6 +108,7 @@ EXPECTED_TARGETS = {
     "nat_fast_inactivation_tau_scale": (
         ("na16a_fast_inactivation_tau_scale", "soma"),
         ("na16a_fast_inactivation_tau_scale", "apical"),
+        ("na12_fast_inactivation_tau_scale", "soma"),
         ("nax_fast_inactivation_tau_scale", "axon"),
         ("na3dend_fast_inactivation_tau_scale", "basal"),
     ),
@@ -123,6 +125,7 @@ EXPECTED_TARGETS = {
     "nav16_O1I1b2": (("na16a_O1I1b2", "soma"), ("na16a_O1I1b2", "apical")),
     "nav16_O1I1v2": (("na16a_O1I1v2", "soma"), ("na16a_O1I1v2", "apical")),
     "nav16_O1I1k2": (("na16a_O1I1k2", "soma"), ("na16a_O1I1k2", "apical")),
+    "na12_shift": (("na12_sh", "soma"),),
     "h_tau_scale": (
         ("h_tau_scale", "soma"),
         ("h_tau_scale", "apical"),

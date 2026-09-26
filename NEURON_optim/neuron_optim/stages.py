@@ -771,6 +771,10 @@ def _stage2_tasks(config: RunConfig, output_root: Path,
             centers, global_space.keys, relative_width=relative_width,
             lower_limits=global_lower, upper_limits=global_upper,
         )
+        for key in config.stage2_global_bound_parameters:
+            if key in global_lower:
+                local_lower[key] = global_lower[key]
+                local_upper[key] = global_upper[key]
         space = config.stage_parameter_space(
             "stage2", lower_overrides=local_lower, upper_overrides=local_upper
         )

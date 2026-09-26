@@ -13,6 +13,12 @@ import yaml
 from .parameters import make_parameter_space
 
 
+DEFAULT_STAGE2_GLOBAL_BOUND_PARAMETERS = (
+    "soma_km", "soma_kca", "mykca_init", "soma_caL", "soma_hbar",
+    "gna12", "na12_shift",
+)
+
+
 @dataclass(frozen=True)
 class RunConfig:
     raw: dict[str, Any]
@@ -80,6 +86,18 @@ class RunConfig:
     def stage2_local_relative_width(self) -> float:
         """Stage-2 search half-width, relative to each stage-1 basin value."""
         return float(self.section("stage2").get("local_relative_width", 0.35))
+
+    @property
+    def stage2_global_bound_parameters(self) -> tuple[str, ...]:
+        """Stage-2 parameters searched over their global bounds.
+
+        Stage 1 fits hyperpolarizing traces only, where these currents are
+        barely active, so the stage-1 values carry little information.
+        """
+        names = self.section("stage2").get(
+            "global_bound_parameters", DEFAULT_STAGE2_GLOBAL_BOUND_PARAMETERS
+        )
+        return tuple(str(name) for name in names)
 
     @property
     def parameters(self):
@@ -183,6 +201,13 @@ class RunConfig:
                 errors.append("stage2.local_relative_width must be > 0")
         except (TypeError, ValueError):
             errors.append("stage2.local_relative_width must be a number")
+        unknown_global = sorted(
+            set(self.stage2_global_bound_parameters) - set(self.parameters.keys)
+        )
+        if unknown_global:
+            errors.append(
+                f"stage2.global_bound_parameters contains unknown parameters: {unknown_global}"
+            )
         if int(self.raw.get("plotting", {}).get("every", 1)) < 1:
             errors.append("plotting.every must be >= 1")
         if not self.data_root.exists():

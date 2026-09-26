@@ -39,6 +39,8 @@ def main() -> None:
     parser.add_argument("--soma-kap-scale", type=float, default=1.0)
     parser.add_argument("--gkv2soma-scale", type=float, default=1.0)
     parser.add_argument("--region", choices=("soma", "axon"), default="soma")
+    parser.add_argument("--protocol", choices=("depolarizing_step", "hyperpolarizing_pulse"),
+                        default="depolarizing_step")
     parser.add_argument("--hillock", action="store_true")
     parser.add_argument("--ais-proximal-scale", type=float, default=1.0)
     parser.add_argument("--ais-proximal-radius-scale", type=float, default=1.0,
@@ -92,12 +94,14 @@ def main() -> None:
     traces = load_protocol_traces(
         config.data_root,
         cell=config.cell,
-        protocol="depolarizing_step",
-        trace_names=("v75ctrl",),
-        # Same window as the optimizer's depolarizing stages (_load_traces).
+        protocol=args.protocol,
+        # Same traces and window as the optimizer's stages (_load_traces).
+        trace_names=(config.hyperpolarizing_trace_names
+                     if args.protocol == "hyperpolarizing_pulse" else ("v75ctrl",)),
         pre_ms=config.simulation_pre_ms,
         post_ms=config.simulation_post_ms,
         full_trial=True,
+        **({"center_current": False} if args.protocol == "hyperpolarizing_pulse" else {}),
     )
     trace = traces[0]
 
@@ -243,7 +247,7 @@ def main() -> None:
     axes[0].plot(sim_time, sim[:, 0], color="tab:red", lw=1.0, label="simulation")
     axes[0].set_ylabel("V (mV)")
     axes[0].legend(loc="upper right")
-    axes[0].set_title(f"b000 best candidate — {args.region} currents, v75ctrl")
+    axes[0].set_title(f"{args.candidate.stem} — {args.region} currents, {trace.trace} ({trace.protocol})")
     axes[1].plot(sim_time, soma_boundary, label="soma(1.0)")
     axes[1].plot(sim_time, axon_boundary, label="axon(0.0)")
     axes[1].set_ylabel("junction V (mV)")

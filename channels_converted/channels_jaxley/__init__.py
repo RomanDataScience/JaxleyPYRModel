@@ -14,6 +14,7 @@ from .kd import Kd
 from .kir import Kir
 from .km import Km
 from .kv2like import Kv2like
+from .na12 import Na12
 from .na3dend import Na3Dend
 from .nav16_a import Nav16A
 from .nax import Nax
@@ -36,6 +37,7 @@ __all__ = [
     "Km",
     "Kv2like",
     "MyKca",
+    "Na12",
     "Na3Dend",
     "Nav16A",
     "Nax",

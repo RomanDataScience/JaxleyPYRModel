@@ -136,6 +136,7 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                         "O1I1v2": values["nav16_O1I1v2"],
                         "O1I1k2": values["nav16_O1I1k2"],
                     },
+                    "na12": {"gbar": values["gna12"], "sh": values["na12_shift"]},
                     "kd": {"gbar": values["gkdrsoma"]},
                     "Kv2like": {"gbar": values["gkv2soma"]},
                     "h": {"gbar": values["soma_hbar"]},
@@ -204,6 +205,7 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                 ("na16a", "fast_inactivation_tau_scale", "nat_fast_inactivation_tau_scale"),
                 ("na16a", "slow_recovery_tau_scale", "nat_slow_recovery_tau_scale"),
                 ("nax", "fast_inactivation_tau_scale", "nat_fast_inactivation_tau_scale"),
+                ("na12", "fast_inactivation_tau_scale", "nat_fast_inactivation_tau_scale"),
                 ("na3dend", "fast_inactivation_tau_scale", "nat_fast_inactivation_tau_scale"),
                 ("h", "tau_scale", "h_tau_scale"),
             ):
@@ -242,6 +244,10 @@ class NeuronSimulator:
             return h, self._soma
         soma = build_combe_neuron_model(quiet=self.quiet, d_lambda=self.d_lambda,
                                         combe_dir=self.combe_dir, mod_dir=self.mod_dir)
+        # The somatic Nav1.2-like channel is not part of the Combe HOC setup.
+        for sec in h.allsec():
+            if _group(sec.name()) == "soma":
+                sec.insert("na12")
         if self.reuse_model:
             self._h = h
             self._soma = soma

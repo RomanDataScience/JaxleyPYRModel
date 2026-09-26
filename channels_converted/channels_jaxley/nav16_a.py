@@ -131,6 +131,9 @@ class Nav16A(Channel):
     def rates(self, v, params):
         prefix = channel_prefix(self)
         q10 = 3.0 ** ((params["celsius"] - 20.0) / 10.0)
+        # Same placement as the patched NEURON Nav16_a.mod (neuron_optim.mechanisms).
+        fast_scale = params[f"{prefix}_fast_inactivation_tau_scale"]
+        slow_scale = params[f"{prefix}_slow_recovery_tau_scale"]
         C1O1 = q10 * self.rates2(v, params[f"{prefix}_C1O1b2"], params[f"{prefix}_C1O1v2"], params[f"{prefix}_C1O1k2"])
         O1C1 = q10 * (
             self.rates2(v, params[f"{prefix}_O1C1b1"], params[f"{prefix}_O1C1v1"], params[f"{prefix}_O1C1k1"])
@@ -139,7 +142,7 @@ class Nav16A(Channel):
         O1I1 = 0.5 * q10 * (
             self.rates2(v, params[f"{prefix}_O1I1b1"], params[f"{prefix}_O1I1v1"], params[f"{prefix}_O1I1k1"])
             + self.rates2(v, params[f"{prefix}_O1I1b2"], params[f"{prefix}_O1I1v2"], params[f"{prefix}_O1I1k2"])
-        )
+        ) / fast_scale
         I1O1 = q10 * self.rates2(
             v,
             params[f"{prefix}_I1O1b1"],
@@ -151,17 +154,17 @@ class Nav16A(Channel):
             params[f"{prefix}_I1C1b1"],
             params[f"{prefix}_I1C1v1"],
             params[f"{prefix}_I1C1k1"],
-        )
+        ) / fast_scale
         C1I1 = q10 * self.rates2(
             v,
             params[f"{prefix}_C1I1b2"],
             params[f"{prefix}_C1I1v2"],
             params[f"{prefix}_C1I1k2"],
-        )
+        ) / fast_scale
         I1I2 = params[f"{prefix}_slowdown"] * params[f"{prefix}_dist"] * q10 * self.rates2(
             v, params[f"{prefix}_I1I2b2"], params[f"{prefix}_I1I2v2"], params[f"{prefix}_I1I2k2"]
-        )
+        ) / slow_scale
         I2I1 = params[f"{prefix}_slowdown"] * q10 * self.rates2(
             v, params[f"{prefix}_I2I1b1"], params[f"{prefix}_I2I1v1"], params[f"{prefix}_I2I1k1"]
-        )
+        ) / slow_scale
         return C1O1, O1C1, O1I1, I1O1, I1C1, C1I1, I1I2, I2I1

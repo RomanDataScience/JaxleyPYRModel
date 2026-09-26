@@ -65,6 +65,10 @@ DEFAULTS: dict[str, float] = {
     "basal_kap": 0.0025036,
     "soma_kad": 7.0 * 0.0005 * 4.0 * 2.75,
     "gna": 0.08,
+    # Somatic Nav1.2-like transient Na (na12): nax kinetics shifted by
+    # na12_shift mV, separate from the Nav1.6 persistent component.
+    "gna12": 0.03,
+    "na12_shift": 5.0,
     "axongkdr": 0.011,
     "gnadend": 0.015 * 1.5,
     "gkdrapical": 0.01 * 0.05,
@@ -132,6 +136,8 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "soma_kad": (0.0, 0.2),
     # Somatic Nav16 conductance; also scales the persistent component directly.
     "gna": (0.02, 0.2),
+    "gna12": (0.0, 0.2),
+    "na12_shift": (0.0, 15.0),
     "axongkdr": (0.0, 0.05),
     "gnadend": (0.0, 0.1),
     "gkdrapical": (0.0, 0.01),
@@ -150,7 +156,7 @@ CONDUCTANCE = (
     "soma_hbar", "KirGbar", "soma_caL", "soma_car", "gsomacar",
     "soma_caLH", "soma_caT", "soma_km", "mykca_init", "soma_kca",
     "gnaaxon", "gkdrsoma", "gkdrdend", "soma_kap", "axon_kap", "basal_kap",
-    "soma_kad", "gna", "axongkdr", "gnadend", "gkdrapical", "gkv2soma",
+    "soma_kad", "gna", "gna12", "axongkdr", "gnadend", "gkdrapical", "gkv2soma",
     "gkv2", "gkv2axon", "gkv2scale", "icangbar",
 )
 PASSIVE = (
@@ -162,7 +168,7 @@ KINETIC = (
     "kd_deactivation_tau_scale", "nat_fast_inactivation_tau_scale",
     "nat_slow_recovery_tau_scale", "h_tau_scale", "nav16_C1O1v2",
     "nav16_C1O1k2", "nav16_I1O1b1", "nav16_C1I1b2", "nav16_C1I1v2", "nav16_C1I1k2",
-    "nav16_O1I1b2", "nav16_O1I1v2", "nav16_O1I1k2",
+    "nav16_O1I1b2", "nav16_O1I1v2", "nav16_O1I1k2", "na12_shift",
 )
 GEOMETRY = ("AxonHillockTaper", "AxonProximalRadiusScale")
 ALL_KEYS = PASSIVE + CONDUCTANCE + GEOMETRY + KINETIC
