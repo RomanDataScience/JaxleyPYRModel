@@ -341,9 +341,12 @@ def test_fixed_scale_and_zero_reference_rules(hoc_cell):
         if update["key"] == "na16a_gbar"
         and _group_for_update(hoc_cell, update) == "soma"
     )
+    # The HOC-derived cell anchors fitted values to the imported HOC profile
+    # (gna = 0.035 in the HOC setup, 0.08 as the model default), so a fixed
+    # scale-1 rule moves the HOC value by exactly the change in gna.
     np.testing.assert_allclose(
         np.asarray(soma_na["val"]),
-        gna,
+        _baseline(hoc_cell, soma_na) + (gna - COMBE_PARAMS.gna),
         rtol=1e-12,
         atol=1e-14,
     )
