@@ -24,7 +24,8 @@ def _patch_sources(source: Path, target: Path) -> None:
         text = path.read_text(encoding="utf-8")
         name = path.name
         if name == "kd.mod":
-            text = _replace(text, "RANGE gk, gbar, i", "RANGE gk, gbar, i, deactivation_tau_scale", name)
+            # vhalfm/vhalfh are GLOBAL in kd.mod; make them per-section so they can be fitted.
+            text = _replace(text, "RANGE gk, gbar, i", "RANGE gk, gbar, i, deactivation_tau_scale, vhalfm, vhalfh", name)
             text = _replace(text, "gbar = 0.1", "deactivation_tau_scale = 1\n\tgbar = 0.1", name)
             text = _replace(text, "mtau = 0.6", "mtau = 0.6 * deactivation_tau_scale", name)
         elif name == "h.mod":

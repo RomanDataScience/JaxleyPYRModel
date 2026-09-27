@@ -144,6 +144,12 @@ class CombeParameters:
     nat_fast_inactivation_tau_scale: float = 0.7
     nat_slow_recovery_tau_scale: float = 1.0
     h_tau_scale: float = 1.0
+    # Axonal nax slow inactivation: fraction of channels left available once
+    # it has built up (1 = none, the original nax).
+    nax_ar2: float = 1.0
+    # kd (delayed rectifier) activation / inactivation midpoints, all placements.
+    kd_vhalfm: float = -43.0
+    kd_vhalfh: float = -67.0
 
 
 COMBE_PARAMS = CombeParameters()
@@ -207,6 +213,11 @@ KINETIC_PARAMETER_KEYS = (
     "nav16_O1I1v2",
     "nav16_O1I1k2",
     "na12_shift",
+    "sinfsoma",
+    "slowsoma",
+    "nax_ar2",
+    "kd_vhalfm",
+    "kd_vhalfh",
 )
 
 params = {
@@ -261,6 +272,9 @@ bounds = {
     "nat_fast_inactivation_tau_scale": [0.5, 2.0],
     "nat_slow_recovery_tau_scale": [0.5, 2.0],
     "h_tau_scale": [0.5, 2.0],
+    "nax_ar2": [0.0, 1.0],
+    "kd_vhalfm": [-55.0, -25.0],
+    "kd_vhalfh": [-80.0, -45.0],
     "nav16_C1O1v2": [-55.0, -20.0],
     "nav16_C1O1k2": [-12.0, -1.0],
     "nav16_I1O1b1": [0.0001, 0.5],
@@ -270,6 +284,8 @@ bounds = {
     "nav16_O1I1b2": [1.0, 500.0],
     "nav16_O1I1v2": [-20.0, 40.0],
     "nav16_O1I1k2": [-25.0, -1.0],
+    "sinfsoma": [0.0, 6.0],
+    "slowsoma": [0.02, 1.0],
 }
 
 
@@ -859,6 +875,8 @@ def set_soma_channels(cell, p: CombeParameters = COMBE_PARAMS):
         p.nat_slow_recovery_tau_scale,
     )
     set_on(cell, soma, "kd_gbar", p.gkdrsoma)
+    set_on(cell, soma, "kd_vhalfm", p.kd_vhalfm)
+    set_on(cell, soma, "kd_vhalfh", p.kd_vhalfh)
     set_on(
         cell,
         soma,
@@ -941,6 +959,8 @@ def set_apical_channels(cell, p: CombeParameters = COMBE_PARAMS):
         p.nat_slow_recovery_tau_scale,
     )
     set_on(cell, apical, "kd_gbar", p.gkdrapical)
+    set_on(cell, apical, "kd_vhalfm", p.kd_vhalfm)
+    set_on(cell, apical, "kd_vhalfh", p.kd_vhalfh)
     set_on(
         cell,
         apical,
@@ -956,6 +976,7 @@ def set_apical_channels(cell, p: CombeParameters = COMBE_PARAMS):
 def set_axon_channels(cell, p: CombeParameters = COMBE_PARAMS):
     axon = group_mask(cell, "axon")
     set_on(cell, axon, "nax_gbar", p.gnaaxon)
+    set_on(cell, axon, "nax_ar2", p.nax_ar2)
     set_on(
         cell,
         axon,
@@ -963,6 +984,8 @@ def set_axon_channels(cell, p: CombeParameters = COMBE_PARAMS):
         p.nat_fast_inactivation_tau_scale,
     )
     set_on(cell, axon, "kd_gbar", p.axongkdr)
+    set_on(cell, axon, "kd_vhalfm", p.kd_vhalfm)
+    set_on(cell, axon, "kd_vhalfh", p.kd_vhalfh)
     set_on(
         cell,
         axon,
@@ -989,6 +1012,8 @@ def set_basal_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_on(cell, basal, "h_gbar", p.soma_hbar)
     set_on(cell, basal, "h_tau_scale", p.h_tau_scale)
     set_on(cell, basal, "kd_gbar", p.gkdrdend)
+    set_on(cell, basal, "kd_vhalfm", p.kd_vhalfm)
+    set_on(cell, basal, "kd_vhalfh", p.kd_vhalfh)
     set_on(
         cell,
         basal,
@@ -1568,6 +1593,14 @@ def _kinetic_fit_profiles(cell, p):
             "nat_fast_inactivation_tau_scale",
         ),
         _fit_profile(cell.soma, "na12_sh", p["na12_shift"], "na12_shift"),
+        _fit_profile(cell.soma, "na16a_dist", p["sinfsoma"], "sinfsoma"),
+        _fit_profile(cell.axon, "nax_ar2", p["nax_ar2"], "nax_ar2"),
+        *(
+            _fit_profile(view, f"kd_{name}", p[f"kd_{name}"], f"kd_{name}")
+            for name in ("vhalfm", "vhalfh")
+            for view in (cell.soma, cell.apical, cell.axon, cell.basal)
+        ),
+        _fit_profile(cell.soma, "na16a_slowdown", p["slowsoma"], "slowsoma"),
         _fit_profile(cell.soma, "na16a_C1O1v2", p["nav16_C1O1v2"], "nav16_C1O1v2"),
         _fit_profile(cell.apical, "na16a_C1O1v2", p["nav16_C1O1v2"], "nav16_C1O1v2"),
         _fit_profile(cell.soma, "na16a_C1O1k2", p["nav16_C1O1k2"], "nav16_C1O1k2"),

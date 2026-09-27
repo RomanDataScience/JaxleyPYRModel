@@ -639,3 +639,78 @@ def depolarizing_objective(
                                 "penalized": penalized, "spike_shape": spike_details})
     details = {"traces": all_details, "weights": component_weights} if include_details else {}
     return ObjectiveResult(float(np.mean(totals)), details)
+
+
+def subthreshold_objective(
+    traces: Iterable[Trace], simulations: Iterable[SimulationOutput], *,
+    sigma_mV: float = 2.0,
+    offset_huber_delta: float = 3.0,
+    weights: Mapping[str, float] | None = None,
+    spike_exclusion_pre_ms: float = 3.0,
+    spike_exclusion_post_ms: float = 8.0,
+    simulated_spike_penalty: float = 10.0,
+    threshold_mV: float = -20.0, refractory_ms: float = 2.0,
+    prominence_mV: float = 5.0, max_spike_width_ms: float = 10.0,
+    context: ObjectiveContext | None = None,
+    include_details: bool = True,
+    **_: object,
+) -> ObjectiveResult:
+    """Score a sodium-free simulation against the non-spiking parts of a
+    depolarizing recording.
+
+    Regions per trace: ``baseline`` (before the step), ``onset`` (step onset
+    to just before the first recorded spike), ``plateau`` (the rest of the
+    step with every recorded spike cut out) and ``recovery`` (after the step).
+    Each region adds a shape term (bounded kernel) and an unsaturated Huber
+    term on its mean voltage offset, so candidates far from the target still
+    get a useful gradient. Traces are weighted equally.
+    """
+    region_weights = {"baseline": 1.0, "onset": 2.0, "plateau": 4.0, "recovery": 2.0}
+    region_weights.update(weights or {})
+    context = context or build_objective_context(
+        traces, stage="depolarizing", threshold_mV=threshold_mV,
+        refractory_ms=refractory_ms, prominence_mV=prominence_mV,
+        max_spike_width_ms=max_spike_width_ms,
+    )
+    totals, all_details = [], []
+    for trace, simulation, features in zip(context.traces, simulations, context.features, strict=True):
+        sim = _interp(simulation, trace.time_ms)
+        time = trace.time_ms
+        exp_spikes = [s for s in features.experimental_spikes
+                      if trace.epoch_start_ms <= s.peak_ms <= trace.epoch_stop_ms]
+        spike_free = np.ones(time.size, dtype=bool)
+        for spike in exp_spikes:
+            spike_free &= ~((time >= spike.threshold_ms - spike_exclusion_pre_ms) &
+                            (time <= spike.peak_ms + spike_exclusion_post_ms))
+        first_spike = (exp_spikes[0].threshold_ms - spike_exclusion_pre_ms
+                       if exp_spikes else trace.epoch_stop_ms)
+        masks = {
+            "baseline": features.pre_mask,
+            "onset": (time >= trace.epoch_start_ms) & (time < first_spike),
+            "plateau": features.step_mask & (time >= first_spike) & spike_free,
+            "recovery": features.recovery_mask,
+        }
+        regions = {}
+        for name, mask in masks.items():
+            if not mask.any():
+                continue
+            offset = float(np.mean(sim[mask]) - np.mean(trace.voltage_mV[mask]))
+            regions[name] = {
+                "shape": _kernel_loss(sim[mask], trace.voltage_mV[mask], sigma_mV),
+                "offset_mV": offset,
+                "offset": _huber_offset_loss(offset, sigma_mV, offset_huber_delta),
+            }
+        used = [name for name in regions if region_weights.get(name, 0.0) > 0.0]
+        total = sum(region_weights[name] * (regions[name]["shape"] + regions[name]["offset"])
+                    for name in used) / max(sum(region_weights[name] for name in used), 1e-12)
+        sim_spikes = detect_spikes(time, sim, threshold_mV=threshold_mV,
+                                   refractory_ms=refractory_ms, prominence_mV=prominence_mV,
+                                   max_spike_width_ms=max_spike_width_ms, dt_ms=features.dt_ms)
+        total += simulated_spike_penalty * len(sim_spikes)
+        totals.append(float(total))
+        if include_details:
+            all_details.append({"trace": trace.trace, "regions": regions,
+                                "simulated_spikes_ms": [s.peak_ms for s in sim_spikes],
+                                "experimental_spikes": len(exp_spikes)})
+    details = {"traces": all_details, "weights": region_weights} if include_details else {}
+    return ObjectiveResult(float(np.mean(totals)), details)

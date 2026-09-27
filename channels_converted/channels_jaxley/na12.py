@@ -5,6 +5,8 @@ from .nax import Nax
 class Na12(Nax):
     """Jaxley translation of `na12.mod`: `nax` kinetics shifted by `sh` mV."""
 
+    slow_inactivation = False  # na12.mod has no slow inactivation gate
+
     def __init__(self, name=None):
         super().__init__(name)
         prefix = channel_prefix(self)

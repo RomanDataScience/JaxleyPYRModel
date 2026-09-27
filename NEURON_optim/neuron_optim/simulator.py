@@ -126,6 +126,8 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                     "icand": {"gbar": values["icangbar"]},
                     "na16a": {
                         "gbar": values["gna"],
+                        "dist": values["sinfsoma"],
+                        "slowdown": values["slowsoma"],
                         "C1O1v2": values["nav16_C1O1v2"],
                         "C1O1k2": values["nav16_C1O1k2"],
                         "I1O1b1": values["nav16_I1O1b1"],
@@ -208,6 +210,9 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                 ("na12", "fast_inactivation_tau_scale", "nat_fast_inactivation_tau_scale"),
                 ("na3dend", "fast_inactivation_tau_scale", "nat_fast_inactivation_tau_scale"),
                 ("h", "tau_scale", "h_tau_scale"),
+                ("kd", "vhalfm", "kd_vhalfm"),
+                ("kd", "vhalfh", "kd_vhalfh"),
+                ("nax", "ar2", "nax_ar2"),
             ):
                 _set_mechanism(seg, mechanism, attr, values[key])
 

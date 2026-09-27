@@ -13,10 +13,10 @@ from neuron_optim.parameters import (
 )
 
 
-def test_default_parameter_space_is_bounded_and_56_dimensional():
+def test_default_parameter_space_is_bounded_and_61_dimensional():
     space = make_parameter_space()
-    assert len(ALL_KEYS) == 56
-    assert len(space.keys) == 56
+    assert len(ALL_KEYS) == 61
+    assert len(space.keys) == 61
     assert np.all(space.lower < space.upper)
     normalized = space.normalize(space.reference)
     assert np.all((normalized >= 0.0) & (normalized <= 1.0))

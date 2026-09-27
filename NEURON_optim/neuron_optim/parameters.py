@@ -87,6 +87,12 @@ DEFAULTS: dict[str, float] = {
     "kd_deactivation_tau_scale": 1.0,
     "nat_fast_inactivation_tau_scale": 0.7,
     "nat_slow_recovery_tau_scale": 1.0,
+    # Axonal nax slow inactivation: fraction of channels left available once
+    # it has built up (1 = none, the original nax).
+    "nax_ar2": 1.0,
+    # kd (delayed rectifier) activation / inactivation midpoints, all placements.
+    "kd_vhalfm": -43.0,
+    "kd_vhalfh": -67.0,
     "h_tau_scale": 1.0,
 }
 
@@ -128,6 +134,13 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "nav16_O1I1b2": (1.0, 500.0),
     "nav16_O1I1v2": (-20.0, 40.0),
     "nav16_O1I1k2": (-25.0, -1.0),
+    # Somatic Nav16 slow inactivation: sinfsoma sets how much I2 builds up
+    # (I1->I2 scales with slowdown * dist), slowsoma how fast (both rates).
+    "sinfsoma": (0.0, 6.0),
+    "nax_ar2": (0.0, 1.0),
+    "kd_vhalfm": (-55.0, -25.0),
+    "kd_vhalfh": (-80.0, -45.0),
+    "slowsoma": (0.02, 1.0),
     "gnaaxon": (0.02, 2.0),
     "gkdrsoma": (0.0, 0.02),
     "gkdrdend": (0.0, 0.02),
@@ -170,8 +183,19 @@ KINETIC = (
     "nat_slow_recovery_tau_scale", "h_tau_scale", "nav16_C1O1v2",
     "nav16_C1O1k2", "nav16_I1O1b1", "nav16_C1I1b2", "nav16_C1I1v2", "nav16_C1I1k2",
     "nav16_O1I1b2", "nav16_O1I1v2", "nav16_O1I1k2", "na12_shift",
+    "sinfsoma", "slowsoma", "nax_ar2", "kd_vhalfm", "kd_vhalfh",
 )
 GEOMETRY = ("AxonHillockTaper", "AxonProximalRadiusScale")
+# Sodium parameters, used by the sodium-free first stage of the two-stage
+# depolarizing pipeline: conductances are fixed at 0 there and the kinetic
+# parameters (which then have no effect) are left out of the fit.
+SODIUM_CONDUCTANCES = ("gna", "gna12", "gnaaxon", "gnadend")
+SODIUM_KINETIC = (
+    "nat_fast_inactivation_tau_scale", "nat_slow_recovery_tau_scale",
+    "nav16_C1O1v2", "nav16_C1O1k2", "nav16_I1O1b1", "nav16_C1I1b2", "nav16_C1I1v2",
+    "nav16_C1I1k2", "nav16_O1I1b2", "nav16_O1I1v2", "nav16_O1I1k2",
+    "na12_shift", "sinfsoma", "slowsoma", "nax_ar2",
+)
 ALL_KEYS = PASSIVE + CONDUCTANCE + GEOMETRY + KINETIC
 
 

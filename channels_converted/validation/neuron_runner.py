@@ -142,7 +142,9 @@ def _formula_current(spec: ChannelSpec, seg, mech) -> float:
         return float(mech.gbar * mech.m ** getattr(mech, "st", 1.0) * (seg.v - seg.ek))
     if spec.key == "kv2like":
         return float(mech.gbar * mech.m**2 * (0.5 * mech.h1 + 0.5 * mech.h2) * (seg.v - seg.ek))
-    if spec.key in {"nax", "na12"}:
+    if spec.key == "nax":
+        return float(mech.gbar * mech.m**3 * mech.h * mech.s * (seg.v - seg.ena))
+    if spec.key == "na12":
         return float(mech.gbar * mech.m**3 * mech.h * (seg.v - seg.ena))
     if spec.key == "na3dend":
         return float(mech.gbar * mech.m**3 * mech.h * mech.s * (seg.v - seg.ena))

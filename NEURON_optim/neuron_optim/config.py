@@ -15,7 +15,7 @@ from .parameters import make_parameter_space
 
 DEFAULT_STAGE2_GLOBAL_BOUND_PARAMETERS = (
     "soma_km", "soma_kca", "mykca_init", "soma_caL", "soma_hbar",
-    "gna12", "na12_shift",
+    "gna12", "na12_shift", "sinfsoma", "slowsoma",
 )
 
 

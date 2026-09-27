@@ -203,7 +203,7 @@ CHANNELS: dict[str, ChannelSpec] = {
         key="nax",
         mechanism="nax",
         jaxley_class=Nax,
-        states=(StateSpec("m"), StateSpec("h")),
+        states=(StateSpec("m"), StateSpec("h"), StateSpec("s")),
         current=CurrentSpec(neuron_name="ina", neuron_source="formula"),
     ),
 }

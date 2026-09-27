@@ -126,6 +126,11 @@ EXPECTED_TARGETS = {
     "nav16_O1I1v2": (("na16a_O1I1v2", "soma"), ("na16a_O1I1v2", "apical")),
     "nav16_O1I1k2": (("na16a_O1I1k2", "soma"), ("na16a_O1I1k2", "apical")),
     "na12_shift": (("na12_sh", "soma"),),
+    "sinfsoma": (("na16a_dist", "soma"),),
+    "slowsoma": (("na16a_slowdown", "soma"),),
+    "nax_ar2": (("nax_ar2", "axon"),),
+    "kd_vhalfm": tuple(("kd_vhalfm", group) for group in ("soma", "apical", "axon", "basal")),
+    "kd_vhalfh": tuple(("kd_vhalfh", group) for group in ("soma", "apical", "axon", "basal")),
     "h_tau_scale": (
         ("h_tau_scale", "soma"),
         ("h_tau_scale", "apical"),

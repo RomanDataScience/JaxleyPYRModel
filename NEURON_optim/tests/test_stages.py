@@ -98,7 +98,7 @@ def test_stage2_keeps_all_parameters_variable_in_local_basin_space(tmp_path):
 
     assert len(tasks) == 1
     _, _, _, _, _, _, space, fixed_values = tasks[0]
-    assert len(space.keys) == 56
+    assert len(space.keys) == 61
     assert "nav16_I1O1b1" in space.keys
     assert fixed_values is None
     index = space.keys.index("nav16_I1O1b1")

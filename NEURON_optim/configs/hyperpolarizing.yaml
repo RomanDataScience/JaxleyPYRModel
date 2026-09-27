@@ -70,7 +70,7 @@ stage2:
   # Search ±local_relative_width around each stage-1 basin value.
   local_relative_width: 0.35
   # Searched over global bounds: barely active in the stage-1 (hyper) traces.
-  global_bound_parameters: [soma_km, soma_kca, mykca_init, soma_caL, soma_hbar, gna12, na12_shift]
+  global_bound_parameters: [soma_km, soma_kca, mykca_init, soma_caL, soma_hbar, gna12, na12_shift, sinfsoma, slowsoma]
   generations: 200
   population_size: 30
   checkpoint_every: 1
