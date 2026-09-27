@@ -19,11 +19,14 @@ from .objective import (
     build_objective_context,
     depolarizing_objective,
     hyperpolarizing_objective,
+    subthreshold_objective,
 )
 from .parameters import (
     ALL_KEYS,
     DEFAULTS,
     PASSIVE,
+    SODIUM_CONDUCTANCES,
+    SODIUM_KINETIC,
     ParameterSpace,
     complete_parameter_mapping,
     local_relative_bounds,
@@ -37,6 +40,19 @@ from .simulator import make_simulator
 LOGGER = logging.getLogger(__name__)
 _WORKER: dict[str, Any] = {}
 HYPER_OBJECTIVE_VERSION = "delta-v-plus-offset-v1"
+# Two-stage depolarizing pipeline: a sodium-free subthreshold stage, then a
+# full-model stage (see run_depolarizing_two_stage).
+SUBTHRESHOLD_STAGE = "depol_sub"
+FULL_DEPOL_STAGE = "depol_full"
+DEPOLARIZING_STAGES = {"depolarizing", "stage3", SUBTHRESHOLD_STAGE, FULL_DEPOL_STAGE}
+
+
+def _objective_function(stage: str):
+    if stage in {"passive", "hyper"}:
+        return hyperpolarizing_objective
+    if stage == SUBTHRESHOLD_STAGE:
+        return subthreshold_objective
+    return depolarizing_objective
 
 
 def _init_worker(stage: str, simulation_traces: list[Trace], fitness_traces: list[Trace],
@@ -76,7 +92,7 @@ def _build_objective_context(traces: list[Trace], stage: str,
                              options: dict[str, Any]) -> ObjectiveContext:
     return build_objective_context(
         traces,
-        stage="depolarizing" if stage in {"depolarizing", "stage3"} else "hyper",
+        stage="depolarizing" if stage in DEPOLARIZING_STAGES else "hyper",
         threshold_mV=float(options.get("threshold_mV", -20.0)),
         refractory_ms=float(options.get("refractory_ms", 2.0)),
         prominence_mV=float(options.get("prominence_mV", 5.0)),
@@ -97,18 +113,11 @@ def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
         simulations = _WORKER["simulator"].simulate_many(
             _WORKER["simulation_traces"], mapping
         )
-        if _WORKER["stage"] in {"passive", "hyper"}:
-            result = hyperpolarizing_objective(
-                _WORKER["fitness_traces"], simulations,
-                context=_WORKER["objective_context"], include_details=False,
-                **_WORKER["objective_options"],
-            )
-        else:
-            result = depolarizing_objective(
-                _WORKER["fitness_traces"], simulations,
-                context=_WORKER["objective_context"], include_details=False,
-                **_WORKER["objective_options"],
-            )
+        result = _objective_function(_WORKER["stage"])(
+            _WORKER["fitness_traces"], simulations,
+            context=_WORKER["objective_context"], include_details=False,
+            **_WORKER["objective_options"],
+        )
         return result.value, _simulation_payload(simulations), None
     except Exception as exc:
         return 1.0e12, None, {"error": type(exc).__name__, "message": str(exc)}
@@ -137,17 +146,10 @@ def _evaluate_serial(normalized: np.ndarray, *, stage: str,
         if stage == "passive":
             mapping = passive_model_values(mapping)
         simulations = simulator.simulate_many(simulation_traces, mapping)
-        if stage in {"passive", "hyper"}:
-            result = hyperpolarizing_objective(
-                fitness_traces, simulations, context=objective_context,
-                include_details=False,
-                **objective_options,
-            )
-        else:
-            result = depolarizing_objective(
-                fitness_traces, simulations, context=objective_context,
-                **objective_options,
-            )
+        result = _objective_function(stage)(
+            fitness_traces, simulations, context=objective_context,
+            include_details=False, **objective_options,
+        )
         return result.value, _simulation_payload(simulations), None
     except Exception as exc:
         return 1.0e12, None, {"error": type(exc).__name__, "message": str(exc)}
@@ -169,6 +171,20 @@ def _json_default(value):
 
 
 def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
+    if stage == SUBTHRESHOLD_STAGE:
+        section = dict(raw.get(SUBTHRESHOLD_STAGE, {}))
+        return {"sigma_mV": float(section.get("sigma_mV", 2.0)),
+                "offset_huber_delta": float(section.get("offset_huber_delta", 3.0)),
+                "weights": section.get("weights", {"baseline": 1.0, "onset": 2.0,
+                                                   "plateau": 4.0, "recovery": 2.0}),
+                "spike_exclusion_pre_ms": float(section.get("spike_exclusion_pre_ms", 3.0)),
+                "spike_exclusion_post_ms": float(section.get("spike_exclusion_post_ms", 8.0)),
+                "simulated_spike_penalty": float(section.get("simulated_spike_penalty", 10.0)),
+                "threshold_mV": float(section.get("threshold_mV", -20.0)),
+                "refractory_ms": float(section.get("refractory_ms", 2.0)),
+                "prominence_mV": float(section.get("prominence_mV", 5.0)),
+                "max_spike_width_ms": float(section.get("max_spike_width_ms", 10.0))}
+    # Every other depolarizing stage shares the stage2 objective settings.
     section_name = "stage1" if stage in {"passive", "hyper"} else "stage2"
     section = dict(raw[section_name])
     if stage in {"passive", "hyper"}:
@@ -218,8 +234,8 @@ def _study_section_name(stage: str) -> str:
         return "passive"
     if stage == "hyper":
         return "stage1"
-    if stage == "stage3":
-        return "stage3"
+    if stage in {"stage3", SUBTHRESHOLD_STAGE, FULL_DEPOL_STAGE}:
+        return stage
     return "stage2"
 
 
@@ -446,14 +462,9 @@ def _objective_details(stage: str, fitness_traces: list[Trace], payload,
     if payload is None:
         return error or {}
     simulations = _payload_to_simulations(payload)
-    if stage in {"passive", "hyper"}:
-        result = hyperpolarizing_objective(
-            fitness_traces, simulations, context=context, include_details=True, **options
-        )
-    else:
-        result = depolarizing_objective(
-            fitness_traces, simulations, context=context, include_details=True, **options
-        )
+    result = _objective_function(stage)(
+        fitness_traces, simulations, context=context, include_details=True, **options
+    )
     return result.details
 
 
@@ -525,8 +536,8 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
     run_dir.mkdir(parents=True, exist_ok=True)
     _study_manifest(config, stage, seed, space, run_dir, basin_id, initial_mean,
                     fixed_values)
-    objective_version = (HYPER_OBJECTIVE_VERSION
-                         if stage in {"passive", "hyper"}
+    objective_version = (HYPER_OBJECTIVE_VERSION if stage in {"passive", "hyper"}
+                         else "subthreshold-v1" if stage == SUBTHRESHOLD_STAGE
                          else "depolarizing-v1")
     bounds_signature = tuple(
         (float(lower), float(upper))
@@ -629,7 +640,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                                         space=space, top_k=top_k,
                                         population_indices=top_indices,
                                         dpi=int(plotting.get("dpi", 120)))
-                        if stage in {"depolarizing", "stage3"}:
+                        if stage in DEPOLARIZING_STAGES:
                             plot_depolarizing_step_generation(
                                 output_dir=run_dir / "plots", generation=generation,
                                 traces=fitness_traces, population=plot_population,
@@ -637,6 +648,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                                 space=space, top_k=top_k,
                                 population_indices=top_indices,
                                 dpi=int(plotting.get("dpi", 120)),
+                                stage=stage,
                             )
                 except Exception:
                     LOGGER.exception("Plotting failed for generation %04d; continuing", generation)
@@ -820,10 +832,95 @@ def run_stage3_depolarizing_only(config: RunConfig, output_root: Path) -> None:
     _run_studies(config, tasks)
 
 
+def _configured_space(section: dict, keys: list[str], *,
+                      lower_overrides: dict | None = None,
+                      upper_overrides: dict | None = None) -> ParameterSpace:
+    """Parameter space over ``keys`` with a section's lower/upper_bounds applied."""
+    lower = {k: v for k, v in dict(section.get("lower_bounds", {})).items() if k in keys}
+    upper = {k: v for k, v in dict(section.get("upper_bounds", {})).items() if k in keys}
+    lower.update(lower_overrides or {})
+    upper.update(upper_overrides or {})
+    return make_parameter_space(include=keys, lower_overrides=lower, upper_overrides=upper)
+
+
+def _seeded_initial(mean: np.ndarray, seed: int, salt: int) -> np.ndarray:
+    rng = np.random.default_rng(np.random.SeedSequence([seed, salt]))
+    return np.clip(mean + rng.uniform(-0.15, 0.15, size=mean.size), 0.0, 1.0)
+
+
+def run_depolarizing_two_stage(config: RunConfig, output_root: Path) -> None:
+    """Fit the depolarizing traces in two stages, without hyper or basin files.
+
+    Stage A (``depol_sub``) removes every sodium conductance and fits the
+    remaining non-sodium parameters to the parts of the recording without
+    spikes: baseline, onset ramp, plateau between spikes and the decay after
+    the step (see ``subthreshold_objective``).
+
+    Stage B (``depol_full``) restores sodium and fits every parameter with the
+    full depolarizing objective, starting from the best stage-A candidate.
+    Parameters calibrated in stage A are searched within
+    ``depol_full.local_relative_width`` (default ±35%) of their stage-A value;
+    all others, including every sodium parameter, use their global bounds.
+    """
+    sub_section = config.section(SUBTHRESHOLD_STAGE)
+    full_section = config.section(FULL_DEPOL_STAGE)
+    sodium = set(SODIUM_CONDUCTANCES) | set(SODIUM_KINETIC)
+    sub_keys = [key for key in config.parameters.keys if key not in sodium]
+    sub_space = _configured_space(sub_section, sub_keys)
+    sodium_off = {key: 0.0 for key in SODIUM_CONDUCTANCES}
+    sub_mean = sub_space.normalize([DEFAULTS[key] for key in sub_space.keys])
+    sub_dir = output_root / "stageA_subthreshold"
+    sub_tasks = [
+        (config, SUBTHRESHOLD_STAGE, int(seed), sub_dir / f"seed_{int(seed):03d}",
+         _seeded_initial(sub_mean, int(seed), 0x53554241), SUBTHRESHOLD_STAGE,
+         sub_space, sodium_off)
+        for seed in sub_section.get("seeds", [0])
+    ]
+    sub_results = _run_studies(config, sub_tasks)
+    best_index = int(np.argmin([result["loss"] for result in sub_results]))
+    sub_best = dict(sub_results[best_index]["physical_by_name"])
+    _write_json(sub_dir / "best.json", {
+        "best_seed": int(sub_tasks[best_index][2]),
+        "loss": float(sub_results[best_index]["loss"]),
+        "physical_by_name": sub_best,
+        "fixed_values": sodium_off,
+    })
+
+    full_keys = list(config.parameters.keys)
+    width = float(full_section.get("local_relative_width", 0.35))
+    global_space = _configured_space(full_section, full_keys)
+    global_lower = dict(zip(global_space.keys, global_space.lower, strict=True))
+    global_upper = dict(zip(global_space.keys, global_space.upper, strict=True))
+    calibrated = [key for key in sub_space.keys if key in global_lower]
+    centers = {key: float(np.clip(sub_best[key], global_lower[key], global_upper[key]))
+               for key in calibrated}
+    local_lower, local_upper = local_relative_bounds(
+        centers, calibrated, relative_width=width,
+        lower_limits={key: global_lower[key] for key in calibrated},
+        upper_limits={key: global_upper[key] for key in calibrated},
+    )
+    full_space = _configured_space(full_section, full_keys,
+                                   lower_overrides=local_lower, upper_overrides=local_upper)
+    start = dict(DEFAULTS)
+    start.update(centers)
+    full_mean = full_space.normalize([start[key] for key in full_space.keys])
+    full_dir = output_root / "stageB_full"
+    full_tasks = [
+        (config, FULL_DEPOL_STAGE, int(seed), full_dir / f"seed_{int(seed):03d}",
+         _seeded_initial(full_mean, int(seed), 0x46554C4C), FULL_DEPOL_STAGE,
+         full_space, None)
+        for seed in full_section.get("seeds", [0])
+    ]
+    _run_studies(config, full_tasks)
+
+
 def run_pipeline(config: RunConfig, output_root: Path) -> None:
     pipeline = str(config.raw.get("runtime", {}).get("pipeline", "full"))
     if pipeline == "stage3_depolarizing_only":
         run_stage3_depolarizing_only(config, output_root)
+        return
+    if pipeline == "depolarizing_two_stage":
+        run_depolarizing_two_stage(config, output_root)
         return
     run_hyper_stage(config, output_root)
     run_depolarizing_stage(config, output_root)

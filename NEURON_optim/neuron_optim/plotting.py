@@ -18,6 +18,13 @@ from .parameters import ParameterSpace
 
 
 DEPOLARIZING_STEP_WINDOW_MS = (-50.0, 100.0)
+# (anchor edge, start offset ms, stop offset ms, file stem, title suffix)
+DEPOLARIZING_ZOOM_WINDOWS = (
+    ("onset", *DEPOLARIZING_STEP_WINDOW_MS, "depolarizing_step",
+     " · −50 to +100 ms around step onset"),
+    ("onset", 80.0, 180.0, "depolarizing_train", " · +80 to +180 ms after step onset"),
+    ("offset", -50.0, 150.0, "depolarizing_offset", " · −50 to +150 ms around step end"),
+)
 
 
 def plot_generation(*, output_dir: Path, generation: int, stage: str,
@@ -107,35 +114,38 @@ def plot_depolarizing_step_generation(*, output_dir: Path, generation: int,
                                        simulations: list[list[SimulationOutput]],
                                        space: ParameterSpace, top_k: int = 10,
                                        dpi: int = 120,
-                                       population_indices: np.ndarray | None = None) -> None:
-    """Plot depolarizing candidates around the current-step transition.
+                                       population_indices: np.ndarray | None = None,
+                                       stage: str = "depolarizing") -> None:
+    """Plot depolarizing candidates in zoomed windows of the current step.
 
-    The requested window is relative to each trace's current-step onset, while
-    retaining the original simulation-time coordinate used by the cached
-    simulator outputs.
+    Each window is relative to a step edge (onset or offset) and keeps the
+    original simulation-time coordinate used by the cached simulator outputs.
     """
-    start_offset, stop_offset = DEPOLARIZING_STEP_WINDOW_MS
-    windowed_traces = [
-        trace if trace.protocol != "depolarizing_step" else crop_trace(
-            trace,
-            start_ms=trace.epoch_start_ms + start_offset,
-            stop_ms=trace.epoch_start_ms + stop_offset,
+    for anchor, start_offset, stop_offset, name, suffix in DEPOLARIZING_ZOOM_WINDOWS:
+        windowed_traces = []
+        for trace in traces:
+            if trace.protocol != "depolarizing_step":
+                windowed_traces.append(trace)
+                continue
+            edge = trace.epoch_start_ms if anchor == "onset" else trace.epoch_stop_ms
+            windowed_traces.append(crop_trace(
+                trace,
+                start_ms=max(edge + start_offset, float(trace.time_ms[0])),
+                stop_ms=min(edge + stop_offset, float(trace.time_ms[-1])),
+            ))
+        plot_generation(
+            output_dir=output_dir,
+            generation=generation,
+            stage=stage,
+            traces=windowed_traces,
+            population=population,
+            losses=losses,
+            simulations=simulations,
+            space=space,
+            top_k=top_k,
+            dpi=dpi,
+            population_indices=population_indices,
+            filename=f"{name}_candidates.png",
+            metadata_filename=f"{name}_top_candidates.json",
+            title_suffix=suffix,
         )
-        for trace in traces
-    ]
-    plot_generation(
-        output_dir=output_dir,
-        generation=generation,
-        stage="depolarizing",
-        traces=windowed_traces,
-        population=population,
-        losses=losses,
-        simulations=simulations,
-        space=space,
-        top_k=top_k,
-        dpi=dpi,
-        population_indices=population_indices,
-        filename="depolarizing_step_candidates.png",
-        metadata_filename="depolarizing_step_top_candidates.json",
-        title_suffix=" · −50 to +100 ms around step",
-    )

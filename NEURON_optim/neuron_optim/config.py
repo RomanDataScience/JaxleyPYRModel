@@ -13,6 +13,8 @@ import yaml
 from .parameters import make_parameter_space
 
 
+PIPELINES = {"full", "stage3_depolarizing_only", "depolarizing_two_stage"}
+
 DEFAULT_STAGE2_GLOBAL_BOUND_PARAMETERS = (
     "soma_km", "soma_kca", "mykca_init", "soma_caL", "soma_hbar",
     "gna12", "na12_shift", "sinfsoma", "slowsoma",
@@ -174,13 +176,19 @@ class RunConfig:
         if self.backend not in {"neuron", "jaxley"}:
             errors.append("runtime.backend must be either 'neuron' or 'jaxley'")
         pipeline = str(self.raw.get("runtime", {}).get("pipeline", "full"))
-        if pipeline not in {"full", "stage3_depolarizing_only"}:
-            errors.append(
-                "runtime.pipeline must be either 'full' or 'stage3_depolarizing_only'"
-            )
+        if pipeline not in PIPELINES:
+            errors.append(f"runtime.pipeline must be one of {sorted(PIPELINES)}")
         stages = ["passive", "stage1", "stage2"]
         if pipeline == "stage3_depolarizing_only":
             stages.append("stage3")
+        elif pipeline == "depolarizing_two_stage":
+            # Stage B reuses the stage2 objective settings; no hyper stages run.
+            stages = ["stage2", "depol_sub", "depol_full"]
+            try:
+                if not float(self.section("depol_full").get("local_relative_width", 0.35)) > 0.0:
+                    errors.append("depol_full.local_relative_width must be > 0")
+            except (TypeError, ValueError):
+                errors.append("depol_full.local_relative_width must be a number")
         for name in stages:
             section = self.section(name)
             if int(section.get("generations", 0)) < 1:
