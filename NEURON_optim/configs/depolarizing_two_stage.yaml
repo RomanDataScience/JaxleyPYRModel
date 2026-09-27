@@ -18,7 +18,7 @@ runtime:
   backend: jaxley
   d_lambda: 0.1
   pipeline: depolarizing_two_stage
-  parallel_workers: 16
+  parallel_workers: 8
   simulation_pre_ms: 500.0
   simulation_post_ms: 600.0
 
@@ -30,8 +30,8 @@ plotting:
 # Depolarizing objective settings, shared by stage B (depol_full).
 stage2:
   seeds: [0]
-  generations: 20
-  population_size: 16
+  generations: 10
+  population_size: 8
   sigma0: 0.15
   parent_fraction: 0.5
   sigma_trajectory_mV: 2.0
@@ -63,8 +63,8 @@ stage2:
 # plateau between spikes, decay after the step); traces weighted equally.
 depol_sub:
   seeds: [0]
-  generations: 20
-  population_size: 16
+  generations: 10
+  population_size: 8
   sigma0: 0.15
   parent_fraction: 0.5
   sigma_mV: 2.0
@@ -79,8 +79,8 @@ depol_sub:
 # ±local_relative_width of their stage-A value; the rest use global bounds.
 depol_full:
   seeds: [0]
-  generations: 20
-  population_size: 16
+  generations: 10
+  population_size: 8
   sigma0: 0.15
   parent_fraction: 0.5
   local_relative_width: 0.35
