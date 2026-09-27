@@ -46,7 +46,8 @@ from neuron_optim.simulator import NeuronSimulator, _group, apply_parameters
 
 REGIONS = ("soma", "basal", "apical", "axon")
 REGION_COLORS = {"soma": "#222222", "basal": "#1f77b4", "apical": "#d62728", "axon": "#2ca02c"}
-VARIANT_COLORS = {"passive": "#1f77b4", "passive_h": "#9467bd", "candidate": "#d62728"}
+VARIANT_COLORS = {"passive": "#1f77b4", "passive_h": "#9467bd", "candidate": "#d62728",
+                  "candidate_small": "#ff7f0e"}
 
 
 @dataclass
@@ -99,7 +100,8 @@ def simulate(h, soma, segments, values, *, dt, lead_ms, duration_ms, current_fn,
         i_vecs.append(h.Vector().record(seg._ref_i_cap, sample_t))
     h.finitialize(v_init)
     h.continuerun(total)
-    n = int(sample_t.size())
+    # NEURON can drop the last requested sample when it lands on tstop.
+    n = min(int(sample_t.size()), *(int(v.size()) for v in v_vecs + i_vecs))
     voltage = np.array([np.asarray(v)[:n] for v in v_vecs])
     area = np.array([row[4] for row in segments])[:, None]
     # mA/cm2 * um2 -> nA
@@ -159,7 +161,9 @@ def main() -> None:
     parser.add_argument("--candidate", type=Path,
                         default=Path("runs/depol_two_stage/stageA_subthreshold/seed_000/best_so_far.json"))
     parser.add_argument("--trace", default="v75ctrl")
-    parser.add_argument("--lead-ms", type=float, default=2000.0)
+    parser.add_argument("--lead-ms", type=float, default=1000.0)
+    parser.add_argument("--small-step-nA", type=float, default=0.031,
+                        help="Subthreshold step for the candidate_small variant")
     parser.add_argument("--record-dt", type=float, default=0.25)
     parser.add_argument("--long-step-ms", type=float, default=3000.0)
     parser.add_argument("--output-dir", type=Path, default=Path("runs/passive_charging"))
@@ -209,9 +213,11 @@ def main() -> None:
     hold_fn = lambda t: np.full_like(t, i_hold)
     common = dict(dt=dt, lead_ms=args.lead_ms, duration_ms=duration,
                   v_init=float(depol.voltage_mV[0]), record_dt=args.record_dt)
+    small_step = lambda t: np.where((t >= on) & (t < off), i_hold + args.small_step_nA, i_hold)
     runs = {}
-    for name, values in variants.items():
-        step = simulate(h, soma, segments, values, current_fn=step_fn, **common)
+    for name, values in [*variants.items(), ("candidate_small", variants["candidate"])]:
+        fn = small_step if name == "candidate_small" else step_fn
+        step = simulate(h, soma, segments, values, current_fn=fn, **common)
         hold = simulate(h, soma, segments, values, current_fn=hold_fn, **common)
         runs[name] = (step, hold)
         print(f"  {name}: soma V_hold {hold.voltage_mV[soma_idx, 0]:.2f} mV, "

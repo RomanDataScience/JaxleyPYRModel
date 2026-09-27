@@ -242,3 +242,51 @@ def test_precomputed_objective_context_preserves_loss():
     cached = depolarizing_objective([observed], [simulated], context=context)
     assert cached.value == uncached.value
     assert cached.details == uncached.details
+
+
+def test_depolarizing_peak_floor_penalizes_low_spikes_only_when_weighted():
+    observed = trace("depolarizing_step")
+    voltage = observed.voltage_mV.copy()
+    voltage[600:603] = [-10.0, 30.0, -10.0]
+    observed = Trace(observed.cell, observed.trace, observed.protocol, observed.time_ms,
+                     voltage.copy(), observed.current_nA, observed.epoch_start_ms,
+                     observed.epoch_stop_ms)
+    voltage[600:603] = [-15.0, -5.0, -15.0]
+    simulated = SimulationOutput(observed.time_ms, voltage)
+    default = depolarizing_objective([observed], [simulated], prominence_mV=1.0,
+                                     require_axon_soma_count_match=False)
+    components = default.details["traces"][0]["components"]
+    # One spike at -5 mV, floor +10 mV, sigma 5 mV -> ((10 - -5) / 5)^2 = 9.
+    assert components["peak_floor"] == 9.0
+    assert default.details["weights"]["peak_floor"] == 0.0
+
+    weighted = depolarizing_objective([observed], [simulated], prominence_mV=1.0,
+                                      require_axon_soma_count_match=False,
+                                      weights={"peak_floor": 20.0})
+    assert weighted.value > default.value
+
+    tall = voltage.copy()
+    tall[600:603] = [-10.0, 30.0, -10.0]
+    ok = depolarizing_objective([observed], [SimulationOutput(observed.time_ms, tall)],
+                                prominence_mV=1.0, require_axon_soma_count_match=False,
+                                weights={"peak_floor": 20.0})
+    assert ok.details["traces"][0]["components"]["peak_floor"] == 0.0
+
+
+def test_depolarizing_rest_check_and_graded_penalty():
+    observed = trace("depolarizing_step")
+    blocked = observed.voltage_mV.copy() + 30.0  # depolarization block, no spikes
+    simulated = SimulationOutput(observed.time_ms, blocked)
+    kwargs = dict(prominence_mV=1.0, require_axon_soma_count_match=False,
+                  extra_spike_penalty=1000.0)
+    assert depolarizing_objective([observed], [simulated], **kwargs).value < 1000.0
+    flat = depolarizing_objective([observed], [simulated], rest_tolerance_mV=5.0, **kwargs)
+    assert flat.value == 1000.0
+    graded = depolarizing_objective([observed], [simulated], rest_tolerance_mV=5.0,
+                                    graded_penalty=True, **kwargs)
+    # 0.1 per mV beyond the 5 mV tolerance: (30 - 5) * 0.1 = 2.5.
+    np.testing.assert_allclose(graded.value, 1000.0 * 3.5)
+    closer = SimulationOutput(observed.time_ms, observed.voltage_mV + 10.0)
+    nearer = depolarizing_objective([observed], [closer], rest_tolerance_mV=5.0,
+                                    graded_penalty=True, **kwargs)
+    assert 1000.0 < nearer.value < graded.value

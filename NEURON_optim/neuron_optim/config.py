@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from .parameters import make_parameter_space
+from .parameters import BOUNDS, CATALOG_KEYS, make_parameter_space
 
 
 PIPELINES = {"full", "stage3_depolarizing_only", "depolarizing_two_stage"}
@@ -102,9 +102,16 @@ class RunConfig:
         return tuple(str(name) for name in names)
 
     @property
+    def fixed_parameters(self) -> dict[str, float]:
+        """``parameters.fixed``: values held for every stage and never fitted."""
+        fixed = self.raw.get("parameters", {}).get("fixed") or {}
+        return {str(key): float(value) for key, value in dict(fixed).items()}
+
+    @property
     def parameters(self):
         section = self.raw.get("parameters", {})
-        return make_parameter_space(section.get("include"), section.get("exclude", ()))
+        exclude = set(section.get("exclude", ())) | set(self.fixed_parameters)
+        return make_parameter_space(section.get("include"), tuple(sorted(exclude)))
 
     def stage_parameter_names(self, stage: str) -> tuple[str, ...]:
         section = self.section(stage)
@@ -155,6 +162,11 @@ class RunConfig:
                 errors.append("parameters cannot be empty")
         except Exception as exc:
             errors.append(str(exc))
+        for key, value in self.fixed_parameters.items():
+            if key not in CATALOG_KEYS:
+                errors.append(f"parameters.fixed has unknown parameter: {key}")
+            elif not BOUNDS[key][0] <= value <= BOUNDS[key][1]:
+                errors.append(f"parameters.fixed.{key}={value} is outside {BOUNDS[key]}")
         if len(self.trace_names) != 4:
             errors.append("data.trace_names must contain exactly four traces")
         try:
@@ -182,13 +194,15 @@ class RunConfig:
         if pipeline == "stage3_depolarizing_only":
             stages.append("stage3")
         elif pipeline == "depolarizing_two_stage":
-            # Stage B reuses the stage2 objective settings; no hyper stages run.
-            stages = ["stage2", "depol_sub", "depol_full"]
-            try:
-                if not float(self.section("depol_full").get("local_relative_width", 0.35)) > 0.0:
-                    errors.append("depol_full.local_relative_width must be > 0")
-            except (TypeError, ValueError):
-                errors.append("depol_full.local_relative_width must be a number")
+            # Stage B reuses the stage2 objective settings; stage 0 fits the
+            # first hyperpolarizing pulse with its own depol_hyper section.
+            stages = ["stage2", "depol_hyper", "depol_sub", "depol_full"]
+            for name in ("depol_sub", "depol_full"):
+                try:
+                    if not float(self.section(name).get("local_relative_width", 0.35)) > 0.0:
+                        errors.append(f"{name}.local_relative_width must be > 0")
+                except (TypeError, ValueError):
+                    errors.append(f"{name}.local_relative_width must be a number")
         for name in stages:
             section = self.section(name)
             if int(section.get("generations", 0)) < 1:

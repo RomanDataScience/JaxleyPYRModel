@@ -477,6 +477,21 @@ def _matched_spike_symmetry_loss(
                   "simulated": simulated, "loss": loss}
 
 
+def _penalty_severity(*, outside_spikes: int, axon_outside_spikes: int,
+                      count_error: int, irregular: bool, rest_offset_mV: float,
+                      rest_tolerance_mV: float | None) -> float:
+    """How badly a penalized trace fails, for the graded penalty.
+
+    0.1 per spurious spike (soma or axon outside the step, or axon/soma count
+    difference), 0.5 for an irregular train, and 0.1 per mV of pre-step
+    baseline offset beyond ``rest_tolerance_mV`` (0 mV when unset).
+    """
+    tolerance = 0.0 if rest_tolerance_mV is None else float(rest_tolerance_mV)
+    return (0.1 * (outside_spikes + axon_outside_spikes + abs(count_error))
+            + (0.5 if irregular else 0.0)
+            + 0.1 * max(0.0, abs(rest_offset_mV) - tolerance))
+
+
 def depolarizing_objective(
     traces: Iterable[Trace], simulations: Iterable[SimulationOutput], *,
     sigma_trajectory_mV: float = 2.0, sigma_spike_mV: float = 2.0,
@@ -484,6 +499,8 @@ def depolarizing_objective(
     sigma_terminal_mV: float = 2.0, sigma_firing_rate_hz: float = 5.0,
     sigma_spike_symmetry: float = 0.1,
     sigma_spike_height_mV: float = 5.0,
+    min_spike_peak_mV: float = 10.0,
+    sigma_peak_floor_mV: float = 5.0,
     weights: Mapping[str, float] | None = None,
     threshold_mV: float = -20.0, refractory_ms: float = 2.0,
     prominence_mV: float = 5.0, max_spike_width_ms: float = 10.0,
@@ -495,13 +512,26 @@ def depolarizing_objective(
     require_axon_soma_count_match: bool = True,
     axon_soma_count_tolerance: int = 0,
     return_alpha: float = 0.7,
+    graded_penalty: bool = False,
+    rest_tolerance_mV: float | None = None,
     context: ObjectiveContext | None = None,
     include_details: bool = True,
 ) -> ObjectiveResult:
+    """Score depolarizing-step traces.
+
+    A trace is penalized (``extra_spike_penalty``) for spikes outside the step,
+    axonal spikes outside the step, an irregular train, an axon/soma spike-count
+    mismatch, or, when ``rest_tolerance_mV`` is set, a pre-step baseline more
+    than that far from the recording. With ``graded_penalty`` the penalty grows
+    with how badly the trace fails (see ``_penalty_severity``) instead of being
+    flat, so the optimizer can still rank failing candidates.
+    """
     component_weights = {"trajectory": 12.0, "spike_shape": 10.0,
                          "spike_symmetry": 10.0, "spike_height": 10.0,
                          "plateau": 24.0,
-                         "return_baseline": 24.0, "firing_rate": 30.0}
+                         "return_baseline": 24.0, "firing_rate": 30.0,
+                         # Off unless configured, so existing runs score unchanged.
+                         "peak_floor": 0.0}
     component_weights.update(weights or {})
     context = context or build_objective_context(
         traces, stage="depolarizing", threshold_mV=threshold_mV,
@@ -571,6 +601,13 @@ def depolarizing_objective(
             np.asarray(simulated_heights), np.asarray(experimental_heights),
             sigma_spike_height_mV,
         ) if height_pairs else 0.0)
+        # Hinge on absolute peak voltage: every step spike peaking below
+        # ``min_spike_peak_mV`` costs ((floor - peak) / sigma)^2. Unlike the
+        # matched-height term it does not saturate and covers unmatched spikes.
+        l_peak_floor = (float(np.mean([
+            max(0.0, (min_spike_peak_mV - spike.peak_mV) / sigma_peak_floor_mV) ** 2
+            for spike in sim_spikes
+        ])) if sim_spikes else 0.0)
         experimental_rate_hz = _step_firing_rate_hz(trace, exp_spikes)
         simulated_rate_hz = _step_firing_rate_hz(trace, sim_spikes)
         l_firing_rate = _kernel_loss(
@@ -597,14 +634,25 @@ def depolarizing_objective(
 
         components = {"trajectory": l_trajectory, "spike_shape": l_spike,
                       "spike_symmetry": l_symmetry, "spike_height": l_height,
+                      "peak_floor": l_peak_floor,
                       "plateau": l_plateau,
                       "return_baseline": l_return,
                       "firing_rate": l_firing_rate}
         total = sum(component_weights[key] * components[key] for key in components) / sum(component_weights.values())
+        rest_offset_mV = simulated_baseline - features.baseline_mV
+        rest_failed = (rest_tolerance_mV is not None
+                       and abs(rest_offset_mV) > float(rest_tolerance_mV))
         penalized = (len(outside) > 1 or bool(axon_outside) or irregular_train
-                     or transmission_mismatch)
+                     or transmission_mismatch or rest_failed)
+        severity = 0.0
         if penalized:
-            total = float(extra_spike_penalty)
+            severity = _penalty_severity(
+                outside_spikes=len(outside), axon_outside_spikes=len(axon_outside),
+                count_error=transmission_count_error if transmission_mismatch else 0,
+                irregular=irregular_train, rest_offset_mV=rest_offset_mV,
+                rest_tolerance_mV=rest_tolerance_mV,
+            )
+            total = float(extra_spike_penalty) * ((1.0 + severity) if graded_penalty else 1.0)
         totals.append(total)
         if include_details:
             all_details.append({"trace": trace.trace, "components": components,
@@ -636,7 +684,9 @@ def depolarizing_objective(
                                 "spikes_experimental_ms": [s.peak_ms for s in exp_spikes],
                                 "spikes_simulated_ms": [s.peak_ms for s in sim_spikes_all],
                                 "out_of_window_spikes_ms": [s.peak_ms for s in outside],
-                                "penalized": penalized, "spike_shape": spike_details})
+                                "penalized": penalized, "penalty_severity": severity,
+                                "rest_offset_mV": rest_offset_mV,
+                                "spike_shape": spike_details})
     details = {"traces": all_details, "weights": component_weights} if include_details else {}
     return ObjectiveResult(float(np.mean(totals)), details)
 

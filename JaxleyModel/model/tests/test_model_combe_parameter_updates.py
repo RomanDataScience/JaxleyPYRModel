@@ -69,6 +69,8 @@ EXPECTED_TARGETS = {
         ("h_gbar", "apical"),
         ("h_gbar", "basal"),
     ),
+    # Soma-only Ih multiplier; dendritic Ih follows soma_hbar alone.
+    "soma_h_scale": (("h_gbar", "soma"),),
     "KirGbar": (("kir_gbar", "apical"), ("kir_gbar", "basal")),
     "soma_caL": (("cal_gcalbar", "soma"),),
     "soma_car": (("car_gcabar", "apical"),),
@@ -458,3 +460,17 @@ def test_rule_mode_uses_final_compartment_centers():
 def test_invalid_parameter_requests_fail_clearly(hoc_cell, keys, values, error):
     with pytest.raises(error):
         set_fitted_parameters(hoc_cell, keys, jnp.asarray(values))
+
+
+def test_soma_h_scale_zero_removes_somatic_ih_only(hoc_cell):
+    updates = set_fitted_parameters(
+        hoc_cell, ("soma_hbar", "soma_h_scale"),
+        jnp.asarray([COMBE_PARAMS.soma_hbar, 0.0]),
+    )
+    h_by_group = {}
+    for update in updates:
+        if update["key"] == "h_gbar":
+            h_by_group[_group_for_update(hoc_cell, update)] = np.asarray(update["val"])
+    assert np.all(h_by_group["soma"] == 0.0)
+    assert np.all(h_by_group["basal"] == COMBE_PARAMS.soma_hbar)
+    assert np.all(h_by_group["apical"] > 0.0)

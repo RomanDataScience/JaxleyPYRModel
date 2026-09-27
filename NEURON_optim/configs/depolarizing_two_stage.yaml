@@ -2,6 +2,8 @@ data:
   root: ../../JaxleyModel/Experimental_currentClamp_Analysis/Segmented_Traces
   cell: m20240527cd
   trace_names: [v75ctrl, v76ctrl, v77ctrl, v78ctrl]
+  # Stage 0 fits the hyperpolarizing pulse of this trace only (v75ctrl).
+  hyperpolarizing_trace_index: 0
 
 validation:
   current_trace: v75ctrl
@@ -12,6 +14,10 @@ validation:
 parameters:
   include: []
   exclude: []
+  # Held at these values in every stage and never fitted.
+  # soma_h_scale multiplies Ih in the soma only: 0 removes somatic Ih while
+  # basal and apical Ih still follow soma_hbar.
+  fixed: {soma_h_scale: 0.0}
 
 runtime:
   environment: Jaxley
@@ -21,6 +27,46 @@ runtime:
   parallel_workers: 8
   simulation_pre_ms: 500.0
   simulation_post_ms: 600.0
+  # Stage 0 scores the pulse from this long before its onset.
+  hyperpolarizing_fitness_pre_ms: 100.0
+
+# Bounds tighter than the global catalog, shared by every stage below (each
+# stage uses the entries for the parameters it fits).
+# - Nav1.6 kinetics: inside the global box the resting window conductance is
+#   typically ~10x (up to 100x) the default model; these ranges cut that
+#   ~3x, and stage2.nav_window rejects the remaining outliers.
+# - gnadend: apical Nav1.6 carries the same window current.
+# - gnaaxon: keeps the axonal spike generator; the last run drove it to 0.02
+#   to suppress spontaneous firing caused by the window current.
+# - soma_hbar / KirGbar / Epas: stop Ih and a depolarized leak setting rest,
+#   which shortened the membrane time constant to ~5 ms (recorded 20-40 ms).
+x-bounds:
+  lower: &lower_bounds
+    nav16_I1O1b1: 0.001
+    nav16_C1I1v2: -65.0
+    nav16_C1O1v2: -45.0
+    nav16_O1I1b2: 80.0
+    nav16_O1I1v2: -10.0
+    nav16_C1O1k2: -6.0
+    nav16_C1I1k2: -15.0
+    nav16_O1I1k2: -15.0
+    nav16_C1I1b2: 0.05
+    gnaaxon: 0.15
+    KirGbar: 0.0002
+    Epas: -80.0
+  upper: &upper_bounds
+    nav16_I1O1b1: 0.02
+    nav16_C1I1v2: -45.0
+    nav16_C1O1v2: -30.0
+    nav16_O1I1b2: 300.0
+    nav16_O1I1v2: 15.0
+    nav16_C1O1k2: -2.0
+    nav16_C1I1k2: -5.0
+    nav16_O1I1k2: -5.0
+    nav16_C1I1b2: 0.5
+    gnadend: 0.03
+    soma_hbar: 0.00006
+    Epas: -60.0
 
 plotting:
   enabled: true
@@ -42,7 +88,11 @@ stage2:
   sigma_firing_rate_hz: 5.0
   sigma_spike_symmetry: 0.1
   sigma_spike_height_mV: 5.0
-  weights: {trajectory: 12.0, spike_shape: 10.0, spike_symmetry: 10.0, spike_height: 10.0, plateau: 24.0, return_baseline: 24.0, firing_rate: 30.0}
+  # Spike peaks: matched-height term at twice its former weight, plus a hinge
+  # on every step spike peaking below min_spike_peak_mV (recorded: +27..+42 mV).
+  min_spike_peak_mV: 10.0
+  sigma_peak_floor_mV: 5.0
+  weights: {trajectory: 12.0, spike_shape: 10.0, spike_symmetry: 10.0, spike_height: 20.0, peak_floor: 20.0, plateau: 24.0, return_baseline: 24.0, firing_rate: 30.0}
   threshold_mV: -20.0
   refractory_ms: 2.0
   prominence_mV: 5.0
@@ -57,11 +107,66 @@ stage2:
   require_axon_soma_count_match: true
   axon_soma_count_tolerance: 0
   return_alpha: 0.7
+  # Penalized traces cost depolarizing_extra_spike_penalty x (1 + severity):
+  # 0.1 per spurious spike, 0.5 for an irregular train, 0.1 per mV of pre-step
+  # baseline offset beyond rest_tolerance_mV. A baseline more than
+  # rest_tolerance_mV from the recording is itself penalized (depolarization
+  # block, spontaneous firing).
+  graded_penalty: true
+  rest_tolerance_mV: 5.0
+  # Candidates whose persistent Nav1.6 conductance (gna or gnadend times the
+  # steady-state open probability) exceeds max_ratio x the default model at
+  # any of voltages_mV are not simulated; they cost
+  # penalty x (1 + log(ratio / max_ratio)).
+  nav_window: {max_ratio: 2.0, voltages_mV: [-60.0, -50.0], penalty: 20000.0}
+  lower_bounds: *lower_bounds
+  upper_bounds: *upper_bounds
 
-# Stage A: all sodium conductances fixed at 0; sodium kinetics left out of the
-# fit. Scores the non-spiking parts of the recording (baseline, onset ramp,
-# plateau between spikes, decay after the step); traces weighted equally.
+# Stage 0: sodium as in depol_sub.fixed_sodium; the parameters listed below
+# are fitted to the first hyperpolarizing pulse with the hyperpolarizing
+# objective (ΔV waveform plus absolute voltage offset). Fixes input
+# resistance, membrane tau and sag.
+depol_hyper:
+  seeds: [0]
+  generations: 30
+  population_size: 12
+  # Passive cable plus the currents open at rest; other non-sodium parameters
+  # stay at their defaults in this stage.
+  parameter_names: [RmSoma, RaSoma, RmTuft, RaTuft, DistHalfRm, DistHalfRa, SlopeRm, SlopeRa, Epas, CmSoma, CmSomaOnly, SpineFactorBasal, SpineFactorTuft, soma_hbar, h_tau_scale, KirGbar, soma_kap, soma_kad, basal_kap, soma_km]
+  lower_bounds: *lower_bounds
+  upper_bounds: *upper_bounds
+  sigma0: 0.15
+  parent_fraction: 0.5
+  sigma_hyper_mV: 1.0
+  region_weights: {pre: 1.0, step: 4.0, recovery: 3.0}
+  deflection_weight: 2.0
+  sigma_deflection_mV: 1.0
+  delta_v_weight: 1.0
+  voltage_offset_weight: 1.0
+  sigma_offset_mV: 1.0
+  voltage_offset_huber_delta: 3.0
+  edge_timing_weight: 0.25
+  sigma_edge_ms: 10.0
+  edge_missing_penalty: 4.0
+  threshold_mV: -20.0
+  refractory_ms: 2.0
+  prominence_mV: 5.0
+  max_spike_width_ms: 10.0
+  hyper_spike_penalty: 10000.0
+
+# Stage A: sodium conductances fixed (depol_sub.fixed_sodium, others 0);
+# sodium kinetics left out of the fit. Scores the non-spiking parts of the
+# recording (baseline, onset ramp, plateau between spikes, decay after the
+# step); traces weighted equally.
 depol_sub:
+  # Sodium conductances held during stages 0 and A (others are 0). Nav1.6 at
+  # its defaults in soma and dendrites puts its resting window current in
+  # place while the resting state is fitted; without it the fitted cell sat
+  # at -61 mV with sodium off but at about -40 mV once Nav1.6 was restored.
+  # Axonal Nav and na12 stay off, and with them off Nav1.6 alone fires no spikes.
+  fixed_sodium: {gna: 0.08, gnadend: 0.0225}
+  lower_bounds: *lower_bounds
+  upper_bounds: *upper_bounds
   seeds: [0]
   generations: 10
   population_size: 8
@@ -73,14 +178,23 @@ depol_sub:
   spike_exclusion_pre_ms: 3.0     # cut from each recorded spike's threshold...
   spike_exclusion_post_ms: 8.0    # ...to this long after its peak
   simulated_spike_penalty: 10.0
+  # Starts from the stage-0 best. These keys stay within ±local_relative_width
+  # of their stage-0 value; the rest use global bounds.
+  hyper_locked_keys: [RmSoma, RaSoma, RmTuft, RaTuft, DistHalfRm, DistHalfRa, SlopeRm, SlopeRa, Epas, CmSoma, CmSomaOnly, SpineFactorBasal, SpineFactorTuft, soma_hbar, h_tau_scale, KirGbar]
+  local_relative_width: 0.35
 
 # Stage B: sodium restored, every parameter fitted with the stage2 objective,
 # starting from stage A's best. Stage-A parameters are searched within
 # ±local_relative_width of their stage-A value; the rest use global bounds.
 depol_full:
+  lower_bounds: *lower_bounds
+  upper_bounds: *upper_bounds
   seeds: [0]
   generations: 10
   population_size: 8
   sigma0: 0.15
   parent_fraction: 0.5
   local_relative_width: 0.35
+  # Somatic Nav1.2-like sodium: the only lever that raised spike peaks in the
+  # rank-3 sweep (x6 gna12 with inactivation shifted +8 mV: -8 -> +13 mV peak).
+  start_values: {gna12: 0.06, na12_shift: 8.0}

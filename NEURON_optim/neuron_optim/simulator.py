@@ -141,7 +141,7 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                     "na12": {"gbar": values["gna12"], "sh": values["na12_shift"]},
                     "kd": {"gbar": values["gkdrsoma"]},
                     "Kv2like": {"gbar": values["gkv2soma"]},
-                    "h": {"gbar": values["soma_hbar"]},
+                    "h": {"gbar": values["soma_hbar"] * values.get("soma_h_scale", 1.0)},
                     "kap": {"gkabar": values["soma_kap"]},
                     "km": {"gbar": values["soma_km"]},
                     "cal": {"gcalbar": 0.1 * values["soma_caL"]},

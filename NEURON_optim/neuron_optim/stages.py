@@ -22,7 +22,7 @@ from .objective import (
     subthreshold_objective,
 )
 from .parameters import (
-    ALL_KEYS,
+    CATALOG_KEYS,
     DEFAULTS,
     PASSIVE,
     SODIUM_CONDUCTANCES,
@@ -34,21 +34,29 @@ from .parameters import (
     passive_model_values,
 )
 from .plotting import plot_depolarizing_step_generation, plot_generation
+from .nav_window import window_ratio
 from .simulator import make_simulator
 
 
 LOGGER = logging.getLogger(__name__)
 _WORKER: dict[str, Any] = {}
 HYPER_OBJECTIVE_VERSION = "delta-v-plus-offset-v1"
-# Two-stage depolarizing pipeline: a sodium-free subthreshold stage, then a
-# full-model stage (see run_depolarizing_two_stage).
+# Two-stage depolarizing pipeline: a sodium-free hyperpolarizing calibration,
+# a sodium-free subthreshold stage, then a full-model stage (see
+# run_depolarizing_two_stage).
+HYPER_PRE_STAGE = "depol_hyper"
 SUBTHRESHOLD_STAGE = "depol_sub"
 FULL_DEPOL_STAGE = "depol_full"
 DEPOLARIZING_STAGES = {"depolarizing", "stage3", SUBTHRESHOLD_STAGE, FULL_DEPOL_STAGE}
+HYPER_STAGES = {"passive", "hyper", HYPER_PRE_STAGE}
+# Stage-A parameters held near the hyperpolarizing calibration: the passive
+# cable plus the currents open at rest, which set input resistance, the
+# membrane time constant and sag.
+DEFAULT_HYPER_LOCKED_KEYS = PASSIVE + ("soma_hbar", "h_tau_scale", "KirGbar")
 
 
 def _objective_function(stage: str):
-    if stage in {"passive", "hyper"}:
+    if stage in HYPER_STAGES:
         return hyperpolarizing_objective
     if stage == SUBTHRESHOLD_STAGE:
         return subthreshold_objective
@@ -100,27 +108,69 @@ def _build_objective_context(traces: list[Trace], stage: str,
     )
 
 
-def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
-    physical = _WORKER["space"].physical(normalized) if "space" in _WORKER else None
-    if physical is None:
-        raise RuntimeError("Worker parameter space was not initialized")
-    mapping = complete_parameter_mapping(
-        _WORKER["space"], normalized, _WORKER.get("fixed_values")
-    )
-    if _WORKER["stage"] == "passive":
+# Stage options that gate a candidate before simulation; never passed to the
+# objective functions themselves.
+_PRE_SIMULATION_OPTIONS = ("nav_window",)
+
+
+def _objective_kwargs(options: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in options.items()
+            if key not in _PRE_SIMULATION_OPTIONS}
+
+
+def _nav_window_rejection(mapping: dict[str, float],
+                          options: dict[str, Any]) -> tuple[float, dict] | None:
+    """Loss and details for a candidate whose Nav1.6 window is too large.
+
+    The loss is ``penalty * (1 + log(ratio / max_ratio))``: above every
+    simulated candidate's loss, but graded so CMA-ES can move back towards
+    admissible kinetics.
+    """
+    guard = options.get("nav_window")
+    if not guard or not bool(guard.get("enabled", True)):
+        return None
+    if not any(float(mapping.get(key, 0.0)) > 0.0 for key in SODIUM_CONDUCTANCES):
+        return None
+    max_ratio = float(guard.get("max_ratio", 2.0))
+    ratio = window_ratio(mapping, tuple(guard.get("voltages_mV", (-60.0, -50.0))))
+    if ratio <= max_ratio:
+        return None
+    penalty = float(guard.get("penalty", 2.0e4))
+    loss = penalty * (1.0 + float(np.log(ratio / max_ratio)))
+    return loss, {"error": "NavWindowTooLarge", "nav_window_ratio": ratio,
+                  "max_ratio": max_ratio}
+
+
+def _simulate_and_score(stage: str, mapping: dict[str, float], simulator,
+                        simulation_traces: list[Trace], fitness_traces: list[Trace],
+                        context: ObjectiveContext | None, options: dict[str, Any]):
+    if stage == "passive":
         mapping = passive_model_values(mapping)
     try:
-        simulations = _WORKER["simulator"].simulate_many(
-            _WORKER["simulation_traces"], mapping
-        )
-        result = _objective_function(_WORKER["stage"])(
-            _WORKER["fitness_traces"], simulations,
-            context=_WORKER["objective_context"], include_details=False,
-            **_WORKER["objective_options"],
+        rejection = _nav_window_rejection(mapping, options)
+        if rejection is not None:
+            return rejection[0], None, rejection[1]
+        simulations = simulator.simulate_many(simulation_traces, mapping)
+        result = _objective_function(stage)(
+            fitness_traces, simulations, context=context,
+            include_details=False, **_objective_kwargs(options),
         )
         return result.value, _simulation_payload(simulations), None
     except Exception as exc:
         return 1.0e12, None, {"error": type(exc).__name__, "message": str(exc)}
+
+
+def _evaluate_worker(normalized: np.ndarray, keys: tuple[str, ...]):
+    if "space" not in _WORKER:
+        raise RuntimeError("Worker parameter space was not initialized")
+    mapping = complete_parameter_mapping(
+        _WORKER["space"], normalized, _WORKER.get("fixed_values")
+    )
+    return _simulate_and_score(
+        _WORKER["stage"], mapping, _WORKER["simulator"],
+        _WORKER["simulation_traces"], _WORKER["fitness_traces"],
+        _WORKER["objective_context"], _WORKER["objective_options"],
+    )
 
 
 def _init_worker_with_space(stage: str, simulation_traces: list[Trace],
@@ -142,17 +192,11 @@ def _evaluate_serial(normalized: np.ndarray, *, stage: str,
                      fixed_values: dict[str, float] | None = None):
     try:
         simulator = simulator or make_simulator(backend, d_lambda=d_lambda, quiet=True)
-        mapping = complete_parameter_mapping(space, normalized, fixed_values)
-        if stage == "passive":
-            mapping = passive_model_values(mapping)
-        simulations = simulator.simulate_many(simulation_traces, mapping)
-        result = _objective_function(stage)(
-            fitness_traces, simulations, context=objective_context,
-            include_details=False, **objective_options,
-        )
-        return result.value, _simulation_payload(simulations), None
     except Exception as exc:
         return 1.0e12, None, {"error": type(exc).__name__, "message": str(exc)}
+    mapping = complete_parameter_mapping(space, normalized, fixed_values)
+    return _simulate_and_score(stage, mapping, simulator, simulation_traces,
+                               fitness_traces, objective_context, objective_options)
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -185,9 +229,10 @@ def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
                 "prominence_mV": float(section.get("prominence_mV", 5.0)),
                 "max_spike_width_ms": float(section.get("max_spike_width_ms", 10.0))}
     # Every other depolarizing stage shares the stage2 objective settings.
-    section_name = "stage1" if stage in {"passive", "hyper"} else "stage2"
-    section = dict(raw[section_name])
-    if stage in {"passive", "hyper"}:
+    section_name = (HYPER_PRE_STAGE if stage == HYPER_PRE_STAGE
+                    else "stage1" if stage in HYPER_STAGES else "stage2")
+    section = dict(raw.get(section_name, {}))
+    if stage in HYPER_STAGES:
         return {"sigma_mV": float(section.get("sigma_hyper_mV", 1.0)),
                 "region_weights": section.get("region_weights", {"pre": 1.0, "step": 4.0, "recovery": 3.0}),
                 "deflection_weight": float(section.get("deflection_weight", 2.0)),
@@ -212,6 +257,8 @@ def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
             "sigma_firing_rate_hz": float(section.get("sigma_firing_rate_hz", 5.0)),
             "sigma_spike_symmetry": float(section.get("sigma_spike_symmetry", 0.1)),
             "sigma_spike_height_mV": float(section.get("sigma_spike_height_mV", 5.0)),
+            "min_spike_peak_mV": float(section.get("min_spike_peak_mV", 10.0)),
+            "sigma_peak_floor_mV": float(section.get("sigma_peak_floor_mV", 5.0)),
             "weights": section.get("weights", {"trajectory": 12.0, "spike_shape": 10.0, "spike_symmetry": 10.0, "spike_height": 10.0, "plateau": 24.0, "return_baseline": 24.0, "firing_rate": 30.0}),
             "threshold_mV": float(section.get("threshold_mV", -20.0)),
             "refractory_ms": float(section.get("refractory_ms", 2.0)),
@@ -226,7 +273,12 @@ def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
             "max_isi_cv": float(section.get("max_isi_cv", 0.25)),
             "require_axon_soma_count_match": bool(section.get("require_axon_soma_count_match", True)),
             "axon_soma_count_tolerance": int(section.get("axon_soma_count_tolerance", 0)),
-            "return_alpha": float(section.get("return_alpha", 0.7))}
+            "return_alpha": float(section.get("return_alpha", 0.7)),
+            "graded_penalty": bool(section.get("graded_penalty", False)),
+            "rest_tolerance_mV": (None if section.get("rest_tolerance_mV") is None
+                                  else float(section["rest_tolerance_mV"])),
+            "nav_window": (dict(section["nav_window"]) if section.get("nav_window")
+                           else None)}
 
 
 def _study_section_name(stage: str) -> str:
@@ -234,7 +286,7 @@ def _study_section_name(stage: str) -> str:
         return "passive"
     if stage == "hyper":
         return "stage1"
-    if stage in {"stage3", SUBTHRESHOLD_STAGE, FULL_DEPOL_STAGE}:
+    if stage in {"stage3", HYPER_PRE_STAGE, SUBTHRESHOLD_STAGE, FULL_DEPOL_STAGE}:
         return stage
     return "stage2"
 
@@ -267,7 +319,7 @@ def _run_studies(config: RunConfig, tasks: list[tuple]) -> list[dict[str, Any]]:
 
 
 def _load_traces(config: RunConfig, stage: str) -> list[Trace]:
-    if stage in {"passive", "hyper"}:
+    if stage in HYPER_STAGES:
         return load_protocol_traces(config.data_root, cell=config.cell,
                                     protocol="hyperpolarizing_pulse",
                                     trace_names=config.hyperpolarizing_trace_names,
@@ -285,7 +337,7 @@ def _load_traces(config: RunConfig, stage: str) -> list[Trace]:
 def _fitness_traces(config: RunConfig, stage: str,
                     simulation_traces: list[Trace]) -> list[Trace]:
     """Build objective traces while retaining the simulator time origin."""
-    if stage not in {"passive", "hyper"}:
+    if stage not in HYPER_STAGES:
         return simulation_traces
     pre_ms = config.hyperpolarizing_fitness_pre_ms
     return [
@@ -463,7 +515,8 @@ def _objective_details(stage: str, fitness_traces: list[Trace], payload,
         return error or {}
     simulations = _payload_to_simulations(payload)
     result = _objective_function(stage)(
-        fitness_traces, simulations, context=context, include_details=True, **options
+        fitness_traces, simulations, context=context, include_details=True,
+        **_objective_kwargs(options),
     )
     return result.details
 
@@ -505,7 +558,7 @@ def _study_manifest(config: RunConfig, stage: str, seed: int, space: ParameterSp
         "stage": stage, "model_mode": "passive_only" if stage == "passive" else "full",
         "seed": seed, "basin_id": basin_id,
         "config_hash": config.hash(), "parameter_keys": list(space.keys),
-        "fixed_parameter_keys": sorted(set(ALL_KEYS) - set(space.keys)),
+        "fixed_parameter_keys": sorted(set(CATALOG_KEYS) - set(space.keys)),
         "generations": int(section["generations"]),
         "population_size": int(section["population_size"]),
         "backend": config.backend,
@@ -516,7 +569,7 @@ def _study_manifest(config: RunConfig, stage: str, seed: int, space: ParameterSp
     if fixed_values:
         payload["fixed_values"] = {
             key: float(fixed_values[key])
-            for key in sorted(set(ALL_KEYS) - set(space.keys))
+            for key in sorted(set(CATALOG_KEYS) - set(space.keys))
             if key in fixed_values
         }
     _write_json(run_dir / "manifest.json", payload)
@@ -529,6 +582,12 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
               fixed_values: dict[str, float] | None = None) -> dict[str, Any]:
     if space is None:
         space = make_parameter_space(include=PASSIVE) if stage == "passive" else config.parameters
+    # Config-wide fixed values (``parameters.fixed``); stage-specific fixed
+    # values take precedence.
+    fixed_values = {**config.fixed_parameters, **(fixed_values or {})}
+    overlap = sorted(set(config.fixed_parameters) & set(space.keys))
+    if overlap:
+        raise ValueError(f"parameters.fixed keys cannot also be fitted: {overlap}")
     section_name = _study_section_name(stage)
     section = config.section(section_name)
     simulation_traces = _load_traces(config, stage)
@@ -536,7 +595,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
     run_dir.mkdir(parents=True, exist_ok=True)
     _study_manifest(config, stage, seed, space, run_dir, basin_id, initial_mean,
                     fixed_values)
-    objective_version = (HYPER_OBJECTIVE_VERSION if stage in {"passive", "hyper"}
+    objective_version = (HYPER_OBJECTIVE_VERSION if stage in HYPER_STAGES
                          else "subthreshold-v1" if stage == SUBTHRESHOLD_STAGE
                          else "depolarizing-v1")
     bounds_signature = tuple(
@@ -545,7 +604,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
     )
     fixed_signature = tuple(sorted(
         (key, float(value)) for key, value in (fixed_values or {}).items()
-        if key in ALL_KEYS and key not in space.keys
+        if key in CATALOG_KEYS and key not in space.keys
     ))
     compatibility = (f"{config.hash()}:{stage}:{seed}:{basin_id}:{space.keys}:"
                      f"{bounds_signature}:{fixed_signature}:"
@@ -667,7 +726,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
               "complete_physical_by_name": complete_physical_by_name,
               "details": best[2], "generation": optimizer.state.generation}
     _write_json(run_dir / "best_parameters.json", {
-        "keys": list(space.keys), "complete_keys": list(ALL_KEYS), **result
+        "keys": list(space.keys), "complete_keys": list(CATALOG_KEYS), **result
     })
     return result
 
@@ -849,26 +908,95 @@ def _seeded_initial(mean: np.ndarray, seed: int, salt: int) -> np.ndarray:
 
 
 def run_depolarizing_two_stage(config: RunConfig, output_root: Path) -> None:
-    """Fit the depolarizing traces in two stages, without hyper or basin files.
+    """Fit the depolarizing traces in two stages after a hyperpolarizing calibration.
 
-    Stage A (``depol_sub``) removes every sodium conductance and fits the
+    Stage 0 (``depol_hyper``) removes the sodium conductances (all but those
+    kept by ``depol_sub.fixed_sodium``, shared with stage A) and fits the
+    non-sodium parameters to the first configured hyperpolarizing pulse
+    (``data.hyperpolarizing_trace_index``, default 0) with the hyperpolarizing
+    objective. The pulse is the only subthreshold recording, so it fixes input
+    resistance, the membrane time constant and sag. ``depol_hyper.parameter_names``
+    limits the fit to the parameters one pulse can constrain; the others stay
+    at their defaults.
+
+    Stage A (``depol_sub``) uses the same sodium setting and fits the
     remaining non-sodium parameters to the parts of the recording without
     spikes: baseline, onset ramp, plateau between spikes and the decay after
-    the step (see ``subthreshold_objective``).
+    the step (see ``subthreshold_objective``). It starts from the stage-0 best;
+    ``depol_sub.hyper_locked_keys`` (default: passive, Ih and Kir) are searched
+    within ``depol_sub.local_relative_width`` (default ±35%) of their stage-0
+    value so the depolarizing fit cannot undo the hyperpolarizing calibration.
 
     Stage B (``depol_full``) restores sodium and fits every parameter with the
     full depolarizing objective, starting from the best stage-A candidate.
     Parameters calibrated in stage A are searched within
     ``depol_full.local_relative_width`` (default ±35%) of their stage-A value;
     all others, including every sodium parameter, use their global bounds.
+    ``depol_full.start_values`` sets the starting value of any parameter.
     """
+    hyper_section = config.section(HYPER_PRE_STAGE)
     sub_section = config.section(SUBTHRESHOLD_STAGE)
     full_section = config.section(FULL_DEPOL_STAGE)
     sodium = set(SODIUM_CONDUCTANCES) | set(SODIUM_KINETIC)
     sub_keys = [key for key in config.parameters.keys if key not in sodium]
-    sub_space = _configured_space(sub_section, sub_keys)
-    sodium_off = {key: 0.0 for key in SODIUM_CONDUCTANCES}
-    sub_mean = sub_space.normalize([DEFAULTS[key] for key in sub_space.keys])
+    # Sodium conductances during stages 0 and A. Zero unless
+    # ``depol_sub.fixed_sodium`` keeps some on (e.g. Nav1.6 in soma and
+    # dendrites, whose window current the resting state has to balance);
+    # sodium kinetics stay at their defaults.
+    fixed_sodium = dict(sub_section.get("fixed_sodium", {}))
+    unknown_sodium = sorted(set(fixed_sodium) - set(SODIUM_CONDUCTANCES))
+    if unknown_sodium:
+        raise ValueError(f"depol_sub.fixed_sodium accepts only {SODIUM_CONDUCTANCES}: "
+                         f"{unknown_sodium}")
+    sodium_off = {key: float(fixed_sodium.get(key, 0.0)) for key in SODIUM_CONDUCTANCES}
+
+    # One 50 ms pulse constrains the passive cable and the currents open at
+    # rest; every other non-sodium parameter stays at its default here.
+    hyper_keys = [key for key in hyper_section.get("parameter_names", sub_keys)
+                  if key in sub_keys]
+    if not hyper_keys:
+        raise ValueError("depol_hyper.parameter_names selects no non-sodium parameters")
+    hyper_space = _configured_space(hyper_section, hyper_keys)
+    hyper_mean = hyper_space.normalize([DEFAULTS[key] for key in hyper_space.keys])
+    hyper_dir = output_root / "stage0_hyper"
+    hyper_tasks = [
+        (config, HYPER_PRE_STAGE, int(seed), hyper_dir / f"seed_{int(seed):03d}",
+         _seeded_initial(hyper_mean, int(seed), 0x48595052), HYPER_PRE_STAGE,
+         hyper_space, sodium_off)
+        for seed in hyper_section.get("seeds", [0])
+    ]
+    hyper_results = _run_studies(config, hyper_tasks)
+    hyper_index = int(np.argmin([result["loss"] for result in hyper_results]))
+    hyper_best = dict(hyper_results[hyper_index]["physical_by_name"])
+    _write_json(hyper_dir / "best.json", {
+        "best_seed": int(hyper_tasks[hyper_index][2]),
+        "loss": float(hyper_results[hyper_index]["loss"]),
+        "trace": config.hyperpolarizing_trace_names[0],
+        "physical_by_name": hyper_best,
+        "fixed_values": sodium_off,
+    })
+
+    sub_global = _configured_space(sub_section, sub_keys)
+    sub_global_lower = dict(zip(sub_global.keys, sub_global.lower, strict=True))
+    sub_global_upper = dict(zip(sub_global.keys, sub_global.upper, strict=True))
+    locked = [key for key in sub_section.get("hyper_locked_keys", DEFAULT_HYPER_LOCKED_KEYS)
+              if key in sub_global_lower and key in hyper_best]
+    hyper_centers = {key: float(np.clip(hyper_best[key], sub_global_lower[key],
+                                        sub_global_upper[key]))
+                     for key in locked}
+    locked_lower, locked_upper = local_relative_bounds(
+        hyper_centers, locked,
+        relative_width=float(sub_section.get("local_relative_width", 0.35)),
+        lower_limits={key: sub_global_lower[key] for key in locked},
+        upper_limits={key: sub_global_upper[key] for key in locked},
+    )
+    sub_space = _configured_space(sub_section, sub_keys, lower_overrides=locked_lower,
+                                  upper_overrides=locked_upper)
+    sub_start = dict(DEFAULTS)
+    sub_start.update({key: float(np.clip(hyper_best[key], sub_global_lower[key],
+                                         sub_global_upper[key]))
+                      for key in sub_keys if key in hyper_best})
+    sub_mean = sub_space.normalize([sub_start[key] for key in sub_space.keys])
     sub_dir = output_root / "stageA_subthreshold"
     sub_tasks = [
         (config, SUBTHRESHOLD_STAGE, int(seed), sub_dir / f"seed_{int(seed):03d}",
@@ -903,6 +1031,12 @@ def run_depolarizing_two_stage(config: RunConfig, output_root: Path) -> None:
                                    lower_overrides=local_lower, upper_overrides=local_upper)
     start = dict(DEFAULTS)
     start.update(centers)
+    # Optional starting point for parameters stage A never saw (e.g. na12).
+    start_values = dict(full_section.get("start_values", {}))
+    unknown_start = sorted(set(start_values) - set(full_space.keys))
+    if unknown_start:
+        raise ValueError(f"depol_full.start_values has unknown parameters: {unknown_start}")
+    start.update({key: float(value) for key, value in start_values.items()})
     full_mean = full_space.normalize([start[key] for key in full_space.keys])
     full_dir = output_root / "stageB_full"
     full_tasks = [

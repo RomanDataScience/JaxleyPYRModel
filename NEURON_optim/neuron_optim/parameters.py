@@ -23,6 +23,8 @@ DEFAULTS: dict[str, float] = {
     "SlopeRm": 13.8656,
     "SlopeRa": 7.76766,
     "soma_hbar": 0.00003,
+    # Multiplies Ih in the soma only (basal/apical Ih follow soma_hbar).
+    "soma_h_scale": 1.0,
     "KirGbar": 0.00020307 * 5.0,
     "Epas": -71.9879,
     "CmSoma": 1.0,
@@ -113,6 +115,7 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "SpineFactorBasal": (1.0, 6.0),
     "SpineFactorTuft": (1.0, 6.0),
     "soma_hbar": (0.0, 0.0003),
+    "soma_h_scale": (0.0, 1.0),
     "KirGbar": (0.0, 0.005),
     # Applied as 0.1 * soma_caL at the soma, i.e. up to 1e-3 S/cm2.
     "soma_caL": (0.0, 0.01),
@@ -197,6 +200,10 @@ SODIUM_KINETIC = (
     "na12_shift", "sinfsoma", "slowsoma", "nax_ar2",
 )
 ALL_KEYS = PASSIVE + CONDUCTANCE + GEOMETRY + KINETIC
+# Catalog parameters outside the default fit space: used only when a config
+# includes them or fixes them (``parameters.fixed``).
+OPTIONAL_KEYS = ("soma_h_scale",)
+CATALOG_KEYS = ALL_KEYS + OPTIONAL_KEYS
 
 
 @dataclass(frozen=True)

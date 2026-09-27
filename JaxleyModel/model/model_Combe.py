@@ -80,6 +80,9 @@ class CombeParameters:
     SlopeRm: float = 13.8656
     SlopeRa: float = 7.76766
     soma_hbar: float = 0.00003
+    # Multiplies Ih in the soma only; basal and apical Ih still follow
+    # soma_hbar. 0 removes somatic Ih.
+    soma_h_scale: float = 1.0
     KirGbar: float = 0.00020307 * 5.0
     Epas: float = -71.9879
     CmSoma: float = 1.0
@@ -241,6 +244,7 @@ bounds = {
     "SpineFactorBasal": [1.0, 6.0],
     "SpineFactorTuft": [1.0, 6.0],
     "soma_hbar": [0.0, 0.0003],
+    "soma_h_scale": [0.0, 1.0],
     "KirGbar": [0.0, 0.005],
     "soma_caL": [0.0, 0.0006],
     "soma_car": [0.0, 0.0003],
@@ -884,7 +888,7 @@ def set_soma_channels(cell, p: CombeParameters = COMBE_PARAMS):
         p.kd_deactivation_tau_scale,
     )
     set_on(cell, soma, "Kv2like_gbar", p.gkv2soma)
-    set_on(cell, soma, "h_gbar", p.soma_hbar)
+    set_on(cell, soma, "h_gbar", p.soma_hbar * p.soma_h_scale)
     set_on(cell, soma, "h_K", 8.8)
     set_on(cell, soma, "h_vhalf", -82.0)
     set_on(cell, soma, "h_tau_scale", p.h_tau_scale)
@@ -1041,7 +1045,7 @@ RULE_UPDATE_MODE = "rule_based_final_centers"
 NEURON_UPDATE_MODE = "neuron_gold_standard_final_centers"
 SUPPORTED_FIT_PARAMETER_KEYS = frozenset(
     (*CONDUCTANCE_PARAMETER_KEYS, *PASSIVE_PARAMETER_KEYS, *KINETIC_PARAMETER_KEYS,
-     "AxonHillockTaper", "AxonProximalRadiusScale")
+     "AxonHillockTaper", "AxonProximalRadiusScale", "soma_h_scale")
 )
 
 
@@ -1311,7 +1315,8 @@ def _conductance_fit_profiles(cell, p, update_mode):
             _fit_profile(cell.soma, "na12_gbar", p["gna12"], "gna12"),
             _fit_profile(cell.soma, "kd_gbar", p["gkdrsoma"], "gkdrsoma"),
             _fit_profile(cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"),
-            _fit_profile(cell.soma, "h_gbar", p["soma_hbar"], "soma_hbar"),
+            _fit_profile(cell.soma, "h_gbar", p["soma_hbar"] * p["soma_h_scale"],
+                         "soma_hbar", "soma_h_scale"),
             _fit_profile(cell.soma, "kap_gkabar", p["soma_kap"], "soma_kap"),
             _fit_profile(cell.soma, "km_gbar", p["soma_km"], "soma_km"),
             _fit_profile(cell.soma, "cal_gcalbar", 0.1 * p["soma_caL"], "soma_caL"),
@@ -1378,7 +1383,8 @@ def _conductance_fit_profiles(cell, p, update_mode):
         _fit_profile(
             cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"
         ),
-        _fit_profile(cell.soma, "h_gbar", p["soma_hbar"], "soma_hbar"),
+        _fit_profile(cell.soma, "h_gbar", p["soma_hbar"] * p["soma_h_scale"],
+                     "soma_hbar", "soma_h_scale"),
         _fit_profile(cell.soma, "kap_gkabar", p["soma_kap"], "soma_kap"),
         _fit_profile(cell.soma, "km_gbar", p["soma_km"], "soma_km"),
         _fit_profile(
