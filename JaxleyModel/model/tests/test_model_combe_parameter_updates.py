@@ -192,7 +192,8 @@ def test_reference_values_are_bitwise_identity(hoc_cell):
     updates = set_fitted_parameters(hoc_cell, keys, values)
 
     assert updates
-    assert "na16a_dist" not in {update["key"] for update in updates}
+    # sinfsoma (somatic Nav16 slow-inactivation extent) is a fitted parameter.
+    assert "na16a_dist" in {update["key"] for update in updates}
     assert "na16a_C1O1v2" in {update["key"] for update in updates}
     for update in updates:
         # The regular Nav16 window parameters intentionally replace the old
