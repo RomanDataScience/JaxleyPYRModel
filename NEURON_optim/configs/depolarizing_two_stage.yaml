@@ -128,8 +128,8 @@ stage2:
 # resistance, membrane tau and sag.
 depol_hyper:
   seeds: [0]
-  generations: 30
-  population_size: 12
+  generations: 20
+  population_size: 8
   # Passive cable plus the currents open at rest; other non-sodium parameters
   # stay at their defaults in this stage.
   parameter_names: [RmSoma, RaSoma, RmTuft, RaTuft, DistHalfRm, DistHalfRa, SlopeRm, SlopeRa, Epas, CmSoma, CmSomaOnly, SpineFactorBasal, SpineFactorTuft, soma_hbar, h_tau_scale, KirGbar, soma_kap, soma_kad, basal_kap, soma_km]
