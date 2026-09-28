@@ -907,62 +907,54 @@ def _seeded_initial(mean: np.ndarray, seed: int, salt: int) -> np.ndarray:
     return np.clip(mean + rng.uniform(-0.15, 0.15, size=mean.size), 0.0, 1.0)
 
 
-def run_depolarizing_two_stage(config: RunConfig, output_root: Path) -> None:
-    """Fit the depolarizing traces in two stages after a hyperpolarizing calibration.
+HYPER_FULL_PIPELINE = "hyper_full"
 
-    Stage 0 (``depol_hyper``) removes the sodium conductances (all but those
-    kept by ``depol_sub.fixed_sodium``, shared with stage A) and fits the
-    non-sodium parameters to the first configured hyperpolarizing pulse
-    (``data.hyperpolarizing_trace_index``, default 0) with the hyperpolarizing
-    objective. The pulse is the only subthreshold recording, so it fixes input
-    resistance, the membrane time constant and sag. ``depol_hyper.parameter_names``
-    limits the fit to the parameters one pulse can constrain; the others stay
-    at their defaults.
 
-    Stage A (``depol_sub``) uses the same sodium setting and fits the
-    remaining non-sodium parameters to the parts of the recording without
-    spikes: baseline, onset ramp, plateau between spikes and the decay after
-    the step (see ``subthreshold_objective``). It starts from the stage-0 best;
-    ``depol_sub.hyper_locked_keys`` (default: passive, Ih and Kir) are searched
-    within ``depol_sub.local_relative_width`` (default ±35%) of their stage-0
-    value so the depolarizing fit cannot undo the hyperpolarizing calibration.
+def _fixed_sodium(config: RunConfig) -> dict[str, float]:
+    """Sodium conductances held while the sodium-reduced stages run.
 
-    Stage B (``depol_full``) restores sodium and fits every parameter with the
-    full depolarizing objective, starting from the best stage-A candidate.
-    Parameters calibrated in stage A are searched within
-    ``depol_full.local_relative_width`` (default ±35%) of their stage-A value;
-    all others, including every sodium parameter, use their global bounds.
-    ``depol_full.start_values`` sets the starting value of any parameter.
+    Read from ``depol_hyper.fixed_sodium``, falling back to
+    ``depol_sub.fixed_sodium``; unlisted conductances are 0 and sodium
+    kinetics stay at their defaults.
     """
-    hyper_section = config.section(HYPER_PRE_STAGE)
-    sub_section = config.section(SUBTHRESHOLD_STAGE)
-    full_section = config.section(FULL_DEPOL_STAGE)
-    sodium = set(SODIUM_CONDUCTANCES) | set(SODIUM_KINETIC)
-    sub_keys = [key for key in config.parameters.keys if key not in sodium]
-    # Sodium conductances during stages 0 and A. Zero unless
-    # ``depol_sub.fixed_sodium`` keeps some on (e.g. Nav1.6 in soma and
-    # dendrites, whose window current the resting state has to balance);
-    # sodium kinetics stay at their defaults.
-    fixed_sodium = dict(sub_section.get("fixed_sodium", {}))
-    unknown_sodium = sorted(set(fixed_sodium) - set(SODIUM_CONDUCTANCES))
-    if unknown_sodium:
-        raise ValueError(f"depol_sub.fixed_sodium accepts only {SODIUM_CONDUCTANCES}: "
-                         f"{unknown_sodium}")
-    sodium_off = {key: float(fixed_sodium.get(key, 0.0)) for key in SODIUM_CONDUCTANCES}
+    fixed = config.section(HYPER_PRE_STAGE).get("fixed_sodium")
+    source = HYPER_PRE_STAGE
+    if fixed is None:
+        fixed = config.section(SUBTHRESHOLD_STAGE).get("fixed_sodium", {})
+        source = SUBTHRESHOLD_STAGE
+    fixed = dict(fixed or {})
+    unknown = sorted(set(fixed) - set(SODIUM_CONDUCTANCES))
+    if unknown:
+        raise ValueError(f"{source}.fixed_sodium accepts only {SODIUM_CONDUCTANCES}: {unknown}")
+    return {key: float(fixed.get(key, 0.0)) for key in SODIUM_CONDUCTANCES}
 
+
+def _run_hyper_pre_stage(config: RunConfig, output_root: Path,
+                         sodium_values: dict[str, float],
+                         candidate_keys: list[str]) -> tuple[dict[str, float], ParameterSpace]:
+    """Stage 0: fit the first hyperpolarizing pulse; returns (best, space)."""
+    hyper_section = config.section(HYPER_PRE_STAGE)
     # One 50 ms pulse constrains the passive cable and the currents open at
-    # rest; every other non-sodium parameter stays at its default here.
-    hyper_keys = [key for key in hyper_section.get("parameter_names", sub_keys)
-                  if key in sub_keys]
+    # rest; every other parameter stays at its default here.
+    hyper_keys = [key for key in hyper_section.get("parameter_names", candidate_keys)
+                  if key in candidate_keys]
     if not hyper_keys:
         raise ValueError("depol_hyper.parameter_names selects no non-sodium parameters")
     hyper_space = _configured_space(hyper_section, hyper_keys)
-    hyper_mean = hyper_space.normalize([DEFAULTS[key] for key in hyper_space.keys])
+    # Starts from the defaults, overridden by ``depol_hyper.start_values``
+    # (needed when a tightened bound excludes the default).
+    hyper_start = dict(DEFAULTS)
+    start_values = dict(hyper_section.get("start_values", {}))
+    unknown_start = sorted(set(start_values) - set(hyper_space.keys))
+    if unknown_start:
+        raise ValueError(f"depol_hyper.start_values has unknown parameters: {unknown_start}")
+    hyper_start.update({key: float(value) for key, value in start_values.items()})
+    hyper_mean = hyper_space.normalize([hyper_start[key] for key in hyper_space.keys])
     hyper_dir = output_root / "stage0_hyper"
     hyper_tasks = [
         (config, HYPER_PRE_STAGE, int(seed), hyper_dir / f"seed_{int(seed):03d}",
          _seeded_initial(hyper_mean, int(seed), 0x48595052), HYPER_PRE_STAGE,
-         hyper_space, sodium_off)
+         hyper_space, sodium_values)
         for seed in hyper_section.get("seeds", [0])
     ]
     hyper_results = _run_studies(config, hyper_tasks)
@@ -973,8 +965,83 @@ def run_depolarizing_two_stage(config: RunConfig, output_root: Path) -> None:
         "loss": float(hyper_results[hyper_index]["loss"]),
         "trace": config.hyperpolarizing_trace_names[0],
         "physical_by_name": hyper_best,
-        "fixed_values": sodium_off,
+        "fixed_values": sodium_values,
     })
+    return hyper_best, hyper_space
+
+
+def _run_full_stage(config: RunConfig, output_root: Path,
+                    previous_best: dict[str, float], calibrated_keys) -> None:
+    """Stage B: every parameter, full depolarizing objective.
+
+    ``calibrated_keys`` are searched within ``depol_full.local_relative_width``
+    of their ``previous_best`` value; all others, including every sodium
+    parameter, use their global bounds. The search starts from
+    ``previous_best``, then ``depol_full.start_values``, then the defaults.
+    """
+    full_section = config.section(FULL_DEPOL_STAGE)
+    full_keys = list(config.parameters.keys)
+    width = float(full_section.get("local_relative_width", 0.35))
+    global_space = _configured_space(full_section, full_keys)
+    global_lower = dict(zip(global_space.keys, global_space.lower, strict=True))
+    global_upper = dict(zip(global_space.keys, global_space.upper, strict=True))
+    calibrated = [key for key in calibrated_keys if key in global_lower]
+    centers = {key: float(np.clip(previous_best[key], global_lower[key], global_upper[key]))
+               for key in calibrated}
+    local_lower, local_upper = local_relative_bounds(
+        centers, calibrated, relative_width=width,
+        lower_limits={key: global_lower[key] for key in calibrated},
+        upper_limits={key: global_upper[key] for key in calibrated},
+    )
+    full_space = _configured_space(full_section, full_keys,
+                                   lower_overrides=local_lower, upper_overrides=local_upper)
+    start = dict(DEFAULTS)
+    start.update(centers)
+    # Optional starting point for parameters the earlier stages never saw (e.g. na12).
+    start_values = dict(full_section.get("start_values", {}))
+    unknown_start = sorted(set(start_values) - set(full_space.keys))
+    if unknown_start:
+        raise ValueError(f"depol_full.start_values has unknown parameters: {unknown_start}")
+    start.update({key: float(value) for key, value in start_values.items()})
+    full_mean = full_space.normalize([start[key] for key in full_space.keys])
+    full_dir = output_root / "stageB_full"
+    full_tasks = [
+        (config, FULL_DEPOL_STAGE, int(seed), full_dir / f"seed_{int(seed):03d}",
+         _seeded_initial(full_mean, int(seed), 0x46554C4C), FULL_DEPOL_STAGE,
+         full_space, None)
+        for seed in full_section.get("seeds", [0])
+    ]
+    _run_studies(config, full_tasks)
+
+
+def run_depolarizing_two_stage(config: RunConfig, output_root: Path) -> None:
+    """Fit the depolarizing traces in two stages after a hyperpolarizing calibration.
+
+    Stage 0 (``depol_hyper``) holds sodium at ``fixed_sodium`` (see
+    ``_fixed_sodium``) and fits the non-sodium parameters to the first
+    configured hyperpolarizing pulse (``data.hyperpolarizing_trace_index``,
+    default 0) with the hyperpolarizing objective. The pulse is the only
+    subthreshold recording, so it fixes input resistance, the membrane time
+    constant and sag. ``depol_hyper.parameter_names`` limits the fit to the
+    parameters one pulse can constrain; the others stay at their defaults.
+
+    Stage A (``depol_sub``) uses the same sodium setting and fits the
+    remaining non-sodium parameters to the parts of the recording without
+    spikes: baseline, onset ramp, plateau between spikes and the decay after
+    the step (see ``subthreshold_objective``). It starts from the stage-0 best;
+    ``depol_sub.hyper_locked_keys`` (default: passive, Ih and Kir) are searched
+    within ``depol_sub.local_relative_width`` (default ±35%) of their stage-0
+    value so the depolarizing fit cannot undo the hyperpolarizing calibration.
+
+    Stage B (``depol_full``) restores sodium and fits every parameter with the
+    full depolarizing objective, starting from the best stage-A candidate
+    (see ``_run_full_stage``); the stage-A parameters are held locally.
+    """
+    sub_section = config.section(SUBTHRESHOLD_STAGE)
+    sodium = set(SODIUM_CONDUCTANCES) | set(SODIUM_KINETIC)
+    sub_keys = [key for key in config.parameters.keys if key not in sodium]
+    sodium_off = _fixed_sodium(config)
+    hyper_best, _hyper_space = _run_hyper_pre_stage(config, output_root, sodium_off, sub_keys)
 
     sub_global = _configured_space(sub_section, sub_keys)
     sub_global_lower = dict(zip(sub_global.keys, sub_global.lower, strict=True))
@@ -1013,39 +1080,23 @@ def run_depolarizing_two_stage(config: RunConfig, output_root: Path) -> None:
         "physical_by_name": sub_best,
         "fixed_values": sodium_off,
     })
+    _run_full_stage(config, output_root, sub_best, sub_space.keys)
 
-    full_keys = list(config.parameters.keys)
-    width = float(full_section.get("local_relative_width", 0.35))
-    global_space = _configured_space(full_section, full_keys)
-    global_lower = dict(zip(global_space.keys, global_space.lower, strict=True))
-    global_upper = dict(zip(global_space.keys, global_space.upper, strict=True))
-    calibrated = [key for key in sub_space.keys if key in global_lower]
-    centers = {key: float(np.clip(sub_best[key], global_lower[key], global_upper[key]))
-               for key in calibrated}
-    local_lower, local_upper = local_relative_bounds(
-        centers, calibrated, relative_width=width,
-        lower_limits={key: global_lower[key] for key in calibrated},
-        upper_limits={key: global_upper[key] for key in calibrated},
-    )
-    full_space = _configured_space(full_section, full_keys,
-                                   lower_overrides=local_lower, upper_overrides=local_upper)
-    start = dict(DEFAULTS)
-    start.update(centers)
-    # Optional starting point for parameters stage A never saw (e.g. na12).
-    start_values = dict(full_section.get("start_values", {}))
-    unknown_start = sorted(set(start_values) - set(full_space.keys))
-    if unknown_start:
-        raise ValueError(f"depol_full.start_values has unknown parameters: {unknown_start}")
-    start.update({key: float(value) for key, value in start_values.items()})
-    full_mean = full_space.normalize([start[key] for key in full_space.keys])
-    full_dir = output_root / "stageB_full"
-    full_tasks = [
-        (config, FULL_DEPOL_STAGE, int(seed), full_dir / f"seed_{int(seed):03d}",
-         _seeded_initial(full_mean, int(seed), 0x46554C4C), FULL_DEPOL_STAGE,
-         full_space, None)
-        for seed in full_section.get("seeds", [0])
-    ]
-    _run_studies(config, full_tasks)
+
+def run_hyper_full(config: RunConfig, output_root: Path) -> None:
+    """Stage 0 (hyperpolarizing pulse), then stage B directly, without stage A.
+
+    Stage 0 is ``_run_hyper_pre_stage`` with sodium at ``depol_hyper.fixed_sodium``.
+    Stage B (``_run_full_stage``) starts from the stage-0 best: the stage-0
+    parameters are searched within ``depol_full.local_relative_width`` of
+    their stage-0 value, and every other parameter, sodium included, uses its
+    global bounds and starts from ``depol_full.start_values`` or its default.
+    """
+    sodium = set(SODIUM_CONDUCTANCES) | set(SODIUM_KINETIC)
+    candidate_keys = [key for key in config.parameters.keys if key not in sodium]
+    hyper_best, hyper_space = _run_hyper_pre_stage(
+        config, output_root, _fixed_sodium(config), candidate_keys)
+    _run_full_stage(config, output_root, hyper_best, hyper_space.keys)
 
 
 def run_pipeline(config: RunConfig, output_root: Path) -> None:
@@ -1055,6 +1106,9 @@ def run_pipeline(config: RunConfig, output_root: Path) -> None:
         return
     if pipeline == "depolarizing_two_stage":
         run_depolarizing_two_stage(config, output_root)
+        return
+    if pipeline == HYPER_FULL_PIPELINE:
+        run_hyper_full(config, output_root)
         return
     run_hyper_stage(config, output_root)
     run_depolarizing_stage(config, output_root)

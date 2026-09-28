@@ -13,7 +13,7 @@ import yaml
 from .parameters import BOUNDS, CATALOG_KEYS, make_parameter_space
 
 
-PIPELINES = {"full", "stage3_depolarizing_only", "depolarizing_two_stage"}
+PIPELINES = {"full", "stage3_depolarizing_only", "depolarizing_two_stage", "hyper_full"}
 
 DEFAULT_STAGE2_GLOBAL_BOUND_PARAMETERS = (
     "soma_km", "soma_kca", "mykca_init", "soma_caL", "soma_hbar",
@@ -203,6 +203,14 @@ class RunConfig:
                         errors.append(f"{name}.local_relative_width must be > 0")
                 except (TypeError, ValueError):
                     errors.append(f"{name}.local_relative_width must be a number")
+        elif pipeline == "hyper_full":
+            # Stage 0 (depol_hyper) then stage B (depol_full, stage2 objective).
+            stages = ["stage2", "depol_hyper", "depol_full"]
+            try:
+                if not float(self.section("depol_full").get("local_relative_width", 0.35)) > 0.0:
+                    errors.append("depol_full.local_relative_width must be > 0")
+            except (TypeError, ValueError):
+                errors.append("depol_full.local_relative_width must be a number")
         for name in stages:
             section = self.section(name)
             if int(section.get("generations", 0)) < 1:

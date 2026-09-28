@@ -1,3 +1,5 @@
+# hyper_full pipeline: stage 0 (first hyperpolarizing pulse) -> stage B
+# (full depolarizing fit), no stage A. Stage B starts from the stage-0 best.
 data:
   root: ../../JaxleyModel/Experimental_currentClamp_Analysis/Segmented_Traces
   cell: m20240527cd
@@ -23,7 +25,7 @@ runtime:
   environment: Jaxley
   backend: jaxley
   d_lambda: 0.1
-  pipeline: depolarizing_two_stage
+  pipeline: hyper_full
   parallel_workers: 8
   simulation_pre_ms: 500.0
   simulation_post_ms: 600.0
@@ -79,8 +81,8 @@ plotting:
 # Depolarizing objective settings, shared by stage B (depol_full).
 stage2:
   seeds: [0]
-  generations: 10
-  population_size: 8
+  generations: 20
+  population_size: 16
   sigma0: 0.15
   parent_fraction: 0.5
   sigma_trajectory_mV: 2.0
@@ -125,14 +127,18 @@ stage2:
   lower_bounds: *lower_bounds
   upper_bounds: *upper_bounds
 
-# Stage 0: sodium as in depol_sub.fixed_sodium; the parameters listed below
-# are fitted to the first hyperpolarizing pulse with the hyperpolarizing
-# objective (ΔV waveform plus absolute voltage offset). Fixes input
-# resistance, membrane tau and sag.
+# Stage 0: the parameters listed below are fitted to the first
+# hyperpolarizing pulse with the hyperpolarizing objective (ΔV waveform plus
+# absolute voltage offset). Fixes input resistance, membrane tau and sag.
 depol_hyper:
   seeds: [0]
   generations: 20
-  population_size: 8
+  population_size: 16
+  # Sodium conductances held during stage 0 (others are 0). Nav1.6 at its
+  # defaults in soma and dendrites puts its resting window current in place
+  # while the resting state is fitted. Axonal Nav and na12 stay off, and with
+  # them off Nav1.6 alone fires no spikes.
+  fixed_sodium: {gna: 0.08, gnadend: 0.0225}
   # Passive cable plus the currents open at rest; other non-sodium parameters
   # stay at their defaults in this stage.
   # Starting values for parameters whose default lies outside the bounds
@@ -160,44 +166,16 @@ depol_hyper:
   max_spike_width_ms: 10.0
   hyper_spike_penalty: 10000.0
 
-# Stage A: sodium conductances fixed (depol_sub.fixed_sodium, others 0);
-# sodium kinetics left out of the fit. Scores the non-spiking parts of the
-# recording (baseline, onset ramp, plateau between spikes, decay after the
-# step); traces weighted equally.
-depol_sub:
-  # Sodium conductances held during stages 0 and A (others are 0). Nav1.6 at
-  # its defaults in soma and dendrites puts its resting window current in
-  # place while the resting state is fitted; without it the fitted cell sat
-  # at -61 mV with sodium off but at about -40 mV once Nav1.6 was restored.
-  # Axonal Nav and na12 stay off, and with them off Nav1.6 alone fires no spikes.
-  fixed_sodium: {gna: 0.08, gnadend: 0.0225}
-  lower_bounds: *lower_bounds
-  upper_bounds: *upper_bounds
-  seeds: [0]
-  generations: 10
-  population_size: 8
-  sigma0: 0.15
-  parent_fraction: 0.5
-  sigma_mV: 2.0
-  offset_huber_delta: 3.0
-  weights: {baseline: 1.0, onset: 2.0, plateau: 4.0, recovery: 2.0}
-  spike_exclusion_pre_ms: 3.0     # cut from each recorded spike's threshold...
-  spike_exclusion_post_ms: 8.0    # ...to this long after its peak
-  simulated_spike_penalty: 10.0
-  # Starts from the stage-0 best. These keys stay within ±local_relative_width
-  # of their stage-0 value; the rest use global bounds.
-  hyper_locked_keys: [RmSoma, RaSoma, RmTuft, RaTuft, DistHalfRm, DistHalfRa, SlopeRm, SlopeRa, Epas, CmSoma, CmSomaOnly, SpineFactorBasal, SpineFactorTuft, soma_hbar, h_tau_scale, KirGbar]
-  local_relative_width: 0.35
-
 # Stage B: sodium restored, every parameter fitted with the stage2 objective,
-# starting from stage A's best. Stage-A parameters are searched within
-# ±local_relative_width of their stage-A value; the rest use global bounds.
+# starting from stage 0's best (no stage A in this pipeline). Stage-0
+# parameters are searched within ±local_relative_width of their stage-0
+# value; the rest use global bounds.
 depol_full:
   lower_bounds: *lower_bounds
   upper_bounds: *upper_bounds
   seeds: [0]
-  generations: 10
-  population_size: 8
+  generations: 20
+  population_size: 16
   sigma0: 0.15
   parent_fraction: 0.5
   local_relative_width: 0.35

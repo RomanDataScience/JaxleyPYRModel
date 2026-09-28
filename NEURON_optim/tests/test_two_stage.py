@@ -184,3 +184,94 @@ def test_run_study_applies_config_fixed_values(tmp_path, monkeypatch):
         stages.run_study(config, stage="depol_full", seed=0, run_dir=tmp_path / "s",
                          fixed_values={"gna": 0.0})
     assert seen == {"soma_h_scale": 0.0, "gna": 0.0}
+
+
+def test_hyper_full_pipeline_runs_stage0_then_full_from_stage0_best(tmp_path, monkeypatch):
+    config = RunConfig({
+        "data": {},
+        "runtime": {"pipeline": "hyper_full"},
+        "depol_hyper": {"seeds": [0], "parameter_names": ["RmSoma", "soma_kap"],
+                        "fixed_sodium": {"gna": 0.08}},
+        "depol_full": {"seeds": [0], "local_relative_width": 0.35,
+                       "start_values": {"gna12": 0.06}},
+    }, Path("config.yaml"))
+    calls = []
+
+    def fake_run_studies(_config, tasks):
+        calls.append(tasks)
+        if tasks[0][1] == stages.HYPER_PRE_STAGE:
+            return [{"loss": 1.0, "physical_by_name": {"RmSoma": 100_000.0, "soma_kap": 0.02}}]
+        return [{"loss": 0.5, "physical_by_name": {}}]
+
+    monkeypatch.setattr(stages, "_run_studies", fake_run_studies)
+    stages.run_pipeline(config, tmp_path)
+
+    assert [tasks[0][1] for tasks in calls] == [stages.HYPER_PRE_STAGE, stages.FULL_DEPOL_STAGE]
+    hyper_tasks, full_tasks = calls
+    assert hyper_tasks[0][6].keys == ("RmSoma", "soma_kap")
+    assert hyper_tasks[0][7] == {"gna": 0.08, "gna12": 0.0, "gnaaxon": 0.0, "gnadend": 0.0}
+    assert not (tmp_path / "stageA_subthreshold").exists()
+
+    full_space, full_fixed = full_tasks[0][6], full_tasks[0][7]
+    assert full_fixed is None
+    # Stage-0 parameters held within ±35% of their stage-0 value ...
+    rm = full_space.keys.index("RmSoma")
+    np.testing.assert_allclose([full_space.lower[rm], full_space.upper[rm]], [65_000.0, 135_000.0])
+    kap = full_space.keys.index("soma_kap")
+    np.testing.assert_allclose([full_space.lower[kap], full_space.upper[kap]], [0.013, 0.027])
+    # ... everything else, sodium included, on global bounds.
+    for key in ("gna", "gna12", "gnaaxon", "soma_hbar", "gkdrsoma"):
+        j = full_space.keys.index(key)
+        assert [full_space.lower[j], full_space.upper[j]] == list(BOUNDS[key])
+
+
+def test_fixed_sodium_prefers_depol_hyper_then_depol_sub():
+    both = RunConfig({"depol_hyper": {"fixed_sodium": {"gna": 0.05}},
+                      "depol_sub": {"fixed_sodium": {"gna": 0.08}}}, Path("c.yaml"))
+    assert stages._fixed_sodium(both)["gna"] == 0.05
+    sub_only = RunConfig({"depol_sub": {"fixed_sodium": {"gnadend": 0.02}}}, Path("c.yaml"))
+    assert stages._fixed_sodium(sub_only) == {"gna": 0.0, "gna12": 0.0, "gnaaxon": 0.0,
+                                              "gnadend": 0.02}
+    assert set(stages._fixed_sodium(RunConfig({}, Path("c.yaml"))).values()) == {0.0}
+
+
+def test_hyper_full_config_needs_only_its_sections(tmp_path):
+    section = {"seeds": [0], "generations": 1, "population_size": 4}
+    config = RunConfig({
+        "data": {"root": str(tmp_path)},
+        "runtime": {"pipeline": "hyper_full"},
+        "stage2": dict(section), "depol_hyper": dict(section), "depol_full": dict(section),
+    }, tmp_path / "config.yaml")
+    assert config.validate() == []
+    del config.raw["depol_hyper"]
+    assert "depol_hyper.generations must be >= 1" in config.validate()
+
+
+def test_hyper_stage_start_values_and_tightened_bounds(tmp_path, monkeypatch):
+    config = RunConfig({
+        "data": {},
+        "depol_hyper": {"seeds": [0], "parameter_names": ["soma_hbar", "RmSoma"],
+                        "upper_bounds": {"soma_hbar": 6e-6},
+                        "start_values": {"soma_hbar": 3e-6}},
+        "depol_full": {"seeds": [0]},
+    }, Path("config.yaml"))
+    calls = []
+
+    def fake_run_studies(_config, tasks):
+        calls.append(tasks)
+        return [{"loss": 1.0, "physical_by_name": {"soma_hbar": 3e-6, "RmSoma": 1e5}}]
+
+    monkeypatch.setattr(stages, "_run_studies", fake_run_studies)
+    stages.run_hyper_full(config, tmp_path)
+    space, mean = calls[0][0][6], calls[0][0][4]
+    j = space.keys.index("soma_hbar")
+    assert space.upper[j] == 6e-6
+    # Seeded start is 3e-6 perturbed by at most 0.15 of the (0, 6e-6) range.
+    assert abs(space.physical(mean)[j] - 3e-6) <= 0.15 * 6e-6 + 1e-18
+
+    bad = RunConfig({"data": {}, "depol_hyper": {"parameter_names": ["RmSoma"],
+                                                 "start_values": {"soma_hbar": 3e-6}}},
+                    Path("config.yaml"))
+    import pytest
+    with pytest.raises(ValueError, match="start_values"):
+        stages.run_hyper_full(bad, tmp_path / "bad")
