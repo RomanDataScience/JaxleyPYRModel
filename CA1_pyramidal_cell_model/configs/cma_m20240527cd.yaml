@@ -1,0 +1,40 @@
+# CMA-ES fit of the CA1 pyramidal cell model: four depolarizing steps plus one
+# hyperpolarizing pulse of cell m20240527cd, scored with the joint
+# objective (fitting/objective.py).
+data_root: ../Experimental_currentClamp_Analysis/Segmented_Traces
+cell: m20240527cd
+depolarizing_traces: [v75ctrl, v76ctrl, v77ctrl, v78ctrl]
+hyperpolarizing_trace: v75ctrl
+hyper_weight: 1.0
+output_dir: ../runs/cma_m20240527cd
+
+objective:
+  firing_rate_weight: 1.0
+  firing_rate_scale_hz: 10.0
+
+# Each trace is preceded by prerun_ms at its first recorded current so the
+# calcium pools and slow gates settle. holding_nA is added to the recorded
+# current; leave it at 0 and let e_Leak_pyr set the resting potential.
+simulation:
+  prerun_ms: 500.0
+  v_init: -70.0
+  holding_nA: 0.0
+
+optimizer:
+  seed: 20261001
+  generations: 10
+  population_size: 30
+  workers: 10
+  sigma0: 0.15
+  plot_every: 1
+
+plotting:
+  top_k: 6
+  dpi: 110
+
+# Empty include = the 21 loader parameters (see ca1_parameters.py). The
+# optional keys cm and Ra can be added to include, or held with fixed.
+parameters:
+  include: []
+  exclude: []
+  fixed: {}

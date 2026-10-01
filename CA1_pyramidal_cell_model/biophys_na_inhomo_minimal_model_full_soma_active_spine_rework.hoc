@@ -1,0 +1,330 @@
+//Channels of the cell, distributions, default parameters
+
+proc biophys_def (){
+	biophys()
+	biophys_inhomo()	
+}
+
+
+
+H_ratio=8.29952157220323
+KA_ratio= 3.90728747148432
+//KA_ratio= 10
+CaL_ratio=2.27045971925186
+//K_AHP_ratio=0.0169566424632
+CaT_ratio = 1
+
+celsius=33
+
+proc biophys() {
+  forsec all {
+	  
+	  	insert cacum
+      depth_cacum = (diam/2)*1000
+      tau_cacum = 1.33
+      cai0_cacum = 5e-05
+
+       /*insert cad_mod_for_ltp 															// calcium channel
+    	    taur_cad_mod_for_ltp=14 														// changed parameters
+    	    depth_cad_mod_for_ltp=diam/2*/
+	  
+	  	insert H_CA1pyr_prox
+     gmax_H_CA1pyr_prox = 0.00002*H_ratio
+
+    insert Leak_pyr
+      gmax_Leak_pyr = 6.91972195033588E-06
+      e_Leak_pyr = -58.3118836167933
+    Ra = 100
+    cm = 1
+
+  }
+  forsec all_dendrites {
+    insert Na_BG_dend
+      gmax_Na_BG_dend = 0.01
+      X_v0_Na_BG_dend = -30
+	  Y_v0_Na_BG_dend = X_v0_Na_BG_dend - 12.111737608308
+
+    insert K_DRS4_params_voltage_dep
+      gmax_K_DRS4_params_voltage_dep = 0.025452754905018
+      X_v0_K_DRS4_params_voltage_dep=0
+	insert H_CA1pyr_prox
+      gmax_H_CA1pyr_prox = 3.5e-05
+	insert H_CA1pyr_dist
+      gmax_H_CA1pyr_dist = 0.000456
+   insert K_A_dist
+      gmax_K_A_dist = 0.009
+	 insert K_A_prox
+      gmax_K_A_prox = 0.0035
+	  
+	insert km_q10_2
+     gbar_km_q10_2 = 6.73490403255674E-05
+	  
+	 insert cacum_lpool
+      depth_cacum_lpool = 1
+      tau_cacum_lpool = 1.33
+      cani0_cacum_lpool = 5e-05
+
+	 insert CaL_pool2_ghk
+      pbar_CaL_pool2_ghk = 0.00021*0.2*CaL_ratio
+
+            insert car
+	    pbar_car = 6.07163513299498E-05
+
+      insert sKCa
+       gk_sKCa = 0.000775377166086
+	   
+	  insert kd_params3
+	  gkd_kd_params3= 0.004449691099487
+	  theta_a_kd_params3 = -65
+	  theta_b_kd_params3 = -100
+	  sigma_a_kd_params3 = 10
+	  sigma_b_kd_params3 = -10
+	  tau_a_kd_params3 = 2
+	  tau0_b_kd_params3 = 1 
+
+  }
+  forsec apical_dendrites {
+
+  }
+
+  forsec oblique_dendrites {
+    insert cat3
+
+    pbar_cat3 = 0.000072608 * 0.01 * CaT_ratio
+
+  }
+
+
+forsec trunk {
+    insert cat3
+
+    pbar_cat3 = 0.000024292 * 0.01* CaT_ratio
+
+ }
+
+forsec basal_dendrites {
+    insert cat3
+
+    pbar_cat3 = 0.000069983 * 0.01* CaT_ratio
+
+ }
+
+
+forsec tuft {
+    insert cat3
+
+    pbar_cat3 = 0.000043133 * 0.01* CaT_ratio
+
+ }  
+
+
+       
+  soma {
+    insert Na_BG_soma
+      gmax_Na_BG_soma = 0.090418553543611
+      X_v0_Na_BG_soma = -30
+	  Y_v0_Na_BG_soma = X_v0_Na_BG_soma - 12.111737608308
+    insert K_DRS4_params_voltage_dep
+      gmax_K_DRS4_params_voltage_dep =  0.057606043261744
+      X_v0_K_DRS4_params_voltage_dep=0
+	insert km_q10_2
+      gbar_km_q10_2 = 6.73490403255674E-05
+	  	insert K_A_prox
+    gmax_K_A_prox = 0.0035*KA_ratio
+	
+	  insert kd_params3
+	  gkd_kd_params3= 0.004449691099487
+	  theta_a_kd_params3 = -65
+	  theta_b_kd_params3 = -100
+	  sigma_a_kd_params3 = 10
+	  sigma_b_kd_params3 = -10
+	  tau_a_kd_params3 = 2
+	  tau0_b_kd_params3 = 1 
+	
+	 insert cacum_npool
+      depth_cacum_npool = 1	//10e-10 -nel latszott jelentos valtozas, tul drasztikus????
+      tau_cacum_npool = 1.33
+      cani0_cacum_npool = 5e-05
+
+	 insert CaN_BG_pool2_ghk
+      pbar_CaN_BG_pool2_ghk = 0.018566491932767
+
+	 insert bk_ch_pool
+      gbar_bk_ch_pool = 0.054349192629188
+
+	 insert cacum_lpool
+      depth_cacum_lpool = 1	//10e-10 -nel latszott jelentos valtozas, tul drasztikus????
+      tau_cacum_lpool = 1.33
+      cali0_cacum_lpool = 5e-05
+	  
+	  insert CaL_pool2_ghk
+      pbar_CaL_pool2_ghk = 0.00021*0.2*CaL_ratio
+	  
+	  insert K_AHP3_lpool
+      gmax_K_AHP3_lpool = 0.000404543847092
+
+      insert sKCa
+       gk_sKCa = 0.000775377166086
+
+
+    insert cat3
+
+    pbar_cat3 = 0.000002125 * 0.01* CaT_ratio
+
+  }
+
+  forsec all_axon{
+	insert Na_BG_axon
+      gmax_Na_BG_axon = 0.090418553543611*40
+      X_v0_Na_BG_axon = -33
+	  Y_v0_Na_BG_axon = X_v0_Na_BG_axon - 12.111737608308
+    insert K_DRS4_params_voltage_dep
+      gmax_K_DRS4_params_voltage_dep = 0.666384123836683
+      X_v0_K_DRS4_params_voltage_dep=0
+    insert km_q10_2
+      gbar_km_q10_2 = 0.009874704049136
+	  
+	//insert K_A_prox
+      //gmax_K_A_prox = 0.0035*KA_ratio
+
+	  insert kd_params3
+	  gkd_kd_params3= 0.004449691099487
+	  theta_a_kd_params3 = -65
+	  theta_b_kd_params3 = -100
+	  sigma_a_kd_params3 = 10
+	  sigma_b_kd_params3 = -10
+	  tau_a_kd_params3 = 2
+	  tau0_b_kd_params3 = 1 
+	  
+  }
+}
+
+objref all_dendrites_x
+
+proc biophys_inhomo(){
+  // Path Length from root with no translation and no normalization ranges from 20 to 743.939
+    
+  all_dendrites_x = new SubsetDomainIterator(all_dendrites, 0, 0, 0)
+   gmax_H_CA1pyr_prox_all_dendrites_x()
+   gmax_H_CA1pyr_dist_all_dendrites_x()
+  gmax_K_A_prox_all_dendrites_x()
+   gmax_K_A_dist_all_dendrites_x()
+   pbar_CaL_pool2_ghk_all_dendrites_x()
+//   gmax_K_AHP3_lpool_all_dendrites_x()
+   gmax_Na_BG_dend_all_dendrites_x()
+   gk_sKCa_all_dendrites_x()
+ 
+
+}
+
+proc gmax_H_CA1pyr_prox_all_dendrites_x() {local x, p, p0, p1, b, m, tp, td, pp, pd
+  all_dendrites_x.update()
+  p0 = all_dendrites_x.p0  p1 = all_dendrites_x.p1
+  b = 0.00002
+  m = 4e-07
+  tp = 0
+  td = 100
+  pp = 0.00002
+  pd = 0
+  for all_dendrites_x.loop() {
+    x = all_dendrites_x.x  p = all_dendrites_x.p
+    gmax_H_CA1pyr_prox(x) = (H_ratio*b+H_ratio*m*p)*(p>tp)*(p<=td)+H_ratio*pp*(p<=tp)+H_ratio*pd*(p>td)
+  }
+}
+
+proc gmax_H_CA1pyr_dist_all_dendrites_x() {local x, p, p0, p1, b, m, tp, td, pp, pd
+  all_dendrites_x.update()
+  p0 = all_dendrites_x.p0  p1 = all_dendrites_x.p1
+  b = 0.00002
+  m = 4e-07	//meredekseg - linearis osszefugges
+  tp = 100
+  td = 400
+  pp = 0
+  pd = 0.00018
+  for all_dendrites_x.loop() {
+    x = all_dendrites_x.x  p = all_dendrites_x.p
+    gmax_H_CA1pyr_dist(x) = (H_ratio*b+H_ratio*m*p)*(p>tp)*(p<=td)+H_ratio*pp*(p<=tp)+H_ratio*pd*(p>td)	//x a szegmens p az adott tavolsag
+  }
+}
+
+proc gmax_K_A_prox_all_dendrites_x() {local x, p, p0, p1, b, m, tp, td, pp, pd
+  all_dendrites_x.update()
+  p0 = all_dendrites_x.p0  p1 = all_dendrites_x.p1
+  b = 0.0035
+  m = 5.5e-05
+  tp = 0
+  td = 100
+  pp = 0.0035
+  pd = 0
+  for all_dendrites_x.loop() {
+    x = all_dendrites_x.x  p = all_dendrites_x.p
+    gmax_K_A_prox(x) = (KA_ratio*b+KA_ratio*m*p)*(p>tp)*(p<=td)+KA_ratio*pp*(p<=tp)+KA_ratio*pd*(p>td)
+  }
+}
+
+proc gmax_K_A_dist_all_dendrites_x() {local x, p, p0, p1, b, m, tp, td, pp, pd
+  all_dendrites_x.update()
+  p0 = all_dendrites_x.p0  p1 = all_dendrites_x.p1
+  b = 0.0035
+  m = 5.5e-05
+  tp = 100
+  td = 400
+  pp = 0
+  pd = 0.0255
+  for all_dendrites_x.loop() {
+    x = all_dendrites_x.x  p = all_dendrites_x.p
+    gmax_K_A_dist(x) = (KA_ratio*b+KA_ratio*m*p)*(p>tp)*(p<=td)+KA_ratio*pp*(p<=tp)+KA_ratio*pd*(p>td)
+  }
+}
+
+
+proc pbar_CaL_pool2_ghk_all_dendrites_x() {local x, p, p0, p1, b, m, t
+  all_dendrites_x.update()
+  p0 = all_dendrites_x.p0  p1 = all_dendrites_x.p1
+  b = 0.002*0.2
+  m = -1.3333e-05*0.2
+  t = 150
+  for all_dendrites_x.loop() {
+    x = all_dendrites_x.x  p = all_dendrites_x.p
+    pbar_CaL_pool2_ghk(x) = (CaL_ratio*b+CaL_ratio*m*p)*(p<t)+(CaL_ratio*b+CaL_ratio*m*t)*(p>=t)
+  }
+}
+/*
+proc gmax_K_AHP3_lpool_all_dendrites_x() {local x, p, p0, p1, b, m, t
+  all_dendrites_x.update()
+  p0 = all_dendrites_x.p0  p1 = all_dendrites_x.p1
+  b = 0.002
+  m = -1.3333e-05
+  t = 150
+  for all_dendrites_x.loop() {
+    x = all_dendrites_x.x  p = all_dendrites_x.p
+    gmax_K_AHP3_lpool(x) = (K_AHP_ratio*b+K_AHP_ratio*m*p)*(p<t)+(K_AHP_ratio*b+K_AHP_ratio*m*t)*(p>=t)
+  }
+}
+*/
+proc gmax_Na_BG_dend_all_dendrites_x() {local x, p, p0, p1, b, m, t
+  all_dendrites_x.update()
+  p0 = all_dendrites_x.p0  p1 = all_dendrites_x.p1
+  b = 0.090418553543611
+  m = -0.00125
+  //m = -0.121
+  for all_dendrites_x.loop() {
+    x = all_dendrites_x.x  p = all_dendrites_x.p
+    gmax_Na_BG_dend(x) = (b+b*m*p)
+  }
+}
+
+proc gk_sKCa_all_dendrites_x(){local x, p, p0, p1, b, m, t
+  all_dendrites_x.update()
+  p0 = all_dendrites_x.p0  p1 = all_dendrites_x.p1
+  b = 0.000775377166086
+  m = 0.00002
+  for all_dendrites_x.loop() {
+    x = all_dendrites_x.x  p = all_dendrites_x.p
+    gk_sKCa(x) = (b+b*m*p)
+  }
+}
+
+forall{insert vmax}
+
+biophys_def()

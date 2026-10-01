@@ -82,6 +82,13 @@ def q10_factor(q10, celsius, reference):
     return q10 ** ((celsius - reference) / 10.0)
 
 
+# Channels that read intracellular calcium declare it as a state so that
+# Jaxley passes the live concentration: a channel only receives the states it
+# lists in ``channel_states`` (plus membrane currents). Without this entry
+# ``state_or_param`` silently falls back to a constant. 50e-6 mM is cai0 of Cal4.
+CALCIUM_STATE = {"CaCon_i": 50e-6}
+
+
 def state_or_param(states, params, key, default):
     if key in states:
         return states[key]

@@ -129,6 +129,8 @@ def _formula_current(spec: ChannelSpec, seg, mech) -> float:
         return float(mech.gbar * mech.m**3 * (seg.v - seg.ek))
     if spec.key == "kd":
         return float(mech.gbar * mech.m * mech.h * (seg.v - seg.ek))
+    if spec.key == "kdbm":
+        return float(mech.gkdbar * mech.n * (seg.v - seg.ek))
     if spec.key == "kir":
         arg = -(seg.v - mech.ek + mech.Offset) / mech.Slope
         if arg < -50.0:

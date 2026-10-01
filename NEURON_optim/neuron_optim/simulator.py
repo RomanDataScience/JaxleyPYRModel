@@ -78,6 +78,77 @@ def _group(section_name: str) -> str:
     return "apical"
 
 
+def _axon_segments(h) -> list:
+    """Axon segments from the soma outward (the order of Jaxley's axon compartments)."""
+    return [seg for sec in h.allsec() if _group(sec.name()) == "axon" for seg in sec]
+
+
+# Area-specific quantities of the axon mechanisms (``cal4`` is volume-based and
+# sees no calcium current in the axon).
+_AXON_DENSITIES = (("pas", "g"), ("nax", "gbar"), ("kd", "gbar"), ("km", "gbar"),
+                   ("kap", "gkabar"), ("Kv2like", "gbar"))
+
+
+def axon_area_factors(h, values: dict[str, float]) -> list[float]:
+    """Membrane-area factors that ``AxonHillockTaper``/``AxonProximalRadiusScale`` imply.
+
+    Same rule as ``set_fitted_parameters`` in JaxleyModel/model/model_Combe.py:
+    over the first ``min(4, n)`` axon segments the radius moves by ``taper``
+    (clipped to [0, 1]) from its base value towards a line running from half
+    the median soma radius to the base radius of the last of those segments,
+    and is multiplied by ``AxonProximalRadiusScale``; Jaxley then sets the
+    compartment area to the cylinder ``2 pi r L``. Jaxley keeps the axial
+    resistance of the imported morphology, so the geometry parameters change
+    membrane area only. The factor per segment is that area over the
+    segment's NEURON area (1 beyond the first four segments).
+    """
+    segments = _axon_segments(h)
+    if not segments:
+        return []
+    base = np.asarray([seg.diam / 2.0 for seg in segments], dtype=float)
+    count = min(4, base.size)
+    soma_radius = float(np.median([seg.diam / 2.0 for sec in h.allsec()
+                                   if _group(sec.name()) == "soma" for seg in sec]))
+    taper = float(np.clip(values.get("AxonHillockTaper", 0.0), 0.0, 1.0))
+    target = np.linspace(soma_radius * 0.5, base[count - 1], count)
+    radii = base.copy()
+    radii[:count] = (1.0 - taper) * base[:count] + taper * target
+    radii[:count] *= float(values.get("AxonProximalRadiusScale", 1.0))
+    factors = [1.0] * len(segments)
+    for i in range(count):
+        seg = segments[i]
+        length = seg.sec.L / seg.sec.nseg
+        factors[i] = float(2.0 * np.pi * radii[i] * length / seg.area())
+    return factors
+
+
+def apply_axon_geometry(h, values: dict[str, float]) -> None:
+    """Scale capacitance and every conductance density of the proximal axon by area.
+
+    NEURON cannot change a segment's membrane area without changing its axial
+    resistance, while the Jaxley model changes only the area (see
+    ``axon_area_factors``). Multiplying ``cm`` and all area-specific
+    conductances by the area factor gives the same membrane currents and
+    capacitive charge per segment. Call after the densities are assigned.
+    """
+    for seg, factor in zip(_axon_segments(h), axon_area_factors(h, values)):
+        if factor == 1.0:
+            continue
+        seg.cm *= factor
+        for mechanism, attr in _AXON_DENSITIES:
+            mech = _mechanism(seg, mechanism)
+            if mech is not None and hasattr(mech, attr):
+                setattr(mech, attr, getattr(mech, attr) * factor)
+
+
+def _kdbm_apical_profile(distance: float) -> float:
+    """Vitale et al. (2023) apical kdbm gradient, 1 at the soma end.
+
+    Same as ``kdbm_apical_profile`` in JaxleyModel/model/model_Combe.py.
+    """
+    return float((1.0 + np.exp(-1.0)) / (1.0 + np.exp((distance - 50.0) / 50.0)))
+
+
 def _sigmoid_distance(distance: float, soma: float, tuft: float,
                       half: float, slope: float) -> float:
     argument = np.clip((distance - half) / slope, -50.0, 50.0)
@@ -141,6 +212,7 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                     "na12": {"gbar": values["gna12"], "sh": values["na12_shift"]},
                     "kd": {"gbar": values["gkdrsoma"]},
                     "Kv2like": {"gbar": values["gkv2soma"]},
+                    "kdbm": {"gkdbar": values.get("gkdbm_soma", 0.0)},
                     "h": {"gbar": values["soma_hbar"] * values.get("soma_h_scale", 1.0)},
                     "kap": {"gkabar": values["soma_kap"]},
                     "km": {"gbar": values["soma_km"]},
@@ -163,6 +235,7 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                     "na3dend": {"gbar": values["gnadend"]},
                     "h": {"gbar": values["soma_hbar"]},
                     "kd": {"gbar": values["gkdrdend"]},
+                    "kdbm": {"gkdbar": values.get("gkdbm_basal", 0.0)},
                     "kap": {"gkabar": values["basal_kap"]},
                     "Kv2like": {"gbar": values["gkv2"] * values["gkv2scale"]},
                     "kir": {"gbar": values["KirGbar"] * min(distance / 40.0, 1.0)},
@@ -193,6 +266,8 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                         "O1I1k2": values["nav16_O1I1k2"],
                     },
                     "kd": {"gbar": values["gkdrapical"]},
+                    "kdbm": {"gkdbar": values.get("gkdbm_apical", 0.0)
+                             * _kdbm_apical_profile(distance)},
                     "km": {"gbar": values["soma_km"]},
                     "kir": {"gbar": values["KirGbar"] * min(distance / 100.0, 1.0)},
                 }
@@ -215,6 +290,10 @@ def apply_parameters(soma, values: dict[str, float], h) -> None:
                 ("nax", "ar2", "nax_ar2"),
             ):
                 _set_mechanism(seg, mechanism, attr, values[key])
+            for attr, key, default in (("sh", "kdbm_sh", 10.0),
+                                       ("tau_scale", "kdbm_tau_scale", 1.0)):
+                _set_mechanism(seg, "kdbm", attr, values.get(key, default))
+    apply_axon_geometry(h, values)
 
 
 class NeuronSimulator:
@@ -249,10 +328,14 @@ class NeuronSimulator:
             return h, self._soma
         soma = build_combe_neuron_model(quiet=self.quiet, d_lambda=self.d_lambda,
                                         combe_dir=self.combe_dir, mod_dir=self.mod_dir)
-        # The somatic Nav1.2-like channel is not part of the Combe HOC setup.
+        # Mechanisms added to the Combe HOC setup: the somatic Nav1.2-like
+        # channel, and the slowly inactivating D-type K (kdbm, Vitale et al.
+        # 2023) in soma and dendrites (density 0 unless gkdbm_* is set).
         for sec in h.allsec():
             if _group(sec.name()) == "soma":
                 sec.insert("na12")
+            if _group(sec.name()) != "axon":
+                sec.insert("kdbm")
         if self.reuse_model:
             self._h = h
             self._soma = soma

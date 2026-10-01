@@ -20,3 +20,9 @@ logs/
 .cache*
 arm64
 .pytest_cache
+NEURON_optim
+OptimizationNEURON_Vitale
+OptimizerNEURON_Combe
+channels_converted
+Jaxley_refactored
+jaxley-models

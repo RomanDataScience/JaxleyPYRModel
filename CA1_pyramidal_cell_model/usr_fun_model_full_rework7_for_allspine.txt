@@ -1,0 +1,117 @@
+def usr_fun(self,v):
+#21
+#Na_inact 0
+#gmax_K_DRS4_params_voltage_dep_dend 1
+#gmax_Na_BG_soma 2
+#gmax_K_DRS4_params_voltage_dep_soma 3
+#gmax_KD_axon 4
+#gmax_Leak_pyr 5
+#H_ratio 6
+#e_Leak_pyr 7
+#gbar_km_soma_dend 8
+#KA_ratio 9
+#gbar_kd 10 
+#pbar_CaN 11
+#gmax_bk 12
+#CaL_ratio 13
+#gmax_K_AHP 14  
+#cat_ratio 15
+#gk_SK 16
+#pbar_car 17
+#Na_act 18
+#KA_kinetic_shift 19
+#KA_slope 20
+    for sec in h.all:
+        sec.gmax_Leak_pyr = v[5]
+        sec.e_Leak_pyr = v[7]
+        sec.cm = 1
+        sec.Ra = 50
+    for sec in h.all_dendrites:
+        sec.gkd_kd_params3=v[10]
+        sec.shift_K_A_prox = v[19]
+        sec.shift_K_A_dist = v[19]
+        sec.X_k0_K_A_prox = v[20]
+        sec.X_k0_K_A_dist = v[20]
+        sec.Y_v0_Na_BG_dend = v[0]
+        sec.gmax_K_DRS4_params_voltage_dep = v[1]
+        sec.gbar_km_q10_2 = v[8]
+        sec.pbar_car = v[17]
+        sec.X_v0_Na_BG_dend = v[18]
+        for seg in sec:
+                #h('soma distance()')
+                h.distance(sec=h.soma)
+                #dist=(h.distance(seg.x))
+                dist=(h.distance(seg.x, sec=sec)) 
+
+                seg.gmax_Na_BG_dend = (v[2]+v[2]*(-0.002)*dist)
+                seg.gk_sKCa = (v[16]+v[16]*(0.06)*dist)
+        
+                if (dist>100) and (dist<=150):
+                        seg.gmax_H_CA1pyr_dist=(v[6]*0.00002+v[6]*4e-07*dist)
+                        seg.gmax_H_CA1pyr_prox=0
+                        seg.gmax_K_A_prox=0
+                        seg.gmax_K_A_dist=(0.0035*v[9]+v[9]*5.5e-05*dist)
+                        seg.pbar_CaL_pool2_ghk=(0.002*0.2*v[13]+v[13]*0.2*(-1.3333e-05)*dist)
+                elif (dist>150.0) and (dist<=400.0):
+                        seg.gmax_H_CA1pyr_dist=(v[6]*0.00002+v[6]*4e-07*dist)
+                        seg.gmax_H_CA1pyr_prox=0
+                        seg.gmax_K_A_prox=0
+                        seg.gmax_K_A_dist=(0.0035*v[9]+v[9]*5.5e-05*dist)
+                        seg.pbar_CaL_pool2_ghk=(0.002*0.2*v[13]+v[13]*0.2*(-1.3333e-05)*150)
+                elif (dist<=100.0) and (dist>0.0):
+                        seg.gmax_H_CA1pyr_dist=0
+                        seg.gmax_H_CA1pyr_prox=(v[6]*0.00002+v[6]*4e-07*dist)
+                        seg.gmax_K_A_prox=(0.0035*v[9]+v[9]*5.5e-05*dist)
+                        seg.gmax_K_A_dist=0
+                        seg.pbar_CaL_pool2_ghk=(0.002*0.2*v[13]+v[13]*0.2*(-1.3333e-05)*dist)
+                elif (dist>400.0):
+                        seg.gmax_H_CA1pyr_dist=0.00018*v[6]
+                        seg.gmax_H_CA1pyr_prox=0
+                        seg.gmax_K_A_prox=0
+                        seg.gmax_K_A_dist=0.0255*v[9]
+                        seg.pbar_CaL_pool2_ghk=(0.002*0.2*v[13]+v[13]*0.2*(-1.3333e-05)*150)
+                        sec.gmax_Na_BG_dend = 0
+                elif (dist<=0.0):
+                        seg.gmax_H_CA1pyr_prox=0.00002*v[6]
+                        seg.gmax_H_CA1pyr_dist=0
+                        seg.gmax_K_A_prox=0.0035*v[9]
+                        seg.gmax_K_A_dist=0
+                        seg.pbar_CaL_pool2_ghk=0.002*0.2*v[13]
+    for sec in h.oblique_dendrites:
+            sec.pbar_cat3 = 0.000072608* 0.01* v[15]
+            sec.gmax_Na_BG_dend = v[2]*(2/3)
+    for sec in h.trunk:
+            sec.pbar_cat3 = 0.000024292* 0.01* v[15]
+    for sec in h.basal_dendrites:
+            sec.pbar_cat3 = 0.000069983* 0.01* v[15]
+            sec.gmax_Na_BG_dend = v[2]*(2/3)
+    for sec in h.tuft:
+            sec.pbar_cat3 = 0.000043133* 0.01* v[15]
+            sec.gmax_Na_BG_dend = v[2]/3
+    for sec in h.soma:
+        sec.gmax_Na_BG_soma = v[2]
+        sec.Y_v0_Na_BG_soma = v[0]
+        sec.gmax_K_DRS4_params_voltage_dep = v[3]
+        sec.gmax_H_CA1pyr_prox = 0.00002*v[6] 
+        sec.gbar_km_q10_2 = v[8]    
+        sec.gmax_K_A_prox=0.0035*v[9] 
+        sec.gkd_kd_params3=v[10]
+        sec.pbar_CaN_BG_pool2_ghk=v[11]
+        sec.gbar_bk_ch_pool=v[12]
+        sec.pbar_CaL_pool2_ghk=0.00021*0.2*v[13]
+        sec.gmax_K_AHP3_lpool = v[14]  
+        sec.pbar_cat3 = 0.000002125* 0.01*v[15] 
+        sec.gk_sKCa = v[16]
+        sec.X_v0_Na_BG_soma = v[18]
+        sec.shift_K_A_prox = v[19]
+        sec.X_k0_K_A_prox = v[20]
+    for sec in h.all_axon:
+        sec.gmax_Na_BG_axon = v[2]*40
+        sec.Y_v0_Na_BG_axon = v[0]-3
+        sec.gmax_K_DRS4_params_voltage_dep = v[3]*40
+        sec.gmax_H_CA1pyr_prox = 0.00002*v[6]
+        sec.gbar_km_q10_2 = v[8]*4
+        sec.gkd_kd_params3=v[4]
+        sec.X_v0_Na_BG_axon = v[18]-3
+    h.add_F_factor_to_all_dendrites()
+    h.spining()

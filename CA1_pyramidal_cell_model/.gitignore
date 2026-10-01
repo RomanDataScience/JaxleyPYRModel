@@ -1,0 +1,11 @@
+# Compiled NEURON mechanisms (rebuilt per machine by ca1_model.build_mechanisms)
+.cache/
+x86_64/
+arm64/
+
+# Fit outputs and cluster logs
+runs/
+logs/
+
+__pycache__/
+.DS_Store

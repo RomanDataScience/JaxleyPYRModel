@@ -14,6 +14,7 @@ from channels_converted.channels_jaxley import (
     Kap,
     Kca,
     Kd,
+    Kdbm,
     Kir,
     Km,
     Kv2like,
@@ -82,8 +83,9 @@ CHANNELS: dict[str, ChannelSpec] = {
         states=(StateSpec("CaCon_i", neuron_name="cai", jaxley_name="CaCon_i", neuron_source="segment"),),
         skip_by_default=True,
         note=(
-            "Cal4 is a reduced Jaxley Pump; the MOD file uses radial annuli, buffering, "
-            "KINETIC reactions, and longitudinal diffusion."
+            "Without calcium channels cai stays at rest here. The coupled check "
+            "(calcium entry, all four annuli, buffering, ER and Ca-activated K) is "
+            "compare_calcium.py."
         ),
     ),
     "calh": ChannelSpec(
@@ -155,6 +157,14 @@ CHANNELS: dict[str, ChannelSpec] = {
         jaxley_class=Kd,
         states=(StateSpec("m"), StateSpec("h")),
         current=CurrentSpec(neuron_name="i", neuron_source="formula"),
+    ),
+    "kdbm": ChannelSpec(
+        key="kdbm",
+        mechanism="kdbm",
+        jaxley_class=Kdbm,
+        states=(StateSpec("n"),),
+        current=CurrentSpec(neuron_name="ik", neuron_source="formula"),
+        note="Vitale et al. 2023 slowly inactivating D-type K (ModelDB 2014816).",
     ),
     "kir": ChannelSpec(
         key="kir",

@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 
-from .common import Channel, channel_prefix, gate_update, state_or_param
+from .common import CALCIUM_STATE, Channel, channel_prefix, gate_update, state_or_param
 
 
 class Kca(Channel):
@@ -19,7 +19,7 @@ class Kca(Channel):
             "eK": -80.0,
             "celsius": 36.0,
         }
-        self.channel_states = {f"{prefix}_m": 0.0}
+        self.channel_states = {f"{prefix}_m": 0.0, **CALCIUM_STATE}
         self.current_name = "i_K"
 
     def update_states(self, states, dt, v, params):

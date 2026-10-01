@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
 import copy
+from dataclasses import dataclass
 import json
 import logging
 from pathlib import Path
@@ -16,6 +17,7 @@ from .config import RunConfig
 from .data import Trace, crop_trace, load_protocol_traces
 from .objective import (
     ObjectiveContext,
+    ObjectiveResult,
     build_objective_context,
     depolarizing_objective,
     hyperpolarizing_objective,
@@ -49,13 +51,53 @@ SUBTHRESHOLD_STAGE = "depol_sub"
 FULL_DEPOL_STAGE = "depol_full"
 DEPOLARIZING_STAGES = {"depolarizing", "stage3", SUBTHRESHOLD_STAGE, FULL_DEPOL_STAGE}
 HYPER_STAGES = {"passive", "hyper", HYPER_PRE_STAGE}
+# Joint stage: the depolarizing steps and the first hyperpolarizing pulse are
+# simulated and scored together (see run_joint).
+JOINT_STAGE = "joint"
 # Stage-A parameters held near the hyperpolarizing calibration: the passive
 # cable plus the currents open at rest, which set input resistance, the
 # membrane time constant and sag.
 DEFAULT_HYPER_LOCKED_KEYS = PASSIVE + ("soma_hbar", "h_tau_scale", "KirGbar")
 
 
+@dataclass(frozen=True)
+class JointObjectiveContext:
+    """Separate precomputed contexts for the two protocols of the joint stage."""
+    depolarizing: ObjectiveContext
+    hyperpolarizing: ObjectiveContext
+
+    @property
+    def traces(self) -> tuple[Trace, ...]:
+        return self.depolarizing.traces + self.hyperpolarizing.traces
+
+
+def joint_objective(traces, simulations, *, context: JointObjectiveContext,
+                    depolarizing: dict[str, Any], hyperpolarizing: dict[str, Any],
+                    hyper_weight: float, include_details: bool = True) -> ObjectiveResult:
+    """Depolarizing loss plus ``hyper_weight`` x hyperpolarizing loss.
+
+    Simulations come in the order of ``context.traces``: the depolarizing
+    steps first, then the hyperpolarizing pulse(s). ``traces`` is unused; the
+    context carries the fitness traces.
+    """
+    simulations = list(simulations)
+    n_depol = len(context.depolarizing.traces)
+    depol = depolarizing_objective(context.depolarizing.traces, simulations[:n_depol],
+                                   context=context.depolarizing,
+                                   include_details=include_details, **depolarizing)
+    hyper = hyperpolarizing_objective(context.hyperpolarizing.traces, simulations[n_depol:],
+                                      context=context.hyperpolarizing,
+                                      include_details=include_details, **hyperpolarizing)
+    value = float(depol.value + hyper_weight * hyper.value)
+    details = ({"depolarizing_loss": depol.value, "hyperpolarizing_loss": hyper.value,
+                "hyper_weight": hyper_weight, "depolarizing": depol.details,
+                "hyperpolarizing": hyper.details} if include_details else {})
+    return ObjectiveResult(value, details)
+
+
 def _objective_function(stage: str):
+    if stage == JOINT_STAGE:
+        return joint_objective
     if stage in HYPER_STAGES:
         return hyperpolarizing_objective
     if stage == SUBTHRESHOLD_STAGE:
@@ -98,6 +140,16 @@ def _payload_to_simulations(payload: list[dict[str, np.ndarray]] | None):
 
 def _build_objective_context(traces: list[Trace], stage: str,
                              options: dict[str, Any]) -> ObjectiveContext:
+    if stage == JOINT_STAGE:
+        depol = [trace for trace in traces if trace.protocol != "hyperpolarizing_pulse"]
+        hyper = [trace for trace in traces if trace.protocol == "hyperpolarizing_pulse"]
+        is_pulse = [trace.protocol == "hyperpolarizing_pulse" for trace in traces]
+        if is_pulse != sorted(is_pulse):
+            raise ValueError("Joint traces must list the depolarizing steps before the pulse")
+        return JointObjectiveContext(
+            _build_objective_context(depol, FULL_DEPOL_STAGE, options["depolarizing"]),
+            _build_objective_context(hyper, HYPER_PRE_STAGE, options["hyperpolarizing"]),
+        )
     return build_objective_context(
         traces,
         stage="depolarizing" if stage in DEPOLARIZING_STAGES else "hyper",
@@ -215,6 +267,15 @@ def _json_default(value):
 
 
 def _objective_options(raw: dict, stage: str) -> dict[str, Any]:
+    if stage == JOINT_STAGE:
+        # Depolarizing settings from ``stage2``, pulse settings from
+        # ``depol_hyper``; the Nav1.6 window guard applies to the candidate.
+        depol = _objective_options(raw, FULL_DEPOL_STAGE)
+        guard = depol.pop("nav_window", None)
+        return {"depolarizing": depol,
+                "hyperpolarizing": _objective_options(raw, HYPER_PRE_STAGE),
+                "hyper_weight": float(dict(raw.get(JOINT_STAGE, {})).get("hyper_weight", 2.0)),
+                "nav_window": guard}
     if stage == SUBTHRESHOLD_STAGE:
         section = dict(raw.get(SUBTHRESHOLD_STAGE, {}))
         return {"sigma_mV": float(section.get("sigma_mV", 2.0)),
@@ -286,7 +347,7 @@ def _study_section_name(stage: str) -> str:
         return "passive"
     if stage == "hyper":
         return "stage1"
-    if stage in {"stage3", HYPER_PRE_STAGE, SUBTHRESHOLD_STAGE, FULL_DEPOL_STAGE}:
+    if stage in {"stage3", HYPER_PRE_STAGE, SUBTHRESHOLD_STAGE, FULL_DEPOL_STAGE, JOINT_STAGE}:
         return stage
     return "stage2"
 
@@ -319,6 +380,8 @@ def _run_studies(config: RunConfig, tasks: list[tuple]) -> list[dict[str, Any]]:
 
 
 def _load_traces(config: RunConfig, stage: str) -> list[Trace]:
+    if stage == JOINT_STAGE:
+        return _load_traces(config, FULL_DEPOL_STAGE) + _load_traces(config, HYPER_PRE_STAGE)
     if stage in HYPER_STAGES:
         return load_protocol_traces(config.data_root, cell=config.cell,
                                     protocol="hyperpolarizing_pulse",
@@ -337,6 +400,11 @@ def _load_traces(config: RunConfig, stage: str) -> list[Trace]:
 def _fitness_traces(config: RunConfig, stage: str,
                     simulation_traces: list[Trace]) -> list[Trace]:
     """Build objective traces while retaining the simulator time origin."""
+    if stage == JOINT_STAGE:
+        pre_ms = config.hyperpolarizing_fitness_pre_ms
+        return [crop_trace(trace, start_ms=trace.epoch_start_ms - pre_ms)
+                if trace.protocol == "hyperpolarizing_pulse" else trace
+                for trace in simulation_traces]
     if stage not in HYPER_STAGES:
         return simulation_traces
     pre_ms = config.hyperpolarizing_fitness_pre_ms
@@ -597,6 +665,7 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                     fixed_values)
     objective_version = (HYPER_OBJECTIVE_VERSION if stage in HYPER_STAGES
                          else "subthreshold-v1" if stage == SUBTHRESHOLD_STAGE
+                         else "joint-v1" if stage == JOINT_STAGE
                          else "depolarizing-v1")
     bounds_signature = tuple(
         (float(lower), float(upper))
@@ -685,13 +754,18 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                     (generation % plot_every == 0 or generation == generations)):
                 try:
                     top_k = int(plotting.get("top_k", 10))
-                    top_indices = np.argsort(losses, kind="stable")[:min(top_k, len(losses))]
+                    # Best top_k candidates that were simulated: candidates
+                    # rejected before simulation (e.g. by the Nav1.6 window
+                    # check) or that failed have nothing to plot.
+                    simulated = [index for index in np.argsort(losses, kind="stable")
+                                 if simulations[index] is not None]
+                    top_indices = np.asarray(simulated[:top_k], dtype=int)
                     converted = [_payload_to_simulations(simulations[index]) for index in top_indices]
                     # Plot only the selected candidates, but retain their original
                     # population indices/loss ordering in the metadata.
                     plot_population = population[top_indices]
                     plot_losses = losses[top_indices]
-                    if all(item is not None for item in converted):
+                    if converted:
                         plot_generation(output_dir=run_dir / "plots", generation=generation,
                                         stage=stage, traces=fitness_traces,
                                         population=plot_population,
@@ -699,7 +773,21 @@ def run_study(config: RunConfig, *, stage: str, seed: int, run_dir: Path,
                                         space=space, top_k=top_k,
                                         population_indices=top_indices,
                                         dpi=int(plotting.get("dpi", 120)))
-                        if stage in DEPOLARIZING_STAGES:
+                        if stage == JOINT_STAGE:
+                            # Step zooms for the depolarizing traces only.
+                            n_depol = sum(trace.protocol != "hyperpolarizing_pulse"
+                                          for trace in fitness_traces)
+                            plot_depolarizing_step_generation(
+                                output_dir=run_dir / "plots", generation=generation,
+                                traces=fitness_traces[:n_depol], population=plot_population,
+                                losses=plot_losses,
+                                simulations=[sims[:n_depol] for sims in converted],
+                                space=space, top_k=top_k,
+                                population_indices=top_indices,
+                                dpi=int(plotting.get("dpi", 120)),
+                                stage=stage,
+                            )
+                        elif stage in DEPOLARIZING_STAGES:
                             plot_depolarizing_step_generation(
                                 output_dir=run_dir / "plots", generation=generation,
                                 traces=fitness_traces, population=plot_population,
@@ -1099,6 +1187,38 @@ def run_hyper_full(config: RunConfig, output_root: Path) -> None:
     _run_full_stage(config, output_root, hyper_best, hyper_space.keys)
 
 
+JOINT_PIPELINE = "joint"
+
+
+def run_joint(config: RunConfig, output_root: Path) -> None:
+    """One stage fitting every parameter to all traces at once.
+
+    Simulates the four depolarizing steps and the first hyperpolarizing pulse
+    (``data.hyperpolarizing_trace_index``) for each candidate and scores them
+    with ``joint_objective``: the depolarizing objective (``stage2`` settings)
+    plus ``joint.hyper_weight`` x the hyperpolarizing objective
+    (``depol_hyper`` settings). Every parameter is fitted within the ``joint``
+    bounds except those in ``parameters.fixed``; the search starts from the
+    defaults, overridden by ``joint.start_values``.
+    """
+    section = config.section(JOINT_STAGE)
+    space = _configured_space(section, list(config.parameters.keys))
+    start = dict(DEFAULTS)
+    start_values = dict(section.get("start_values", {}))
+    unknown_start = sorted(set(start_values) - set(space.keys))
+    if unknown_start:
+        raise ValueError(f"joint.start_values has unknown parameters: {unknown_start}")
+    start.update({key: float(value) for key, value in start_values.items()})
+    mean = space.normalize([start[key] for key in space.keys])
+    joint_dir = output_root / "joint"
+    tasks = [
+        (config, JOINT_STAGE, int(seed), joint_dir / f"seed_{int(seed):03d}",
+         _seeded_initial(mean, int(seed), 0x4A4F494E), JOINT_STAGE, space, None)
+        for seed in section.get("seeds", [0])
+    ]
+    _run_studies(config, tasks)
+
+
 def run_pipeline(config: RunConfig, output_root: Path) -> None:
     pipeline = str(config.raw.get("runtime", {}).get("pipeline", "full"))
     if pipeline == "stage3_depolarizing_only":
@@ -1109,6 +1229,9 @@ def run_pipeline(config: RunConfig, output_root: Path) -> None:
         return
     if pipeline == HYPER_FULL_PIPELINE:
         run_hyper_full(config, output_root)
+        return
+    if pipeline == JOINT_PIPELINE:
+        run_joint(config, output_root)
         return
     run_hyper_stage(config, output_root)
     run_depolarizing_stage(config, output_root)

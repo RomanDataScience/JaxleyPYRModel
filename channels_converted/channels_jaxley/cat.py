@@ -1,6 +1,6 @@
 import jax.numpy as jnp
 
-from .common import Channel, channel_prefix, gate_update, ghk, neuron_table, safe_exp, state_or_param
+from .common import CALCIUM_STATE, Channel, channel_prefix, gate_update, ghk, neuron_table, safe_exp, state_or_param
 
 
 class Cat(Channel):
@@ -17,7 +17,7 @@ class Cat(Channel):
             f"{prefix}_tfi": 0.68,
             "celsius": 22.0,
         }
-        self.channel_states = {f"{prefix}_m": 0.0, f"{prefix}_h": 1.0}
+        self.channel_states = {f"{prefix}_m": 0.0, f"{prefix}_h": 1.0, **CALCIUM_STATE}
         self.current_name = "i_Ca"
 
     def update_states(self, states, dt, v, params):

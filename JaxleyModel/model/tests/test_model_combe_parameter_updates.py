@@ -71,6 +71,13 @@ EXPECTED_TARGETS = {
     ),
     # Soma-only Ih multiplier; dendritic Ih follows soma_hbar alone.
     "soma_h_scale": (("h_gbar", "soma"),),
+    # Slowly inactivating D-type K (kdbm, Vitale et al. 2023).
+    "gkdbm_soma": (("kdbm_gkdbar", "soma"),),
+    "gkdbm_basal": (("kdbm_gkdbar", "basal"),),
+    "gkdbm_apical": (("kdbm_gkdbar", "apical"),),
+    "kdbm_sh": (("kdbm_sh", "soma"), ("kdbm_sh", "apical"), ("kdbm_sh", "basal")),
+    "kdbm_tau_scale": (("kdbm_tau_scale", "soma"), ("kdbm_tau_scale", "apical"),
+                       ("kdbm_tau_scale", "basal")),
     "KirGbar": (("kir_gbar", "apical"), ("kir_gbar", "basal")),
     "soma_caL": (("cal_gcalbar", "soma"),),
     "soma_car": (("car_gcabar", "apical"),),
@@ -474,3 +481,15 @@ def test_soma_h_scale_zero_removes_somatic_ih_only(hoc_cell):
     assert np.all(h_by_group["soma"] == 0.0)
     assert np.all(h_by_group["basal"] == COMBE_PARAMS.soma_hbar)
     assert np.all(h_by_group["apical"] > 0.0)
+
+
+def test_kdbm_apical_density_follows_vitale_profile(hoc_cell):
+    from JaxleyModel.model.model_Combe import kdbm_apical_profile
+
+    updates = set_fitted_parameters(hoc_cell, ("gkdbm_apical",), jnp.asarray([1e-3]))
+    (apical,) = [u for u in updates if u["key"] == "kdbm_gkdbar"
+                 and _group_for_update(hoc_cell, u) == "apical"]
+    values = np.asarray(apical["val"])
+    assert np.all(values <= 1e-3 * kdbm_apical_profile(np.asarray(0.0)) + 1e-15)
+    assert values.max() > values.min()  # decays with distance
+    np.testing.assert_allclose(kdbm_apical_profile(np.asarray(0.0)), 1.0)

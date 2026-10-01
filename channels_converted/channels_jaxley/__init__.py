@@ -11,6 +11,7 @@ from .kadist import Kad
 from .kaprox import Kap
 from .kca import Kca
 from .kd import Kd
+from .kdbm import Kdbm
 from .kir import Kir
 from .km import Km
 from .kv2like import Kv2like
@@ -33,6 +34,7 @@ __all__ = [
     "Kap",
     "Kca",
     "Kd",
+    "Kdbm",
     "Kir",
     "Km",
     "Kv2like",

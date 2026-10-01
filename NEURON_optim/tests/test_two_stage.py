@@ -275,3 +275,94 @@ def test_hyper_stage_start_values_and_tightened_bounds(tmp_path, monkeypatch):
     import pytest
     with pytest.raises(ValueError, match="start_values"):
         stages.run_hyper_full(bad, tmp_path / "bad")
+
+
+def _pulse_trace() -> Trace:
+    time = np.arange(0.0, 200.0, 0.1)
+    voltage = np.full(time.size, -65.0)
+    voltage[(time >= 100.0) & (time <= 150.0)] = -67.0
+    current = np.zeros(time.size)
+    current[(time >= 100.0) & (time <= 150.0)] = -0.03
+    return Trace(cell="c", trace="t", protocol="hyperpolarizing_pulse", time_ms=time,
+                 voltage_mV=voltage, current_nA=current,
+                 epoch_start_ms=100.0, epoch_stop_ms=150.0)
+
+
+def test_joint_objective_adds_weighted_hyper_loss():
+    raw = {"stage2": {"require_axon_soma_count_match": False},
+           "depol_hyper": {}, "joint": {"hyper_weight": 5.0}}
+    options = stages._objective_options(raw, stages.JOINT_STAGE)
+    assert options["hyper_weight"] == 5.0 and "nav_window" in options
+    assert "nav_window" not in options["depolarizing"]
+    step, pulse = _step_trace(), _pulse_trace()
+    spike_free = step.voltage_mV.copy()
+    spike_free[spike_free > 0.0] = -50.0
+    context = stages._build_objective_context([step, pulse], stages.JOINT_STAGE, options)
+    kwargs = stages._objective_kwargs(options)
+    sims = [SimulationOutput(step.time_ms, step.voltage_mV),
+            SimulationOutput(pulse.time_ms, pulse.voltage_mV)]
+    perfect = stages.joint_objective(None, sims, context=context, **kwargs)
+    shifted = [sims[0], SimulationOutput(pulse.time_ms, pulse.voltage_mV - 3.0)]
+    worse = stages.joint_objective(None, shifted, context=context, **kwargs)
+    assert worse.details["depolarizing_loss"] == perfect.details["depolarizing_loss"]
+    np.testing.assert_allclose(
+        worse.value - perfect.value,
+        5.0 * (worse.details["hyperpolarizing_loss"] - perfect.details["hyperpolarizing_loss"]))
+    assert worse.value > perfect.value
+    import pytest
+    with pytest.raises(ValueError, match="before the pulse"):
+        stages._build_objective_context([pulse, step], stages.JOINT_STAGE, options)
+
+
+def test_joint_pipeline_fits_everything_but_fixed_from_start_values(tmp_path, monkeypatch):
+    config = RunConfig({
+        "data": {}, "runtime": {"pipeline": "joint"},
+        "parameters": {"fixed": {"icangbar": 0.0}},
+        "joint": {"seeds": [0, 1], "upper_bounds": {"soma_hbar": 6e-6},
+                  "start_values": {"soma_hbar": 3e-6}},
+    }, Path("config.yaml"))
+    calls = []
+    monkeypatch.setattr(stages, "_run_studies", lambda _c, tasks: calls.append(tasks) or [])
+    stages.run_pipeline(config, tmp_path)
+    (tasks,) = calls
+    assert [task[1] for task in tasks] == [stages.JOINT_STAGE] * 2
+    space = tasks[0][6]
+    assert "icangbar" not in space.keys and tasks[0][7] is None
+    assert len(space.keys) == len(config.parameters.keys)
+    j = space.keys.index("soma_hbar")
+    assert space.upper[j] == 6e-6
+    assert abs(space.physical(tasks[0][4])[j] - 3e-6) <= 0.15 * 6e-6 + 1e-18
+
+
+def test_joint_loads_depolarizing_steps_then_cropped_pulse(monkeypatch):
+    config = RunConfig({"data": {"root": ".", "cell": "c"}}, Path("config.yaml"))
+    monkeypatch.setattr(stages, "load_protocol_traces",
+                        lambda *_a, protocol, **_k: [_pulse_trace()] if protocol == "hyperpolarizing_pulse"
+                        else [_step_trace(), _step_trace()])
+    loaded = stages._load_traces(config, stages.JOINT_STAGE)
+    assert [t.protocol for t in loaded] == ["depolarizing_step"] * 2 + ["hyperpolarizing_pulse"]
+    fitness = stages._fitness_traces(config, stages.JOINT_STAGE, loaded)
+    assert fitness[0] is loaded[0]
+    assert fitness[2].time_ms[0] == 0.0  # pulse cropped at onset - 100 ms (onset is 100 ms)
+
+
+def test_joint_config_validates(tmp_path):
+    config = RunConfig({"data": {"root": str(tmp_path)}, "runtime": {"pipeline": "joint"},
+                        "joint": {"seeds": [0], "generations": 1, "population_size": 4}},
+                       tmp_path / "config.yaml")
+    assert config.validate() == []
+    config.raw["joint"]["hyper_weight"] = -1.0
+    assert "joint.hyper_weight must be >= 0" in config.validate()
+
+
+def test_include_optional_adds_catalog_keys_to_the_fit(tmp_path):
+    config = RunConfig({"data": {"root": str(tmp_path)},
+                        "parameters": {"include_optional": ["gkdbm_soma", "kdbm_sh"],
+                                       "fixed": {"gkdrsoma": 0.0}}},
+                       tmp_path / "config.yaml")
+    keys = config.parameters.keys
+    assert {"gkdbm_soma", "kdbm_sh"} <= set(keys)
+    assert "gkdbm_basal" not in keys and "gkdrsoma" not in keys
+    assert not any("include_optional" in e for e in config.validate())
+    config.raw["parameters"]["include_optional"] = ["gna"]
+    assert any("include_optional" in e for e in config.validate())

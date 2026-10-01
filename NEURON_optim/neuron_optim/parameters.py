@@ -25,6 +25,14 @@ DEFAULTS: dict[str, float] = {
     "soma_hbar": 0.00003,
     # Multiplies Ih in the soma only (basal/apical Ih follow soma_hbar).
     "soma_h_scale": 1.0,
+    # Slowly inactivating D-type K (kdbm, Vitale et al. 2023): densities in
+    # soma, basal and apical dendrites (apical: value at the soma end of a
+    # decaying profile), voltage shift and time-constant scale.
+    "gkdbm_soma": 0.0,
+    "gkdbm_basal": 0.0,
+    "gkdbm_apical": 0.0,
+    "kdbm_sh": 10.0,
+    "kdbm_tau_scale": 1.0,
     "KirGbar": 0.00020307 * 5.0,
     "Epas": -71.9879,
     "CmSoma": 1.0,
@@ -116,6 +124,11 @@ BOUNDS: dict[str, tuple[float, float]] = {
     "SpineFactorTuft": (1.0, 6.0),
     "soma_hbar": (0.0, 0.0003),
     "soma_h_scale": (0.0, 1.0),
+    "gkdbm_soma": (0.0, 0.005),
+    "gkdbm_basal": (0.0, 0.002),
+    "gkdbm_apical": (0.0, 0.002),
+    "kdbm_sh": (0.0, 20.0),
+    "kdbm_tau_scale": (0.25, 4.0),
     "KirGbar": (0.0, 0.005),
     # Applied as 0.1 * soma_caL at the soma, i.e. up to 1e-3 S/cm2.
     "soma_caL": (0.0, 0.01),
@@ -202,7 +215,8 @@ SODIUM_KINETIC = (
 ALL_KEYS = PASSIVE + CONDUCTANCE + GEOMETRY + KINETIC
 # Catalog parameters outside the default fit space: used only when a config
 # includes them or fixes them (``parameters.fixed``).
-OPTIONAL_KEYS = ("soma_h_scale",)
+OPTIONAL_KEYS = ("soma_h_scale", "gkdbm_soma", "gkdbm_basal", "gkdbm_apical",
+                 "kdbm_sh", "kdbm_tau_scale")
 CATALOG_KEYS = ALL_KEYS + OPTIONAL_KEYS
 
 

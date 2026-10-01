@@ -153,3 +153,18 @@ archives, plots, and final objective breakdown. All active-current parameters
 are optimized in these Stage 2 studies; there is no subsequent Stage 3
 optimization. Set `plotting.enabled: false`
 when running a diagnostic search without figures.
+
+## Fixed and optional parameters
+
+- `parameters.fixed: {key: value}` holds parameters at a value in every stage and
+  never fits them (e.g. `icangbar: 0.0`).
+- `parameters.include_optional: [...]` adds catalog keys that are outside the
+  default fit list (`OPTIONAL_KEYS` in `neuron_optim/parameters.py`): the somatic
+  Ih scale `soma_h_scale` and the D-type K current `kdbm` (`gkdbm_soma`,
+  `gkdbm_basal`, `gkdbm_apical`, `kdbm_sh`, `kdbm_tau_scale`).
+
+`configs/joint_kdbm.yaml` fits the joint pipeline with `kdbm` (Vitale et al.
+2023) instead of `kd` in soma and dendrites. The calcium fixes in the Jaxley port
+and the `kdbm` model are documented in `../channels_converted/CALCIUM_AND_KD.md`.
+Jaxley results produced before those calcium fixes had calcium-independent
+Ca-activated K currents and are not directly comparable with new runs.

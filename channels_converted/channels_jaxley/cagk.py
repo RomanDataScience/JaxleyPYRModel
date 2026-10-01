@@ -1,4 +1,4 @@
-from .common import Channel, FARADAY_KC, MOD_R_CAGK, channel_prefix, gate_update, safe_exp, state_or_param
+from .common import CALCIUM_STATE, Channel, channel_prefix, FARADAY_KC, gate_update, MOD_R_CAGK, safe_exp, state_or_param
 
 
 class MyKca(Channel):
@@ -21,7 +21,7 @@ class MyKca(Channel):
             "eK": -85.0,
             "celsius": 20.0,
         }
-        self.channel_states = {f"{prefix}_o": 0.0}
+        self.channel_states = {f"{prefix}_o": 0.0, **CALCIUM_STATE}
         self.current_name = "i_K"
 
     def update_states(self, states, dt, v, params):

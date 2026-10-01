@@ -32,6 +32,10 @@ def build_jaxley_params(
 
     for key, value in COMMON_DEFAULTS.items():
         params.setdefault(key, jnp.asarray(value, dtype=float))
+    # Geometry of the NEURON validation section (diam 20 um, L 20 um); Cal4
+    # scales its annulus volumes with the diameter.
+    params.setdefault("radius", jnp.asarray(10.0))
+    params.setdefault("length", jnp.asarray(20.0))
 
     if param_overrides:
         prefix = channel.name
@@ -47,8 +51,10 @@ def _initial_states(channel, params: Mapping[str, jnp.ndarray], voltage: float, 
         key: jnp.asarray(value, dtype=float)
         for key, value in channel.channel_states.items()
     }
+    # Shared ion values (e.g. CaCon_i, which calcium-reading channels declare as
+    # a state) come from the common defaults or overrides, as on the NEURON side.
     for key, value in COMMON_DEFAULTS.items():
-        states.setdefault(key, jnp.asarray(value, dtype=float))
+        states[key] = jnp.asarray(params.get(key, value), dtype=float)
 
     initialized = channel.init_state(
         states,

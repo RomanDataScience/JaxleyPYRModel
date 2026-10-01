@@ -10,10 +10,11 @@ from typing import Any
 
 import yaml
 
-from .parameters import BOUNDS, CATALOG_KEYS, make_parameter_space
+from .parameters import ALL_KEYS, BOUNDS, CATALOG_KEYS, OPTIONAL_KEYS, make_parameter_space
 
 
-PIPELINES = {"full", "stage3_depolarizing_only", "depolarizing_two_stage", "hyper_full"}
+PIPELINES = {"full", "stage3_depolarizing_only", "depolarizing_two_stage", "hyper_full",
+             "joint"}
 
 DEFAULT_STAGE2_GLOBAL_BOUND_PARAMETERS = (
     "soma_km", "soma_kca", "mykca_init", "soma_caL", "soma_hbar",
@@ -108,10 +109,17 @@ class RunConfig:
         return {str(key): float(value) for key, value in dict(fixed).items()}
 
     @property
+    def optional_parameters(self) -> tuple[str, ...]:
+        """``parameters.include_optional``: catalog keys outside the default fit list."""
+        return tuple(str(key) for key in self.raw.get("parameters", {}).get("include_optional") or ())
+
+    @property
     def parameters(self):
         section = self.raw.get("parameters", {})
         exclude = set(section.get("exclude", ())) | set(self.fixed_parameters)
-        return make_parameter_space(section.get("include"), tuple(sorted(exclude)))
+        keys = tuple(section.get("include") or ALL_KEYS) + tuple(
+            key for key in self.optional_parameters if key not in (section.get("include") or ALL_KEYS))
+        return make_parameter_space(keys, tuple(sorted(exclude)))
 
     def stage_parameter_names(self, stage: str) -> tuple[str, ...]:
         section = self.section(stage)
@@ -162,6 +170,10 @@ class RunConfig:
                 errors.append("parameters cannot be empty")
         except Exception as exc:
             errors.append(str(exc))
+        unknown_optional = sorted(set(self.optional_parameters) - set(OPTIONAL_KEYS))
+        if unknown_optional:
+            errors.append(f"parameters.include_optional has non-optional or unknown keys: "
+                          f"{unknown_optional}")
         for key, value in self.fixed_parameters.items():
             if key not in CATALOG_KEYS:
                 errors.append(f"parameters.fixed has unknown parameter: {key}")
@@ -203,6 +215,14 @@ class RunConfig:
                         errors.append(f"{name}.local_relative_width must be > 0")
                 except (TypeError, ValueError):
                     errors.append(f"{name}.local_relative_width must be a number")
+        elif pipeline == "joint":
+            # One study; stage2 and depol_hyper hold only objective settings.
+            stages = ["joint"]
+            try:
+                if not float(self.section("joint").get("hyper_weight", 2.0)) >= 0.0:
+                    errors.append("joint.hyper_weight must be >= 0")
+            except (TypeError, ValueError):
+                errors.append("joint.hyper_weight must be a number")
         elif pipeline == "hyper_full":
             # Stage 0 (depol_hyper) then stage B (depol_full, stage2 objective).
             stages = ["stage2", "depol_hyper", "depol_full"]

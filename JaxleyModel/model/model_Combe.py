@@ -42,6 +42,7 @@ from channels_converted.channels_jaxley import (  # noqa: E402
     Kap,
     Kca,
     Kd,
+    Kdbm,
     Kir,
     Km,
     Kv2like,
@@ -83,6 +84,15 @@ class CombeParameters:
     # Multiplies Ih in the soma only; basal and apical Ih still follow
     # soma_hbar. 0 removes somatic Ih.
     soma_h_scale: float = 1.0
+    # Slowly inactivating D-type K (kdbm, Vitale et al. 2023) in soma, basal
+    # and apical dendrites; 0 by default so the Combe model is unchanged. The
+    # apical density follows Vitale's decaying profile, normalized so that
+    # gkdbm_apical is its value at the soma end (see kdbm_apical_profile).
+    gkdbm_soma: float = 0.0
+    gkdbm_basal: float = 0.0
+    gkdbm_apical: float = 0.0
+    kdbm_sh: float = 10.0
+    kdbm_tau_scale: float = 1.0
     KirGbar: float = 0.00020307 * 5.0
     Epas: float = -71.9879
     CmSoma: float = 1.0
@@ -279,6 +289,11 @@ bounds = {
     "nax_ar2": [0.0, 1.0],
     "kd_vhalfm": [-55.0, -25.0],
     "kd_vhalfh": [-80.0, -45.0],
+    "gkdbm_soma": [0.0, 0.005],
+    "gkdbm_basal": [0.0, 0.002],
+    "gkdbm_apical": [0.0, 0.002],
+    "kdbm_sh": [0.0, 20.0],
+    "kdbm_tau_scale": [0.25, 4.0],
     "nav16_C1O1v2": [-55.0, -20.0],
     "nav16_C1O1k2": [-12.0, -1.0],
     "nav16_I1O1b1": [0.0001, 0.5],
@@ -738,6 +753,7 @@ def insert_combe_channels(cell):
         group.insert(Icand("icand"))
         group.insert(Nav16A("na16a"))
         group.insert(Kd("kd"))
+        group.insert(Kdbm("kdbm"))
         group.insert(Kv2like("Kv2like"))
         group.insert(H("h"))
         group.insert(Kap("kap"))
@@ -766,6 +782,7 @@ def insert_combe_channels(cell):
     cell.basal.insert(Kap("kap"))
     cell.basal.insert(H("h"))
     cell.basal.insert(Kd("kd"))
+    cell.basal.insert(Kdbm("kdbm"))
     cell.basal.insert(Kv2like("Kv2like"))
     cell.basal.insert(Kir("kir"))
 
@@ -844,6 +861,27 @@ def set_cal4_profile(cell, p: CombeParameters = COMBE_PARAMS):
     alpha = p.gip3 * (0.75 + 0.25 * my_exp(-dist / 100.0))
     cell.set("cal4_ip3i", 0.16e-3)
     cell.set("cal4_alpha", alpha)
+    return cell
+
+
+def kdbm_apical_profile(dist):
+    """Vitale et al. (2023) apical kdbm gradient, 1 at the soma end.
+
+    Their density is 15 / (1 + exp((d - 50) / 50)) * A; dividing by its value at
+    d = 0 makes the fitted gkdbm_apical the density next to the soma.
+    """
+    xp = jnp if isinstance(dist, jnp.ndarray) else np
+    return (1.0 + np.exp(-1.0)) / (1.0 + xp.exp((dist - 50.0) / 50.0))
+
+
+def set_kdbm(cell, p: CombeParameters = COMBE_PARAMS):
+    dist = cell.nodes["dist_from_soma"].to_numpy(dtype=float)
+    for group, gbar in (("soma", p.gkdbm_soma), ("basal", p.gkdbm_basal),
+                        ("apical", p.gkdbm_apical * kdbm_apical_profile(dist))):
+        mask = group_mask(cell, group)
+        set_on(cell, mask, "kdbm_gkdbar", gbar)
+        set_on(cell, mask, "kdbm_sh", p.kdbm_sh)
+        set_on(cell, mask, "kdbm_tau_scale", p.kdbm_tau_scale)
     return cell
 
 
@@ -1045,7 +1083,8 @@ RULE_UPDATE_MODE = "rule_based_final_centers"
 NEURON_UPDATE_MODE = "neuron_gold_standard_final_centers"
 SUPPORTED_FIT_PARAMETER_KEYS = frozenset(
     (*CONDUCTANCE_PARAMETER_KEYS, *PASSIVE_PARAMETER_KEYS, *KINETIC_PARAMETER_KEYS,
-     "AxonHillockTaper", "AxonProximalRadiusScale", "soma_h_scale")
+     "AxonHillockTaper", "AxonProximalRadiusScale", "soma_h_scale",
+     "gkdbm_soma", "gkdbm_basal", "gkdbm_apical", "kdbm_sh", "kdbm_tau_scale")
 )
 
 
@@ -1314,6 +1353,7 @@ def _conductance_fit_profiles(cell, p, update_mode):
             _fit_profile(cell.soma, "na16a_gbar", p["gna"], "gna"),
             _fit_profile(cell.soma, "na12_gbar", p["gna12"], "gna12"),
             _fit_profile(cell.soma, "kd_gbar", p["gkdrsoma"], "gkdrsoma"),
+            _fit_profile(cell.soma, "kdbm_gkdbar", p["gkdbm_soma"], "gkdbm_soma"),
             _fit_profile(cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"),
             _fit_profile(cell.soma, "h_gbar", p["soma_hbar"] * p["soma_h_scale"],
                          "soma_hbar", "soma_h_scale"),
@@ -1351,6 +1391,9 @@ def _conductance_fit_profiles(cell, p, update_mode):
                          "gkv2", "gkv2scale"),
             _fit_profile(cell.apical, "na16a_gbar", p["gnadend"], "gnadend"),
             _fit_profile(cell.apical, "kd_gbar", p["gkdrapical"], "gkdrapical"),
+            _fit_profile(cell.apical, "kdbm_gkdbar",
+                         p["gkdbm_apical"] * kdbm_apical_profile(apical_dist),
+                         "gkdbm_apical"),
             _fit_profile(cell.apical, "km_gbar", p["soma_km"], "soma_km"),
             _fit_profile(cell.apical, "kir_gbar",
                          p["KirGbar"] * jnp.minimum(apical_dist / 100.0, 1.0),
@@ -1364,6 +1407,7 @@ def _conductance_fit_profiles(cell, p, update_mode):
             _fit_profile(cell.basal, "kap_gkabar", p["basal_kap"], "basal_kap"),
             _fit_profile(cell.basal, "h_gbar", p["soma_hbar"], "soma_hbar"),
             _fit_profile(cell.basal, "kd_gbar", p["gkdrdend"], "gkdrdend"),
+            _fit_profile(cell.basal, "kdbm_gkdbar", p["gkdbm_basal"], "gkdbm_basal"),
             _fit_profile(cell.basal, "Kv2like_gbar",
                          p["gkv2"] * p["gkv2scale"], "gkv2", "gkv2scale"),
             _fit_profile(cell.basal, "kir_gbar",
@@ -1380,6 +1424,7 @@ def _conductance_fit_profiles(cell, p, update_mode):
         _fit_profile(cell.soma, "na16a_gbar", p["gna"], "gna"),
         _fit_profile(cell.soma, "na12_gbar", p["gna12"], "gna12"),
         _fit_profile(cell.soma, "kd_gbar", p["gkdrsoma"], "gkdrsoma"),
+        _fit_profile(cell.soma, "kdbm_gkdbar", p["gkdbm_soma"], "gkdbm_soma"),
         _fit_profile(
             cell.soma, "Kv2like_gbar", p["gkv2soma"], "gkv2soma"
         ),
@@ -1484,6 +1529,9 @@ def _conductance_fit_profiles(cell, p, update_mode):
         ),
         _fit_profile(cell.apical, "na16a_gbar", p["gnadend"], "gnadend"),
         _fit_profile(cell.apical, "kd_gbar", p["gkdrapical"], "gkdrapical"),
+        _fit_profile(cell.apical, "kdbm_gkdbar",
+                     p["gkdbm_apical"] * kdbm_apical_profile(apical_dist),
+                     "gkdbm_apical"),
         _fit_profile(cell.apical, "km_gbar", p["soma_km"], "soma_km"),
         _fit_profile(
             cell.apical,
@@ -1508,6 +1556,7 @@ def _conductance_fit_profiles(cell, p, update_mode):
         _fit_profile(cell.basal, "kap_gkabar", p["basal_kap"], "basal_kap"),
         _fit_profile(cell.basal, "h_gbar", p["soma_hbar"], "soma_hbar"),
         _fit_profile(cell.basal, "kd_gbar", p["gkdrdend"], "gkdrdend"),
+        _fit_profile(cell.basal, "kdbm_gkdbar", p["gkdbm_basal"], "gkdbm_basal"),
         _fit_profile(
             cell.basal,
             "Kv2like_gbar",
@@ -1532,6 +1581,11 @@ def _kinetic_fit_profiles(cell, p):
     """Return shared kinetic-scale profiles for each active channel placement."""
 
     return (
+        *(
+            _fit_profile(view, f"kdbm_{name}", p[f"kdbm_{name}"], f"kdbm_{name}")
+            for view in (cell.soma, cell.apical, cell.basal)
+            for name in ("sh", "tau_scale")
+        ),
         _fit_profile(
             cell.soma,
             "kd_deactivation_tau_scale",
@@ -1787,6 +1841,7 @@ def set_combe_channels(cell, p: CombeParameters = COMBE_PARAMS):
     set_apical_channels(cell, p)
     set_axon_channels(cell, p)
     set_basal_channels(cell, p)
+    set_kdbm(cell, p)
     return cell
 
 
@@ -1821,7 +1876,10 @@ def Combe2023(
         apply_hoc_channel_profile(cell)
 
     if enable_calcium_diffusion:
-        enable_cal4_diffusion(cell, axial_diffusion=0.22)
+        # Buffered free-calcium coefficient (DCa / (1 + TBufs*KDs/(KDs+cai)^2),
+        # ~0.005 um^2/ms): Cal4 keeps the stationary buffer in rapid equilibrium,
+        # so the unbuffered DCa = 0.22 of cal4.mod would overstate diffusion ~46x.
+        enable_cal4_diffusion(cell)
 
     cell.set("v", params.Epas)
     cell._combe_reference_parameters = asdict(params)

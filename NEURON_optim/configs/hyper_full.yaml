@@ -17,9 +17,9 @@ parameters:
   include: []
   exclude: []
   # Held at these values in every stage and never fitted.
-  # soma_h_scale multiplies Ih in the soma only: 0 removes somatic Ih while
-  # basal and apical Ih still follow soma_hbar.
-  fixed: {soma_h_scale: 0.0}
+  # icangbar = 0 removes the CAN current (icand) everywhere it is inserted
+  # (soma and apical dendrites).
+  fixed: {icangbar: 0.0}
 
 runtime:
   environment: Jaxley
