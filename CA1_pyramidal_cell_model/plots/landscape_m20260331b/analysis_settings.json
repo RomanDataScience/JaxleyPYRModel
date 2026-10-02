@@ -1,11 +1,12 @@
 {
   "cell": "m20260331b",
   "runs": [
-    "cma_m20260331b"
+    "cma_m20260331b",
+    "cma_m20260331b_seed11"
   ],
-  "evaluations": 60,
+  "evaluations": 360,
   "best_loss": 19.82756644995028,
-  "good_factor": 1.5,
-  "good_fits": 7,
+  "good_factor": 1.25,
+  "good_fits": 4,
   "umap_seed": 0
 }

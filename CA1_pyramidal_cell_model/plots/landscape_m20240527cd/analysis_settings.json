@@ -1,11 +1,12 @@
 {
   "cell": "m20240527cd",
   "runs": [
-    "cma_m20240527cd"
+    "cma_m20240527cd",
+    "cma_m20240527cd_seed11"
   ],
-  "evaluations": 60,
-  "best_loss": 31.122827586486352,
-  "good_factor": 1.5,
-  "good_fits": 58,
+  "evaluations": 360,
+  "best_loss": 22.327528465548586,
+  "good_factor": 1.25,
+  "good_fits": 15,
   "umap_seed": 0
 }
